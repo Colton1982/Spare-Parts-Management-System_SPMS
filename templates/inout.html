@@ -1,76 +1,97 @@
+{# SPMS 备件辅料仓管系统 | 作者：菜鸟大叔 (@rookie-uncle / @Colton1982) | 邮箱：510658927@qq.com | QQ：510658927 | Gitee：https://gitee.com/rookie-uncle | GitHub：https://github.com/Colton1982 | Copyright (c) 2026 rookie-uncle. All rights reserved. | Apache-2.0 #}
 {% extends "base.html" %}
-{% block title %}{{ tr('page_inout') }} - Spare Parts Management System{% endblock %}
-{% block page_title %}>{{ tr('page_inout') }}{% endblock %}
+{% block title %}{{ tr('page_inout') }} - Inventory Management System{% endblock %}
+{% block page_title %}{{ tr('page_inout') }}{% endblock %}
 {% block content %}
+<script>var SYS_FIFO = {{ fifo_enabled|default(1) }};
+/* v1.0.78：入库摆放提示，系统设置里可改；默认文案由服务端按当前语言翻译后下发 */
+var SYS_FIFO_TIP = {{ fifo_in_tip|default('')|tojson }};</script>
 
 <div class="card">
-  <div class="card-title">{{ tr('直接出入库（出库与申请出库业务一致：数量/申请人/线别/设备/原因，贵重自动走审批）') }}</div>
-  <form class="inline-form" method="post" action="{{ url_for('inout_do') }}" onsubmit="return beforeIoSubmit()" style="flex-wrap:wrap;gap:8px">
-    <input type="hidden" name="part_id" id="io-part-id">
-    <span class="part-pick">
-      <button type="button" class="btn" onclick="PartPicker.show('io-part-id','io-part-name', onIoPartPick)">{{ tr('🔍 选择备件…') }}</button>
-      <span id="io-part-name" class="muted">{{ tr('未选择') }}</span>
-    </span>
-    <select class="f-input" name="tx_type" id="io-type" required onchange="ioTypeChange()">
-      <option value="in">{{ tr('type_in') }}</option>
-      <option value="out">{{ tr('type_out') }}</option>
-    </select>
-    <input class="f-input" type="number" name="quantity" id="io-qty" step="0.001" min="0.01" placeholder="{{ tr('数量') }}" required>
-    <span id="io-out-fields" style="display:none">
-      <select class="f-input" name="applicant_id" id="io-applicant" style="max-width:150px">
-        {% for u in users %}<option value="{{ u.id }}" {{ 'selected' if u.id==cur_uid }}>{{ u.display_name or u.username }}{% if u.department %}{{ tr('（') }}{{ u.department }}{{ tr('）') }}{% endif %}</option>{% endfor %}
-      </select>
-      <select class="f-input" name="use_line" id="io-line" onchange="ioLineChange()" style="max-width:130px"><option value="">{{ tr('线别(可空)') }}</option>{% for l in lines %}<option value="{{ l.name }}">{{ l.name }}</option>{% endfor %}</select>
-      <select class="f-input" name="use_device" id="io-device" style="max-width:140px"><option value="">{{ tr('设备(可空)') }}</option></select>
-    </span>
-    <span id="io-loc-wrap">
-      <select class="f-input" name="location_id" id="io-loc" required onchange="ioLocChange()"><option value="">{{ tr('先选择备件…') }}</option></select>
-    </span>
-    <span id="io-loc-new-wrap" style="display:none">
-      <span class="loc-cascade" style="display:inline-flex">
-        <select class="f-input" id="io-new-wh" onchange="ioNewWh()"><option value="">{{ tr('仓库号…') }}</option></select>
-        <select class="f-input" id="io-new-rack" onchange="ioNewRack()"><option value="">{{ tr('货架号…') }}</option></select>
-        <select class="f-input" id="io-new-shelf" onchange="ioNewShelf()"><option value="">{{ tr('货位号…') }}</option></select>
-        <select class="f-input" id="io-new-bin" onchange="ioNewPick()"><option value="">{{ tr('格位号…') }}</option></select>
-      </span>
-      <input type="hidden" name="new_location_id" id="io-new-loc-id">
-    </span>
-    <input class="f-input" type="text" name="reason" id="io-reason" placeholder="{{ tr('原因') }}/{{ tr('备注') }}{{ tr('（') }}{{ tr('出库请填写使用原因') }}{{ tr('）') }}" style="min-width:200px">
-    <span id="io-approver-wrap" style="display:none">
-      <select class="f-input" name="approver_id" id="io-approver" style="max-width:170px"><option value="">{{ tr('审批经理…') }}</option>{% for m in managers %}<option value="{{ m.id }}">{{ m.display_name }}{% if m.department %}{{ tr('（') }}{{ m.department }}{{ tr('）') }}{% endif %}</option>{% endfor %}</select>
-    </span>
-    <button class="btn btn-primary" type="submit">{{ tr('确认操作') }}</button>
-  </form>
-  <div class="muted small">{{ tr('备件选择：点击「选择备件」弹出搜索框。') }}<b>{{ tr('type_out') }}</b>{{ tr('：与申请出库一致，需填数量、申请人、使用线别/设备、原因；非贵重直接扣库存（生成申请单记录），') }}<b>{{ tr('贵重备件自动提交审批') }}</b>{{ tr('，审批通过后由仓库出库。') }}<b>{{ tr('type_in') }}</b>{{ tr('：仓库直接入库，可选现有库位或新库位（仓库-货架-货位-格位）。整数类备件数量只能填正整数，小数类可填小数。') }}</div>
+  <div class="card-title">{{ tr('批量出入库 / 调库') }}</div>
+  <div class="muted small ui-hint" style="margin:-6px 0 12px">{{ tr('选择物料 → 填写每行信息 → 整批执行；任一行校验不过整批不执行') }}</div>
+  <div class="inline-form" style="margin-bottom:10px">
+    <button type="button" class="btn" onclick="PartPickerMulti.show(addIoRows)">🔍 {{ tr('选择物料') }}</button>
+    <input class="f-input" type="text" id="io-reason" placeholder="{{ tr('统一原因') }}{{ mk('（') }}{{ tr('可选') }}{{ mk('，') }}{{ tr('填入所有行') }}{{ mk('）') }}" style="min-width:220px">
+    <button type="button" class="btn" onclick="ioFillReasonAll()">↓ {{ tr('填入所有行') }}</button>
+    <button type="button" class="btn btn-primary" onclick="executeBatch()">{{ tr('确认执行') }}</button>
+    <button type="button" class="btn" onclick="clearIoDraft()">{{ tr('清空') }}</button>
+  </div>
+  <div id="io-new-wrap" class="loc-cascade" style="display:none;margin-bottom:8px">
+    <div class="muted small ui-hint" style="width:100%">{{ tr('新库位（入库行选「新库位」时使用；已被其他物料存放的位置不可重复入库）') }}</div>
+    <select class="f-input" id="io-new-wh" onchange="ioNewWh()"><option value="">{{ tr('仓库号…') }}</option></select>
+    <select class="f-input" id="io-new-rack" onchange="ioNewRack()"><option value="">{{ tr('货架号…') }}</option></select>
+    <select class="f-input" id="io-new-shelf" onchange="ioNewShelf()"><option value="">{{ tr('货位号…') }}</option></select>
+    <select class="f-input" id="io-new-bin" onchange="ioNewPick()"><option value="">{{ tr('格位号…') }}</option></select>
+    <input type="hidden" id="io-new-loc-id" name="new_location_id">
+    <span class="muted small" id="io-new-msg"></span>
+  </div>
+  {# v1.0.40：顶部那条「维修品优先」红条撤了——提示下沉到具体明细行的空白处，
+     只对「领用」出库行显示（入库/退货/报废行不该出现取货提示）。 #}
+  <div class="table-wrap">
+    <table class="table" id="io-draft-table">
+      <thead><tr>
+        <th style="width:88px">{{ tr('th_type') }}</th><th>{{ tr('th_part') }}</th><th style="width:90px">{{ tr('可用库存') }}</th>
+        <th style="width:100px">{{ tr('th_quantity') }}</th><th style="width:170px">{{ tr('申请原因') }}</th><th>{{ tr('明细信息') }}</th><th style="width:60px">{{ tr('th_ops') }}</th>
+      </tr></thead>
+      <tbody id="io-draft-body"><tr><td colspan="7" class="muted center">{{ tr('还没有选择物料') }}{{ mk('。') }}{{ tr('点击「选择物料」开始') }}{{ mk('。') }}</td></tr></tbody>
+    </table>
+  </div>
+  <div class="muted small ui-hint" style="margin-top:6px"><b>{{ tr('type_out') }}</b>{{ tr('：领用需填领用人、线别/设备、扣减库位，其它只填领用人与扣减库位；') }}<b>{{ tr('贵重物料自动提交审批') }}</b>{{ tr('，不直接扣库存。') }}<b>{{ tr('type_in') }}</b>{{ tr('：选现有库位或新库位，可填批次号。') }}<b>{{ tr('入库类型') }}</b>{{ mk('：') }}{{ tr('可选采购、返修、转入、借入、产线退回、其它，默认采购。') }}<b>{{ tr('type_transfer') }}</b>{{ tr('：选源库位与目标位置（可调到待定）。') }}<b>{{ tr('借出') }}</b>{{ tr('：选借用人与预计归还日，登记后进借·换·检·修台账；办理时扣减库存，还回后恢复。') }}</div>
+  <div class="muted small ui-hint" style="margin-top:4px">{{ tr('同一库位有多个入库批次时会分行显示，数量为该批次库存并标注批次号。') }}</div>
+  {# v1.0.80：FIFO 摆放提示已下沉到入库行的「明细信息」格内（见 ioRowHtml/rowFifoInTip），此处不再单独占一行 #}
 </div>
 
 <div class="card">
-  <div class="card-title">{{ tr('待处理申请单（执行 / 驳回 / 撤销审批）') }}</div>
-  <div class="table-wrap">
+  <div class="card-title">{{ tr('待处理申请单') }}</div>
+  <div class="muted small ui-hint" style="margin:-6px 0 12px">{{ tr('一张申请单多行明细，逐行执行') }}</div>
+  <div class="table-wrap table-sticky" style="overflow:auto;max-height:clamp(360px, calc(100vh - 320px), 900px)">
     <table class="table">
       <thead><tr>
-        <th>{{ tr('th_no') }}</th><th>{{ tr('th_time') }}</th><th>{{ tr('th_part') }}</th><th>{{ tr('th_type') }}</th><th>{{ tr('th_quantity') }}</th><th>{{ tr('th_applicant') }}</th>
-        <th>{{ tr('位置') }}</th><th>{{ tr('th_status') }}</th><th>{{ tr('th_ops') }}</th>
+        <th>{{ tr('th_part') }}</th><th style="width:100px">{{ tr('th_quantity') }}</th><th>{{ tr('位置') }}</th><th style="width:110px">{{ tr('th_status') }}</th><th style="width:200px">{{ tr('th_ops') }}</th>
       </tr></thead>
-      <tbody>
-        {% for a in pending_apps %}
+      {% for d in pending_docs %}
+      <tbody class="doc-group">
+        <tr class="doc-head">
+          <td colspan="5" style="background:var(--bg-tertiary,#f4f5f7)">
+            <b class="mono">{{ d.doc_no }}</b>
+            {% if d.app_type=='in' %}<span class="badge badge-ok">{{ tr('type_in') }}</span>
+            {% elif d.app_type=='transfer' %}<span class="badge badge-info">{{ tr('type_transfer') }}</span>
+            {% elif d.app_type=='borrow' %}<span class="badge badge-warn">{{ tr('借用') }}</span>
+            {% else %}<span class="badge badge-danger">{{ tr('type_out') }}</span>{% endif %}
+            <span class="muted small">{{ tn('application_doc.rows', d.n_rows) }} · {{ tr('申请人') }}{{ mk('：') }}<b class="app-who">{{ d.app_name or '-' }}</b> · {{ d.created_at }}</span>
+            {% if d.has_cancel_req %}<span class="muted small" style="margin-left:8px">{{ tr('撤销请求待审批') }}</span>{% endif %}
+          </td>
+        </tr>
+        {% for a in d.rows %}
         <tr>
-          <td class="mono">{{ a.app_no }}</td>
-          <td class="mono">{{ a.created_at }}</td>
           <td>{{ a.part_code }}<br><span class="muted">{{ a.name }}</span>
             {% if a.is_valuable %}<span class="badge badge-val">{{ tr('status_valuable') }}</span>{% endif %}
-            {% if a.app_type=='out' and a.line_name %}<br><span class="muted small">{{ tr('线别') }}{{ tr('：') }}{{ a.line_name }} {{ tr('｜') }} {{ tr('设备') }}{{ tr('：') }}{{ a.device_name or '—' }}</span>{% endif %}
-            {% if a.app_type=='out' and a.reason %}<br><span class="muted small">{{ tr('领出原因') }}{{ tr('：') }}{{ a.reason }}</span>{% endif %}</td>
-          <td>
-            {% if a.app_type=='in' %}<span class="badge badge-ok">{{ tr('type_in') }}</span>
-            {% elif a.app_type=='transfer' %}<span class="badge badge-info">{{ tr('type_transfer') }}</span>
-            {% else %}<span class="badge badge-danger">{{ tr('type_out') }}</span>{% endif %}
-          </td>
+            {% if a.app_type=='out' %}
+              {% if a.out_type=='return' %}<span class="badge badge-warn">{{ tr('outkind.return') }}</span>
+              {% elif a.out_type=='exchange' %}<span class="badge badge-info">{{ tr('outkind.exchange') }}</span>
+              {% elif a.out_type=='internal' %}<span class="badge badge-info">{{ tr('outkind.internal') }}</span>
+              {% elif a.out_type=='giveback' %}<span class="badge badge-info">{{ tr('outkind.giveback') }}</span>
+              {% elif a.out_type=='scrap' %}<span class="badge badge-danger">{{ tr('v1022.out_scrap') }}</span>
+              {% elif a.out_type=='maintenance' %}<span class="badge badge-info">{{ tr('outkind.maintenance') }}</span>
+              {% elif a.out_type=='verify' %}<span class="badge badge-info">{{ tr('outkind.verify') }}</span>{% endif %}
+            {% elif a.app_type=='in' %}
+              {# 历史入库申请 out_type 为空 = 采购（默认值） #}
+              {% if a.out_type=='repair' %}<span class="badge badge-info">{{ tr('返修') }}</span>
+              {% elif a.out_type=='transfer_in' %}<span class="badge badge-info">{{ tr('转入') }}</span>
+              {% elif a.out_type=='other' %}<span class="badge badge-info">{{ tr('借入') }}</span>
+              {% elif a.out_type=='line_return' %}<span class="badge badge-info">{{ tr('产线退回') }}</span>
+              {% elif a.out_type=='misc' %}<span class="badge badge-info">{{ tr('其它') }}</span>
+              {% else %}<span class="badge badge-info">{{ tr('采购') }}</span>{% endif %}
+            {% endif %}
+            {% if a.app_type=='out' and a.line_name %}<br><span class="muted small">{{ tr('线别') }}{{ mk('：') }}{{ a.line_name }} {{ mk('｜') }} {{ tr('设备') }}{{ mk('：') }}{{ a.device_name or '—' }}</span>{% endif %}
+            {% if a.app_type=='out' and a.out_type in ('return','exchange','internal','giveback','maintenance','verify') %}<br><span class="muted small">{% if a.out_type in ('maintenance','verify') %}{{ tr('出库人') }}{{ mk('：') }}{{ a.out_person or '—' }}{{ mk('，') }}{{ tr('目的公司/地址') }}{{ mk('：') }}{{ a.destination or '—' }}{% else %}{{ tr('目的地或目的公司') }}{{ mk('：') }}{{ a.destination or '—' }}{% endif %}{{ mk('，') }}{{ tr('接收人') }}{{ mk('：') }}{{ a.receiver or '—' }}{{ mk('，') }}{{ tr('联系方式') }}{{ mk('：') }}{{ a.contact or '—' }}{% if a.out_type=='exchange' and a.expected_return %}{{ mk('，') }}{{ tr('预计返回日期') }}{{ mk('：') }}{{ a.expected_return[:10] }}{% elif a.out_type in ('maintenance','verify') and a.expected_return %}{{ mk('，') }}{{ tr('预计返回时间') }}{{ mk('：') }}{{ a.expected_return[:16] }}{% endif %}</span>{% endif %}
+            {% if a.app_type=='borrow' and a.expected_return %}<br><span class="muted small">{{ tr('借用人') }}{{ mk('：') }}<b class="app-who">{{ a.app_name or '-' }}</b>{{ mk('，') }}{{ tr('预计归还日') }}{{ mk('：') }}{{ a.expected_return[:10] }}</span>{% endif %}
+            {% if a.reason %}<br><span class="muted small">{{ tr('原因') }}{{ mk('：') }}{{ a.reason }}</span>{% endif %}</td>
           <td class="num">{{ a.quantity }} {{ a.unit }}</td>
-          <td>{{ a.app_name or '-' }}</td>
           <td class="mono small">
             {% if a.app_type=='transfer' %}
-              <span class="muted">{{ tr(a.from_loc_text or tr('待定')) }}</span> {{ tr('→') }} <b>{{ tr(a.to_loc_text or tr('待定')) }}</b>
+              <span class="muted">{{ a.from_loc_text or tr('待定') }}</span> → <b>{{ a.to_loc_text or tr('待定') }}</b>
             {% else %}
               {% if a.all_locs_text %}{{ a.all_locs_text }}{% else %}{{ a.location_text or '-' }}{% endif %}
             {% endif %}
@@ -81,50 +102,73 @@
             {% else %}<span class="badge badge-info">{{ tr('status_pending') }}</span>{% endif %}
           </td>
           <td class="ops">
-            {% if a.status=='cancel_req' %}
+            {% if not can('stock_inout','execute') %}
+            <span class="muted small">—</span>
+            {% elif a.status=='cancel_req' %}
               {% if a.applicant_id != cur_uid %}
-              <button class="btn btn-xs" onclick="openCancelApprove({{ a.id }}, '{{ a.app_no }}')">{{ tr('批准撤销') }}</button>
-              <button class="btn btn-xs btn-danger" onclick="openCancelReject({{ a.id }}, '{{ a.app_no }}')">{{ tr('驳回撤销') }}</button>
+              <button class="btn btn-xs" onclick="openCancelApproveDoc('{{ d.doc_no }}')">{{ tr('批准撤销') }}</button>
+              <button class="btn btn-xs btn-danger" onclick="openCancelRejectDoc('{{ d.doc_no }}')">{{ tr('驳回撤销') }}</button>
               {% else %}<span class="muted small">{{ tr('本人撤销请求，请其他仓管处理') }}</span>{% endif %}
-            {% elif a.app_type=='out' and a.is_valuable and a.status!='approved' %}
-              <span class="muted small">{{ tr('status_pending') }}</span>
+            {% elif a.app_type=='out' and (a.is_valuable or a.out_type in ('return','exchange','internal','giveback','maintenance','verify','scrap')) and a.status!='approved' %}
+              <span class="muted small">{{ tr('等待审批') }}</span>
             {% elif a.app_type=='transfer' %}
-              <button class="btn btn-xs" onclick="openTransferExec({{ a.id }}, '{{ a.app_no }}', '{{ a.part_code }}', '{{ a.from_loc_text or tr('待定') }}', '{{ a.to_loc_text or tr('待定') }}')">{{ tr('执行调库') }}</button>
+              <button class="btn btn-xs tf-exec-btn" data-aid="{{ a.id }}" data-no="{{ a.app_no|e }}" data-code="{{ a.part_code|e }}"
+                data-from="{{ (a.from_loc_text or tr('待定'))|e }}" data-to="{{ (a.to_loc_text or tr('待定'))|e }}"
+                data-qty="{{ a.quantity }}" data-batch="{{ (a.from_batch or '')|e }}" data-src-qty="{{ a.from_qty }}"
+                onclick="openTransferExec(this)">{{ tr('执行调库') }}</button>
+              <button class="btn btn-xs btn-danger" onclick="openReject({{ a.id }}, '{{ a.app_no }}')">{{ tr('btn_reject') }}</button>
+            {% elif a.app_type=='borrow' %}
+              <button class="btn btn-xs" data-aid="{{ a.id }}" data-no="{{ a.app_no|e }}" data-pid="{{ a.part_id }}"
+                data-code="{{ a.part_code|e }}" data-qty="{{ a.quantity }}" data-borrower="{{ (a.app_name or '')|e }}"
+                data-er="{{ (a.expected_return or '')[:10] }}" data-note="{{ (a.reason or '')|e }}"
+                data-subtype="{{ a.sub_type|e }}"
+                onclick="openBorrowExec(this)">{{ tr('办理借出') }}</button>
               <button class="btn btn-xs btn-danger" onclick="openReject({{ a.id }}, '{{ a.app_no }}')">{{ tr('btn_reject') }}</button>
             {% else %}
               <button class="btn btn-xs" data-aid="{{ a.id }}" data-no="{{ a.app_no|e }}" data-pid="{{ a.part_id }}"
                 data-code="{{ a.part_code|e }}" data-qty="{{ a.quantity }}" data-type="{{ a.app_type|e }}"
+                data-otype="{{ a.out_type|e }}" data-cdt="{{ a.condition|e }}"
                 data-loc="{{ (a.all_locs_text or a.location_text or '')|e }}"
-                data-line="{{ (a.line_name or '')|e }}" data-device="{{ (a.device_name or '')|e }}"
-                data-reason="{{ (a.reason or '')|e }}" onclick="openExecFrom(this)">{{ tr('btn_execute') }}</button>
+                onclick="openExecFrom(this)">{{ tr('btn_execute') }}</button>
               <button class="btn btn-xs btn-danger" onclick="openReject({{ a.id }}, '{{ a.app_no }}')">{{ tr('btn_reject') }}</button>
             {% endif %}
           </td>
         </tr>
-        {% else %}<tr><td colspan="9" class="muted center">{{ tr('当前没有待处理的申请单') }}</td></tr>{% endfor %}
+        {% endfor %}
       </tbody>
+      {% else %}<tbody><tr><td colspan="5" class="muted center">{{ tr('当前没有待处理的申请单') }}</td></tr></tbody>{% endfor %}
     </table>
   </div>
 </div>
 
 <div class="card">
-  <div class="card-title">{{ tr('出入库流水') }}<span class="muted">{{ tr('（按时间/类型筛选，可导出 Excel）') }}</span>
-    <a class="btn btn-xs" style="float:right" href="{{ url_for('inout_export', date_from=date_from, date_to=date_to, f_type=f_type) }}">📥 {{ tr('导出 Excel') }}</a>
+  <div class="card-title">{{ tr('出入库流水') }}
+    <a class="btn btn-xs" style="float:right" href="{{ url_for('inout_export', date_from=date_from, date_to=date_to, time_from=time_from, time_to=time_to, f_type=f_type, f_sub=f_sub) }}">📥 {{ tr('导出 Excel') }}</a>
   </div>
+  <div class="muted small ui-hint" style="margin:-6px 0 12px">{{ tr('可按时间范围与类型筛选') }}</div>
   <form class="inline-form" method="get" action="{{ url_for('inout_page') }}" style="margin-bottom:10px">
-    <label class="muted small">{{ tr('起始日期') }}<input class="f-input" type="text" name="date_from" value="{{ date_from }}" placeholder="{{ tr('如 2026/10/08') }}" onchange="this.value=this.value.replace(/[\/]/g,'-')"></label>
-    <label class="muted small">{{ tr('截止日期') }}<input class="f-input" type="text" name="date_to" value="{{ date_to }}" placeholder="{{ tr('如 2026/10/08') }}" onchange="this.value=this.value.replace(/[\/]/g,'-')"></label>
-    <select class="f-input" name="f_type">
+    {# v1.0.59：日期与时间一次选完，分钟固定 00；隐藏域继续沿用原参数名，查询/导出零改动 #}
+    <label class="muted small">{{ tr('起始日期') }}<input class="f-input dt-input dt-auto dtp-input" type="text" data-dtp="1" readonly data-dt-filter="1" data-date="date_from" data-time="time_from" value="{{ dtv_d(date_from) }} {{ dtv_t(date_from, time_from) }}" placeholder="{{ tr('选择日期时间') }}" title="{{ tr('时间') }}" aria-label="{{ tr('时间') }}"><input type="hidden" name="date_from" value="{{ dtv_d(date_from) }}"><input type="hidden" name="time_from" value="{{ dtv_t(date_from, time_from) }}"></label>
+    <label class="muted small">{{ tr('截止日期') }}<input class="f-input dt-input dt-auto dtp-input" type="text" data-dtp="1" readonly data-dt-filter="1" data-date="date_to" data-time="time_to" value="{{ dtv_d(date_to) }} {{ dtv_t(date_to, time_to) }}" placeholder="{{ tr('选择日期时间') }}" title="{{ tr('时间') }}" aria-label="{{ tr('时间') }}"><input type="hidden" name="date_to" value="{{ dtv_d(date_to) }}"><input type="hidden" name="time_to" value="{{ dtv_t(date_to, time_to) }}"></label>
+    <select class="f-input" name="f_type" onchange="ioSyncSub(this)">
       <option value="">{{ tr('type_all') }}</option>
       <option value="in" {{ 'selected' if f_type=='in' }}>{{ tr('type_in') }}</option>
       <option value="out" {{ 'selected' if f_type=='out' }}>{{ tr('type_out') }}</option>
       <option value="transfer" {{ 'selected' if f_type=='transfer' }}>{{ tr('type_transfer') }}</option>
     </select>
+    {# 子类型只列「当前方向自己的」：入库四项、出库七项，调库只剩全部类型。
+       以前这个下拉把出库那五项写死，选入库也照样列出来，选了还筛出出库流水。 #}
+    <select class="f-input" name="f_sub" title="{{ tr('子类型') }}" {% if not sub_options %}disabled{% endif %}>
+      <option value="">{{ tr('全部类型') }}</option>
+      {% for o in sub_options %}
+      <option value="{{ o.value }}" {{ 'selected' if f_sub==o.value }}>{{ tr(o.label) }}</option>
+      {% endfor %}
+    </select>
     <button class="btn" type="submit">{{ tr('btn_search') }}</button>
     <a class="btn" href="{{ url_for('inout_page') }}">{{ tr('btn_reset') }}</a>
-    <span class="muted small">{{ tr('共') }} {{ tx_total }} {{ tr('条') }}</span>
+    <span class="muted small">{{ tn('inout.count_records', tx_total) }}</span>
   </form>
-  <div class="table-wrap">
+  <div class="table-wrap table-sticky" style="overflow:auto;max-height:clamp(360px, calc(100vh - 320px), 900px)">
     <table class="table">
       <thead><tr><th>{{ tr('th_no') }}</th><th>{{ tr('th_time') }}</th><th>{{ tr('th_part') }}</th><th>{{ tr('th_type') }}</th><th>{{ tr('th_location') }}</th><th>{{ tr('th_quantity') }}</th>{% if can('price') %}<th>{{ tr('th_price') }}</th><th>{{ tr('th_amount') }}</th>{% endif %}<th>{{ tr('th_operator') }}</th><th>{{ tr('备注') }}</th></tr></thead>
       <tbody>
@@ -135,8 +179,25 @@
           <td>{{ t.part_code }}<br><span class="muted">{{ t.name }}</span></td>
           <td>
             {% if t.tx_type=='in' %}<span class="badge badge-ok">{{ tr('type_in') }}</span>
+              {# 历史入库流水 out_type 为空 = 采购（默认值），与筛选/导出口径同源 #}
+              {% set _iot = t.disp_out_type if t.disp_out_type is defined else t.out_type %}
+              {% if _iot=='repair' or (_iot=='misc' and '维修' in (t.remark or '')) %}<span class="badge badge-info" title="{{ tr('返修回库') }}">{{ tr('返修') }}</span>
+              {% elif _iot=='borrow_return' or (_iot=='misc' and t.ref_type=='borrow') %}<span class="badge badge-info" title="{{ tr('借·换·检·修还回入库') }}">{{ tr('其它') }}</span>
+              {% elif _iot=='transfer_in' %}<span class="badge badge-info">{{ tr('转入') }}</span>
+              {% elif _iot=='other' %}<span class="badge badge-info">{{ tr('借入') }}</span>
+              {% elif _iot=='line_return' %}<span class="badge badge-info">{{ tr('产线退回') }}</span>
+              {% elif _iot=='misc' %}<span class="badge badge-info">{{ tr('其它') }}</span>
+              {% else %}<span class="badge badge-info">{{ tr('采购') }}</span>{% endif %}
             {% elif t.tx_type=='transfer' %}<span class="badge badge-info">{{ tr('type_adjust') }}</span>
-            {% else %}<span class="badge badge-danger">{{ tr('type_out') }}</span>{% endif %}
+            {% else %}<span class="badge badge-danger">{{ tr('type_out') }}</span>
+              {% if t.out_type=='return' %}<span class="badge badge-warn">{{ tr('outkind.return') }}</span>
+              {% elif t.out_type=='exchange' %}<span class="badge badge-info">{{ tr('outkind.exchange') }}</span>
+              {% elif t.out_type=='internal' %}<span class="badge badge-info">{{ tr('outkind.internal') }}</span>
+              {% elif t.out_type=='giveback' %}<span class="badge badge-info">{{ tr('outkind.giveback') }}</span>
+              {% elif t.out_type=='scrap' %}<span class="badge badge-danger">{{ tr('v1022.out_scrap') }}</span>
+              {% elif t.out_type=='maintenance' %}<span class="badge badge-info">{{ tr('outkind.maintenance') }}</span>
+              {% elif t.out_type=='verify' %}<span class="badge badge-info">{{ tr('outkind.verify') }}</span>{% endif %}
+            {% endif %}
           </td>
           <td>{{ t.location or '-' }}</td>
           <td class="num">{{ t.quantity }}</td>
@@ -150,13 +211,13 @@
     </table>
   </div>
   <div class="pager" style="margin-top:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-    <select class="f-input" style="max-width:130px" onchange="location.href='{{ url_for('inout_page') }}?date_from={{ date_from }}&date_to={{ date_to }}&f_type={{ f_type }}&per_page='+this.value">
-      {% for v in [5,10,20,100] %}<option value="{{ v }}" {{ 'selected' if tx_per_page==(v|string) }}>{{ tr('每页') }} {{ v }} {{ tr('条') }}</option>{% endfor %}
+    <select class="f-input" style="max-width:130px" onchange="location.href='{{ url_for('inout_page') }}?date_from={{ date_from }}&time_from={{ time_from }}&date_to={{ date_to }}&time_to={{ time_to }}&f_type={{ f_type }}&f_sub={{ f_sub }}&per_page='+this.value">
+      {% for v in [5,10,20,100] %}<option value="{{ v }}" {{ 'selected' if tx_per_page==(v|string) }}>{{ tn('ui.per_page', v) }}</option>{% endfor %}
       <option value="all" {{ 'selected' if tx_per_page=='all' }}>{{ tr('全部') }}</option>
     </select>
     <span class="muted small">{{ tr('共 {0} 条 · 第 {1}/{2} 页').format(tx_total, tx_page, tx_pages) }}</span>
-    {% if tx_page > 1 %}<a class="btn btn-xs" href="{{ url_for('inout_page', page=tx_page-1, date_from=date_from, date_to=date_to, f_type=f_type, per_page=tx_per_page) }}">{{ tr('上一页') }}</a>{% endif %}
-    {% if tx_page < tx_pages %}<a class="btn btn-xs" href="{{ url_for('inout_page', page=tx_page+1, date_from=date_from, date_to=date_to, f_type=f_type, per_page=tx_per_page) }}">{{ tr('下一页') }}</a>{% endif %}
+    {% if tx_page > 1 %}<a class="btn btn-xs" href="{{ url_for('inout_page', page=tx_page-1, date_from=date_from, date_to=date_to, time_from=time_from, time_to=time_to, f_type=f_type, f_sub=f_sub, per_page=tx_per_page) }}">{{ tr('上一页') }}</a>{% endif %}
+    {% if tx_page < tx_pages %}<a class="btn btn-xs" href="{{ url_for('inout_page', page=tx_page+1, date_from=date_from, date_to=date_to, time_from=time_from, time_to=time_to, f_type=f_type, f_sub=f_sub, per_page=tx_per_page) }}">{{ tr('下一页') }}</a>{% endif %}
   </div>
 </div>
 
@@ -166,11 +227,19 @@
     <div class="modal-head"><span>{{ tr('执行申请单') }}</span><button class="modal-x" onclick="closeModal('exec-modal')">✕</button></div>
     <form class="modal-body" method="post" id="exec-form" onsubmit="return beforeExecSubmit()">
       <p id="exec-info"></p>
+      {# v1.0.80：入库单执行窗口的 FIFO 摆放提示（含调库转入库单），与明细行同款红字；关闭先进先出不显示 #}
+      <div id="exec-fifo-tip" class="fifo-in-tip" style="display:none;margin:4px 0 8px;padding:4px 8px;border-left:3px solid #cf1322;background:#fff1f0;color:#a8071a;font-size:12px;line-height:1.5;border-radius:5px"></div>
+      <label class="f-label">{{ tr('执行数量（只能减少，不能超过申请数量）') }}
+        <input class="f-input" type="number" name="exec_qty" id="exec-qty" min="0" step="any" required oninput="execQtyChange()">
+        <span class="muted small" id="exec-qty-hint"></span>
+      </label>
       <p id="exec-loc-info" class="muted small"></p>
       <label class="f-label">{{ tr('执行库位 *（出库=扣减该库位库存；入库=加入该库位库存）') }}<select class="f-input" name="location_id" id="exec-loc" required onchange="execLocChange()"><option value="">{{ tr('加载中…') }}</option></select>
       </label>
+      <span class="f-note" id="exec-hold-note" style="display:block;margin:-4px 0 6px"></span>
+      <label class="f-label" id="exec-cond-wrap" style="display:none">{{ tr('配件状态（良品/不良品/维修品）') }}<span id="exec-cond-show" class="mono"></span><input type="hidden" name="condition" id="exec-cond" value="good"></label>
       <div id="exec-loc-new-wrap" class="loc-cascade" style="display:none;margin-top:6px">
-        <div class="muted small" style="width:100%">{{ tr('新库位（仓库号-货架号-货位号必填级联；格位号可空，选空=整货位；已被其他备件存放的位置不可重复入库）') }}</div>
+        <div class="muted small ui-hint" style="width:100%">{{ tr('新库位（仓库号-货架号-货位号必填级联；格位号可空，选空=整货位；已被其他物料存放的位置不可重复入库）') }}</div>
         <select class="f-input" id="ex-new-wh" onchange="exNewWh()"><option value="">{{ tr('仓库号…') }}</option></select>
         <select class="f-input" id="ex-new-rack" onchange="exNewRack()"><option value="">{{ tr('货架号…') }}</option></select>
         <select class="f-input" id="ex-new-shelf" onchange="exNewShelf()"><option value="">{{ tr('货位号…') }}</option></select>
@@ -178,7 +247,9 @@
         <input type="hidden" name="new_location_id" id="ex-new-loc-id">
         <span class="muted small" id="ex-new-msg"></span>
       </div>
-      <label class="f-label">{{ tr('备注') }}textarea class="f-input" name="note" rows="2"></textarea></label>
+      <label class="f-label">{{ tr('备注') }}<textarea class="f-input" name="note" rows="2"></textarea></label>
+      <label class="f-label" id="exec-batch-wrap" style="display:none">{{ tr('批次号（入库时填写实物批次，空=按当天日期）') }}<input class="f-input" type="text" name="batch_no" id="exec-batch" placeholder="{{ tr('批次号(空=按日期)') }}"></label>
+      <p id="exec-batch-hint" class="muted small" style="display:none"></p>
       <div class="modal-foot"><button class="btn btn-primary" type="submit">{{ tr('确认执行') }}</button>
       <button class="btn" type="button" onclick="closeModal('exec-modal')">{{ tr('btn_cancel') }}</button></div>
     </form>
@@ -189,10 +260,14 @@
 <div class="modal-mask" id="tf-exec-modal" style="display:none" onclick="if(event.target===this)closeModal('tf-exec-modal')">
   <div class="modal">
     <div class="modal-head"><span>{{ tr('执行调库') }}</span><button class="modal-x" onclick="closeModal('tf-exec-modal')">✕</button></div>
-    <form class="modal-body" method="post" id="tf-exec-form">
+    <form class="modal-body" method="post" id="tf-exec-form" onsubmit="return beforeSimpleExecSubmit('tf-exec-qty')">
       <p id="tf-exec-info"></p>
-      <p class="muted small" style="margin:6px 0">{{ tr('确认执行后，申请单指定的') }}<b>{{ tr('源库位') }}</b>{{ tr('的库存将整体移动至目标位置（数量不变）；若目标位置已被其他备件存放库存，系统将拒绝执行。') }}</p>
-      <label class="f-label">{{ tr('备注') }}textarea class="f-input" name="note" rows="2"></textarea></label>
+      <p id="tf-exec-batch" class="muted small" style="display:none;margin:-4px 0 8px"></p>
+      <label class="f-label">{{ tr('执行数量（只能减少，不能超过申请数量）') }}
+        <input class="f-input" type="number" name="exec_qty" id="tf-exec-qty" min="0" step="any" required>
+      </label>
+      <p class="muted small ui-hint" style="margin:6px 0">{{ tr('确认执行后') }}<b>{{ tr('源库位') }}</b>{{ tr('的库存将移动至目标位置；执行数量只能减少（≤申请数量）。') }}</p>
+      <label class="f-label">{{ tr('备注') }}<textarea class="f-input" name="note" rows="2"></textarea></label>
       <div class="modal-foot"><button class="btn btn-primary" type="submit">{{ tr('确认执行') }}</button>
       <button class="btn" type="button" onclick="closeModal('tf-exec-modal')">{{ tr('btn_cancel') }}</button></div>
     </form>
@@ -216,7 +291,7 @@
   <div class="modal">
     <div class="modal-head"><span>{{ tr('批准撤销（回滚库存/位置）') }}</span><button class="modal-x" onclick="closeModal('cancel-app-modal')">✕</button></div>
     <div class="modal-body">
-      <p class="muted small" style="margin-bottom:8px">{{ tr('批准后自动回滚：入库申请→扣回原库位；出库申请→退回原库位；调库申请→位置调回源位置。') }}</p>
+      <p class="muted small ui-hint" style="margin-bottom:8px">{{ tr('批准后自动回滚：入库申请→扣回原库位；出库申请→退回原库位；调库申请→位置调回源位置。') }}</p>
       <form method="post" id="cancel-app-form">
         <label class="f-label">{{ tr('备注（可空）') }}<textarea class="f-input" name="note" rows="2"></textarea></label>
         <div class="modal-foot"><button class="btn btn-primary" type="submit">{{ tr('确认批准') }}</button>
@@ -237,189 +312,1421 @@
     </form>
   </div>
 </div>
+<!-- 办理借出弹窗：借用申请免审批，由仓管登记借出并写入借用台账 -->
+<div class="modal-mask" id="borrow-exec-modal" style="display:none" onclick="if(event.target===this)closeModal('borrow-exec-modal')">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-head"><span>{{ tr('办理借出') }}</span><button class="modal-x" onclick="closeModal('borrow-exec-modal')">✕</button></div>
+    <form class="modal-body" method="post" id="borrow-exec-form" action="/applications/0/execute" onsubmit="return beforeSimpleExecSubmit('borrow-exec-qty')">
+      <p id="borrow-exec-info" class="muted small" style="margin-bottom:10px"></p>
+      <input type="hidden" name="action" value="complete">
+      <label class="f-label">{{ tr('执行数量（只能减少，不能超过申请数量）') }}
+        <input class="f-input" type="number" name="exec_qty" id="borrow-exec-qty" min="0" step="any" required>
+      </label>
+      <label class="f-label">{{ tr('borrow.location') }}<span class="req">*</span>
+        <select class="f-input" id="borrow-exec-loc" name="location_id" required><option value="">{{ tr('加载中…') }}</option></select>
+      </label>
+      <p id="borrow-exec-locs" class="muted small ui-hint" style="margin:4px 0 10px"></p>
+      <label class="f-label">{{ tr('备注（可空）') }}<textarea class="f-input" name="note" rows="2"></textarea></label>
+      <div class="modal-foot"><button class="btn btn-primary" type="submit">{{ tr('确认借出') }}</button>
+      <button class="btn" type="button" onclick="closeModal('borrow-exec-modal')">{{ tr('btn_cancel') }}</button></div>
+    </form>
+  </div>
+</div>
 {% endblock %}
 {% block scripts %}
 <script>
+/* 方向 → 子类型：入库四项、出库五项，调库只留「全部类型」。
+   切换方向时按这张表重建下拉，并把不属于新方向的已选值清掉 ——
+   不这么做就会出现「选了入库、子类型还挂着退货」，页面筛出出库流水。 */
+const IO_SUB = {{ sub_map | tojson }};
+const IO_SUB_ALL = {{ tr('全部类型') | tojson }};
+function ioSyncSub(typeSel){
+  const form = typeSel.form || document;
+  const sub = form.querySelector('select[name=f_sub]');
+  if(!sub) return;
+  const opts = IO_SUB[typeSel.value] || [];
+  const keep = sub.value;
+  sub.innerHTML = '<option value="">' + IO_SUB_ALL + '</option>' +
+    opts.map(function(o){ return '<option value="' + o[0] + '">' + o[1] + '</option>'; }).join('');
+  sub.disabled = opts.length === 0;
+  sub.value = opts.some(function(o){ return o[0] === keep; }) ? keep : '';
+}
 const LOCS = {{ locations | tojson }};
+const CAN_REASSESS = {{ can_reassess | tojson }};   // 待报废转待维修复判权限
+const LINES = {{ lines | tojson }};      // 产线（设备可能没配到任何产线，所以线体列表单独取）
 const IO_EQUIP = {{ equipment | tojson }};
-let IO_PART = null, EXEC_TYPE = null;
-function ioApproverShow(){
-  const wrap = document.getElementById('io-approver-wrap');
-  if(!wrap) return;
-  const type = document.getElementById('io-type').value;
-  wrap.style.display = (type==='out' && IO_PART && IO_PART.is_valuable) ? '' : 'none';
-}
-function ioLineChange(){
-  const line = document.getElementById('io-line').value;
-  const dev = document.getElementById('io-device');
-  let html = '<option value="">{{ tr('设备（可空）') }}</option>';
-  IO_EQUIP.forEach(function(e){ if(!line || e.line_name===line){ html += '<option value="'+esc(e.name)+'">'+esc(e.name)+'</option>'; } });
-  dev.innerHTML = html;
-}
+const IO_USERS = {{ users | tojson }};
+const IO_CUR = {{ cur_uid }};
+// v1.0.18：出库人不再由前端填写，服务端一律取当前登录用户
+const REPAIR_CATS = {{ repair_categories | tojson }};  // v1.0.19：维修品类型二级字典 [{group,items}]
+// v1.0.22：配件好坏三态 + 货架属性约束（与服务端 _cond_attr_allowed / _loc_out_allowed 同源）
+const COND_MATRIX = {{ cond_matrix | tojson }};   // {库位属性: [允许的 condition]}
+const COND_NAMES  = {{ condition_names | tojson }}; // {good:'良品', defective:'不良品', repair:'维修品'}
+const COND_LIST   = Object.keys(COND_NAMES);
 function closeModal(id){ document.getElementById(id).style.display='none'; }
+function esc(s){ const d=document.createElement('div'); d.textContent=s==null?'':String(s); return d.innerHTML; }
+function fmt(v){ return Number(v||0).toLocaleString(window.LOCALE || 'zh-CN'); }
+// v1.0.21 维修品：库存行上的 repair_qty 表示这批里有几件是维修件。
+// 出库时「有维修件的库位」排最前、默认选中、前面打红三角，扣减时先扣维修件。
+function locRepair(l){
+  if(!l) return 0;
+  var q = Number(l.repair_qty != null ? l.repair_qty : 0) || 0;
+  // v1.0.23：修好回库的件带 condition='repair'；老数据可能只写了 condition 没写 repair_qty
+  if(q <= 0 && String(l.condition || '') === 'repair') q = Number(l.quantity) || 0;
+  return q;
+}
+function repairFirst(list){
+  return (list || []).slice().sort(function(a, b){
+    var ra = locRepair(a) > 0 ? 1 : 0, rb = locRepair(b) > 0 ? 1 : 0;
+    if(ra !== rb) return rb - ra;                       // 有维修件的排前
+    return (Number(b.quantity) || 0) - (Number(a.quantity) || 0);
+  });
+}
+// v1.0.42：可用库存列按「所选类型」取数——良品出库显示良品+维修品，
+// 换/检/修显示对应类型；报废显示待报废数；入库不占用库存 → 不显示。
+// 统一走 CondRules.stockOf（与后端四分类同源），避免两页口径分叉。
+function ioAvail(r){
+  if(r.tx_type === 'in') return null;                         // 入库：隐藏数字
+  var kind = 'good';
+  if(r.tx_type === 'out' && r.out_type === 'scrap') kind = 'scrap';
+  else if(r.tx_type === 'borrow'){
+    var st = r.sub_type || 'borrow';
+    if(st === 'maintenance') kind = 'maintenance';
+  }
+  return CondRules.stockOf(r.locs, kind);
+}
+// v1.0.40：维修品优先提示改成「行内」——只有 tx_type=出库 且 出库类型=领用
+// （general，即默认那种要填线别设备的领用）时才提示，且只算能从良品区出的库位。
+// 入库行、退货/报废/其它行都不再被这条红字干扰（以前顶部一条，全单混着提示）。
+// 返回值：{qty, names} 或 null。names 已按库位去重。
+function rowRepairInfo(r){
+  if(!r || r.tx_type !== 'out') return null;
+  if((r.out_type || 'general') !== 'general') return null;
+  var qty = 0, names = [];
+  (r.locs || []).forEach(function(l){
+    if((l.attribute || 'good') !== 'good') return;   // 待维修/待报废区不能领用出库
+    var q = locRepair(l);
+    if(q <= 0) return;
+    var nm = String(l.location || '').trim() || ('#' + l.location_id);
+    qty += q;
+    if(nm && names.indexOf(nm) < 0) names.push(nm);
+  });
+  if(!names.length) return null;
+  return {qty: qty, names: names};
+}
+// 行内提示的 HTML：塞在明细信息格右侧的空白处（不新起一列，表格不重排）
+function rowRepairHint(r){
+  var info = rowRepairInfo(r);
+  if(!info) return '';
+  var where = info.names.slice(0, 3).map(esc).join('、') + (info.names.length > 3 ? ' …' : '');
+  var txt = TR('维修品优先：请先从 {p} 出库（共 {q} 件）')
+    .replace('{p}', where).replace('{q}', fmt(info.qty));
+  return '<div class="io-repair-inline" style="grid-column:1/-1;margin-top:6px;padding:4px 8px;border-left:3px solid #cf1322;'
+       + 'background:#fff1f0;color:#a8071a;font-size:12px;line-height:1.5;border-radius:5px">▲ '
+       + txt + '</div>';
+}
+// v1.0.80：FIFO 摆放原则下沉到入库行的「明细信息」格内——与「维修品优先」同款红字，
+// 系统设置关闭先进先出（SYS_FIFO=0）或提示文案留空时不显示。
+function rowFifoInTip(r){
+  if(!r || r.tx_type !== 'in' || !SYS_FIFO || !SYS_FIFO_TIP) return '';
+  return '<div class="io-fifo-inline" style="grid-column:1/-1;margin-top:6px;padding:4px 8px;border-left:3px solid #cf1322;'
+       + 'background:#fff1f0;color:#a8071a;font-size:12px;line-height:1.5;border-radius:5px">▲ '
+       + esc(SYS_FIFO_TIP) + '</div>';
+}
+// v1.0.20：维修品类型改可搜索下拉（static/js/repairpick.js，全局单面板按需渲染）。
+// 旧实现每行拼一份全量 <optgroup>，几千词条时重绘一次要 1~3 秒。
 
-/* ---------- {{ tr('直接出入库') }} ---------- */
-function onIoPartPick(p){
-  IO_PART = p;
-  const qty = document.getElementById('io-qty');
-  if(p.qty_decimal){ qty.step='0.001'; qty.min='0.01'; }
-  else { qty.step='1'; qty.min='1'; }
-  ioApproverShow();
-  ioLoadLocs();
+// 库位属性 → 允许的 condition（空属性按良品处理）：与服务端 _cond_attr_allowed 同源
+function condLocOk(attr, cond){
+  attr = attr || 'good';
+  var allow = COND_MATRIX[attr] || ['good','repair'];
+  return allow.indexOf(cond) >= 0;
 }
-function ioTypeChange(){
-  document.getElementById('io-loc').value='';
-  document.getElementById('io-loc-new-wrap').style.display='none';
-  document.getElementById('io-new-loc-id').value='';
-  const type = document.getElementById('io-type').value;
-  document.getElementById('io-out-fields').style.display = type==='out' ? '' : 'none';
-  const r = document.getElementById('io-reason');
-  if(r) r.placeholder = type==='out' ? '{{ tr('使用原因') }}{{ tr('（') }}{{ tr('出库必填信息') }}{{ tr('）') }}' : TR('备注{{ tr('（') }}可空{{ tr('）') }}');
-  ioApproverShow();
-  if(IO_PART) ioLoadLocs();
-}
-function ioLoadLocs(){
-  const sel = document.getElementById('io-loc');
-  const type = document.getElementById('io-type').value;
-  if(!IO_PART){ sel.innerHTML='<option value="">{{ tr('先选择备件…') }}</option>'; return; }
-  sel.innerHTML='<option value="">{{ tr('加载中') }}…</option>';
-  fetch('/api/parts/'+IO_PART.id).then(r=>r.json()).then(d=>{
-    const locs = d.locations || [];
-    let html='';
-    if(type==='out'){
-      // 出库只能从「有放置位置且有库存」的库位扣减（待定行不可出库）
-      const has = locs.filter(l=>Number(l.quantity)>0 && Number(l.location_id));
-      if(!has.length){
-        sel.innerHTML='<option value="">{{ tr('该备件当前没有可出库的库位') }}{{ tr('（') }}{{ tr('无库存或全部处于待定') }}{{ tr('）') }}</option>';
-        sel.disabled=true;
-      } else {
-        has.forEach(l=>{ html += '<option value="'+esc(l.location_id||'')+'">'+esc(l.location)+'{{ tr('（') }}{{ tr('库存') }} '+fmt(l.quantity)+'{{ tr('）') }}</option>'; });
-        sel.disabled=false;
-        if(has.length===1) sel.value = String(has[0].location_id||'');
-      }
-    } else {
-      const seen = {};
-      locs.forEach(l=>{ if(!seen[l.location]) seen[l.location]={id:l.location_id, q:Number(l.quantity)||0}; });
-      Object.keys(seen).forEach(loc=>{ html += '<option value="'+esc(seen[loc].id||'')+'">'+esc(loc)+'{{ tr('（') }}{{ tr('现有') }} '+fmt(seen[loc].q)+'{{ tr('）') }}</option>'; });
-      if(!Object.keys(seen).length) html += '<option value="">{{ tr('尚无任何库存库位') }}</option>';
-      html += '<option value="__NEW__">＋ {{ tr('新库位') }}…</option>';
-      sel.disabled=false;
-    }
-    sel.innerHTML = '<option value="">{{ tr('请选择库位') }}</option>' + html;
-    ioLocChange();
-  }).catch(()=>{ sel.innerHTML='<option value="">{{ tr('库位加载失败') }}{{ tr('，') }}{{ tr('请重试') }}</option>'; });
-}
-function ioLocChange(){
-  const wrap = document.getElementById('io-loc-new-wrap');
-  const show = document.getElementById('io-loc').value==='__NEW__';
-  wrap.style.display = show ? 'inline-flex' : 'none';
-  if(show) ioNewReset();
-}
-function beforeIoSubmit(){
-  const sel = document.getElementById('io-loc');
-  if(sel.value==='__NEW__'){
-    const lid = document.getElementById('io-new-loc-id').value;
-    if(!lid){ alert(TR('请选择新库位{{ tr('（') }}仓库-货架-货位-格位{{ tr('）') }}')); return false; }
-    sel.value = lid;
-    document.getElementById('io-new-loc-id').name = 'new_location_id';
-    sel.removeAttribute('required');
-  }
-  if(sel.value==='' && document.getElementById('io-type').value==='out'){
-    alert(TR('请选择出库库位')); return false;
-  }
+// 库位属性 → 允许的出库类型（空属性按良品处理）：与服务端 _loc_out_allowed 同源
+//   待维修(pending_repair)：仅维修(maintenance)
+//   待报废(pending_scrap)：报废(scrap) 或 维修(maintenance)
+//   良品：全部
+// v1.0.24：出库主流程子项按属性置灰——待报废区只剩「报废」、待维修区全灰；
+// 维修一律走「借·换·检·修」→「修(维修)」，服务端同源强校验。
+function locOutOk(attr, ot){
+  attr = attr || 'good';
+  if(attr === 'pending_repair') return ot === 'maintenance';
+  if(attr === 'pending_scrap')  return (ot === 'scrap' || ot === 'maintenance');
+  // v1.0.31：维修严格只针对不良品——良品不送修
+  // v1.0.32：良品也不能报废——报废只列待报废库位，与服务端 _loc_out_allowed 同源
+  if(ot === 'maintenance' || ot === 'scrap') return false;
   return true;
 }
-/* 新库位级联（直接出入库） */
+// v1.0.38：只要属性名，分组标题由 locGroupLabel 统一拼。
+// 旧版把属性写成独立组「属性:良品」，跟「现有库位」并列摆着，读起来像两套概念。
+function attrName(attr){
+  attr = attr || 'good';
+  if(attr === 'pending_repair') return TR('待维修');
+  if(attr === 'pending_scrap')  return TR('待报废');
+  return TR('良品');
+}
+// v1.0.38：分组标题统一「类型（属性）」：现有库位（良品）/ 空位（待维修）/ 共用库位（待报废）
+// v1.0.38：分组标题里的括号跟着语言走——中文全角，其它语言半角，
+// 否则英文界面会出现「Existing locations（Good）」这种中英混排痕迹。
+function locParen(s){
+  return String(window.LOCALE || 'zh').indexOf('zh') === 0 ? ('（' + s + '）') : (' (' + s + ')');
+}
+function locGroupLabel(kind, attr){
+  var a = attrName(attr);
+  if(kind === 'free')   return TR('空位') + locParen(a);
+  if(kind === 'shared') return TR('共用库位') + locParen(a);
+  return TR('现有库位') + locParen(a);
+}
+// v1.0.32：待维修/待报废库位可混放多种物料——入库选中这类库位时，
+// 在字段内恒显提示，让操作者现场确认该库位是否真的放得下这些物料。
+function inLocHoldNote(attr){
+  if(attr !== 'pending_repair' && attr !== 'pending_scrap') return '';
+  return '<span class="f-note f-shared">⚠ ' + TR('此库位为共用库位，请确认是否能放下此物件') + '</span>';
+}
+// v1.0.35：执行前把本批要放进共用库位的行汇总出来，让操作者一次确认
+function ioSharedLocRows(){
+  return (IODRAFT || []).filter(function(r){
+    if(r.tx_type !== 'in') return false;
+    var a = ioLocAttr(r, r.loc);
+    return a === 'pending_repair' || a === 'pending_scrap';
+  }).map(function(r){
+    var v = String(r.loc || '');
+    var hit = (r.locs || []).find(function(l){ return String(l.location_id) === v; });
+    var free = LOCS.find(function(l){ return String(l.id) === v; });
+    var name = hit ? hit.location : (free ? locName(free) : v);
+    return esc(r.code) + ' → ' + esc(name) + '（' + attrName(hit ? hit.attribute : (free && free.attribute)) + '）';
+  });
+}
+// 由入库行当前选中的库位解析其属性（现有库位取 r.locs，空位取全局 LOCS）
+function ioLocAttr(r, val){
+  const v = String(val || '');
+  if(!v || v === '__NEW__' || v === 'PENDING') return '';
+  const hit = (r.locs || []).find(l => String(l.location_id) === v);
+  if(hit) return hit.attribute || 'good';
+  const free = LOCS.find(l => String(l.id) === v);
+  return free ? (free.attribute || 'good') : '';
+}
+// A 方案：待报废区 → 待维修区（复判可修）。按「库位属性」判定，与后端
+// _is_scrap_to_repair 同源——两处都放 defective，状态矩阵本身不区分。
+function ioScrapToRepair(r, srcLocId, toLocId){
+  if(!srcLocId || !toLocId || String(srcLocId) === 'NULL') return false;
+  const sa = ioLocAttr(r, String(srcLocId));
+  if(sa !== 'pending_scrap') return false;
+  const hit = (r.locs || []).find(l => String(l.location_id) === String(toLocId));
+  if(hit) return (hit.attribute || 'good') === 'pending_repair';
+  const free = LOCS.find(l => String(l.id) === String(toLocId));
+  return !!free && (free.attribute || 'good') === 'pending_repair';
+}
+// 调库行的源库位 id：整库位/老库位从 key 取，批次行从库存行取
+function ioTransferSrcLocId(r){
+  const sk = String((r && r.loc) || '');
+  if(sk.indexOf('locall_') === 0) return sk.slice(7);
+  if(sk.indexOf('loc_') === 0) return sk.slice(4);
+  const si = transferSourceInfo((r && r.locs) || [], r && r.loc);
+  return si && si.row ? String(si.row.location_id || '') : '';
+}
+function ioLocHoldNote(i, val){
+  const r = IODRAFT[i], el = document.getElementById('io-hold-note-' + i);
+  if(r && el) el.innerHTML = inLocHoldNote(ioLocAttr(r, val));
+}
+// v1.0.31：按库位属性分组生成 <optgroup>，让「待报废 / 待维修 / 良品」一眼可分。
+// items=[{id,name,attr,extra}]；order 控制分组顺序，维修/不良品场景把待维修·待报废排前面。
+function groupLocsByAttr(items, sel, order, kind){
+  order = order || ['good', 'pending_repair', 'pending_scrap'];
+  const by = {};
+  items.forEach(l => { const a = l.attr || 'good'; (by[a] = by[a] || []).push(l); });
+  let html = '';
+  order.forEach(a => {
+    const arr = by[a];
+    if(!arr || !arr.length) return;
+    arr.sort((x, y) => String(x.name).localeCompare(String(y.name)));
+    html += '<optgroup label="' + esc(locGroupLabel(kind, a)) + '">' + arr.map(l =>
+      '<option value="' + esc(l.id) + '"' + (String(sel) === String(l.id) ? ' selected' : '') +
+      (l.title ? ' title="' + esc(l.title) + '"' : '') + '>' +
+      esc(l.name) + (l.extra || '') + '</option>').join('') + '</optgroup>';
+  });
+  return html;
+}
+// 本行受哪个库位属性约束：优先已选扣减库位；未选时若该物料所有有库存的
+// 库位属性一致，按该属性提前约束（选中待报废区/待维修区的物料即生效）。
+function rowOutAttr(r){
+  if(r.loc && r.loc !== '__NEW__'){
+    const hit = (r.locs || []).find(l => String(l.location_id) === String(r.loc));
+    if(hit) return hit.attribute || 'good';
+  }
+  const attrs = {};
+  (r.locs || []).forEach(l => {
+    if(Number(l.quantity) > 0 && Number(l.location_id)) attrs[l.attribute || 'good'] = 1;
+  });
+  const keys = Object.keys(attrs);
+  return keys.length === 1 ? keys[0] : null;
+}
+// 出库主流程「出库类型」子项是否置灰
+function outKindDisabled(attr, ot){
+  if(attr === 'pending_scrap') return ot !== 'scrap';
+  if(attr === 'pending_repair') return true;   // 根本不能走「出库」
+  return false;
+}
+// 借·换·检·修 子项是否置灰：受限库位只能出「修(维修)」
+function borrowSubDisabled(attr, st){
+  if(attr === 'pending_repair' || attr === 'pending_scrap') return st !== 'maintenance';
+  return false;
+}
+// 切换库位 / 恢复草稿后，把不合法的选择纠正到唯一允许的入口
+function normalizeOutKind(r){
+  const attr = rowOutAttr(r);
+  const limited = (attr === 'pending_repair' || attr === 'pending_scrap');
+  if(r.tx_type === 'out' && attr === 'pending_scrap' && r.out_type !== 'scrap') r.out_type = 'scrap';
+  if(r.tx_type === 'borrow' && limited && r.sub_type !== 'maintenance') r.sub_type = 'maintenance';
+  // v1.0.27：物料状态变化后，草稿里残留的「已被隐藏/禁用」出库类型要纠正掉。
+  // pending_scrap 分支保持 v1.0.24 原逻辑不动（那里强制 scrap，是 18 例矩阵锁定的口径）。
+  if(r.tx_type === 'out' && attr !== 'pending_scrap' && window.CondRules){
+    const _opts = CondRules.outKindOptions(CondRules.summary(r), attr, {});
+    const _cur = r.out_type || 'general';
+    if(!_opts.some(o => o.key === _cur && !o.disabled)){
+      const _first = _opts.find(o => !o.disabled);
+      if(_first) r.out_type = _first.key;
+    }
+  }
+}
+// ============ 线体 / 设备联动 ============
+// 「离线」= 没有配产线的设备：选离线只列无线体设备；选具体线体只列该线体下的设备；没选线体不给设备
+const OFFLINE = '__OFF__';                       // 离线（设备不属任何产线）的固定内码，不随界面语言变
+const OFFLINE_LABEL = {{ tr('离线') | tojson }};
+function lineOptions(cur, ph){
+  const out = ['<option value="">' + (ph || TR('线别…')) + '</option>',
+    '<option value="' + OFFLINE + '"' + (cur === OFFLINE ? ' selected' : '') + '>' + esc(OFFLINE_LABEL) + '</option>'];
+  LINES.forEach(l => {
+    out.push('<option value="' + esc(l.name) + '"' + (cur === l.name ? ' selected' : '') + '>' + esc(l.name) + '</option>');
+  });
+  return out.join('');
+}
+function devOptions(line, cur, ph){
+  const out = ['<option value="">' + (ph || TR('设备…')) + '</option>'];
+  if(!line) return out.join('');
+  const list = IO_EQUIP.filter(e => line === OFFLINE ? !e.line_name : e.line_name === line);
+  list.forEach(e => {
+    out.push('<option value="' + esc(e.name) + '"' + (cur === e.name ? ' selected' : '') + '>' + esc(e.name) + '</option>');
+  });
+  if(!list.length) out.push('<option value="" disabled>' + TR('该线体下暂无设备') + '</option>');
+  return out.join('');
+}
+function devFitsLine(devName, line){
+  const d = IO_EQUIP.find(e => e.name === devName);
+  if(!d) return false;
+  return line === OFFLINE ? !d.line_name : d.line_name === line;
+}
+
+// ============ 可用空位（入库选位置用，和「新增物料」同一套规则） ============
+// 空位 = 还没有任何物料存放的库位行；已被占用的不列出来，避免把两个物料塞进同一个位置
+function freeLocs(){ return LOCS.filter(l => !l.part_id); }
+function locName(l){
+  return [l.warehouse, l.rack, l.shelf, l.bin].filter(x => x && String(x).trim()).join('-');
+}
+function freeLocGroups(sel){
+  const pool = freeLocs(), byWh = {};
+  pool.forEach(l => { (byWh[l.warehouse] = byWh[l.warehouse] || []).push(l); });
+  return Object.keys(byWh).sort().map(wh =>
+    '<optgroup label="' + esc(wh) + '">' + byWh[wh]
+      .sort((a, b) => locName(a).localeCompare(locName(b)))
+      .map(l => '<option value="' + l.id + '"' + (String(sel) === String(l.id) ? ' selected' : '') + '>' +
+        esc(locName(l)) + '（' + TR('空位') + '）</option>').join('') + '</optgroup>').join('');
+}
+// v1.0.29：按配件状态过滤「空库位」——新建的待维修/待报废库位没有物料库存，
+// 不会出现在「现有库位」里，必须单独按属性放行，否则不良品只能选待定、入不进真实库位。
+function freeLocGroupsForCond(cond, sel){
+  // v1.0.31：按库位属性分组（待维修/待报废在前），每个库位名后带属性标签，
+  // 让「不良品入库」时一眼分清哪个是待报废、哪个是待维修。
+  const pool = freeLocs().filter(l => condLocOk(l.attribute, cond));
+  // v1.0.38：组标题已经写明「空位（良品）」，条目不再重复挂「（空位）」
+  const items = pool.map(l => ({id: l.id, name: locName(l), attr: l.attribute || 'good'}));
+  return groupLocsByAttr(items, sel, ['pending_repair', 'pending_scrap', 'good'], 'free');
+}
+// v1.0.36：待维修 / 待报废 = 共用库位，同一库位可混放多种不同料号。
+// 已被其它物料占用的这类库位也必须出现在入库候选里——旧逻辑只列「本物料已有库位」
+// 和「全局空位」，库位一被占用就从下拉里消失，第二个料号再也选不到它。
+// skip：已在该物料「现有库位」组里列过的库位 id，避免重复。
+function sharedLocGroupsForCond(cond, sel, skip){
+  skip = skip || {};
+  const items = LOCS.filter(l => Number(l.id) && l.part_id && !skip[String(l.id)] &&
+                                  (l.attribute === 'pending_repair' || l.attribute === 'pending_scrap') &&
+                                  condLocOk(l.attribute, cond))
+    .map(l => ({id: l.id, name: locName(l), attr: l.attribute || 'good',
+                title: TR('此库位为共用库位，请确认是否能放下此物件')}));
+  return groupLocsByAttr(items, sel, ['pending_repair', 'pending_scrap'], 'shared');
+}
+
+// ============ 批量出入库草稿（持久化：切页回来不丢勾选与已填内容） ============
+// 按登录用户隔离：固定 key 会让同一浏览器换账号后看到别人的未提交草稿
+const IO_KEY = 'smt_iocart_u' + {{ cur_uid or 0 }};
+try{ sessionStorage.removeItem('smt_iocart'); }catch(e){}
+function ioLoad(){ try{ const a = JSON.parse(sessionStorage.getItem(IO_KEY)); return Array.isArray(a) ? a : []; }catch(e){ return []; } }
+function ioSave(){ try{ sessionStorage.setItem(IO_KEY, JSON.stringify(IODRAFT)); }catch(e){} }
+let IODRAFT = ioLoad();  // {pid, code, name, unit, dec, stock, valuable, tx_type, qty, reason, loc, to_loc, batch, applicant, use_line, use_device, locs}
+// 兼容旧草稿：「离线」原来存的是当时的界面文字，统一换成内码；只填设备没填线体的按设备所属线体补上
+IODRAFT.forEach(r => {
+  if(r.use_line && r.use_line !== OFFLINE && !LINES.some(l => l.name === r.use_line)){
+    const d0 = IO_EQUIP.find(e => e.name === r.use_device);
+    if(!r.use_device || (d0 && !d0.line_name)) r.use_line = OFFLINE;
+  }
+  if(r.use_device && !r.use_line){
+    const d = IO_EQUIP.find(e => e.name === r.use_device);
+    if(d) r.use_line = d.line_name || OFFLINE;
+  }
+  // v1.0.13 子类型：老草稿缺字段时补默认值（出库一般 / 入库采购）
+  if(!r.out_type) r.out_type = 'general';
+  if(!r.in_type) r.in_type = 'purchase';
+  if(!r.condition) r.condition = 'good';
+});
+let EMPTY_LOCS = [];     // 调库目标候选：空库位
+function loadEmptyLocs(){
+  fetch('/api/locations/empty').then(r => r.json()).then(d => { EMPTY_LOCS = d.locations || []; renderIo(); }).catch(() => {});
+}
+function ioFillReasonAll(){
+  const v = document.getElementById('io-reason').value.trim();
+  if(!v){ alert(TR('请先在左侧输入统一原因')); return; }
+  IODRAFT.forEach(r => { if(!(r.reason || '').trim()) r.reason = v; });
+  ioSave(); renderIo();
+}
+
+function addIoRows(parts){
+  let added = 0;
+  const jobs = parts.map(p => fetch('/api/parts/' + p.id).then(r => r.json()).then(d => {
+    if(ioIndex(p.id) < 0){
+      const _locs = (d.locations || []).filter(l => Number(l.quantity) > 0);
+      // v1.0.46：新增行不再默认选中库位（v1.0.21 的「维修件库位优先默认」取消）——
+      // 由仓管按实际拿货库位自行选；编辑已有行的回显走 r.loc，不受影响。
+      IODRAFT.push({pid: p.id, code: d.part_code, name: d.name, unit: d.unit || '',
+        dec: d.qty_decimal || 0, stock: d.total_stock || 0, valuable: d.is_valuable || 0,
+        tx_type: 'out', qty: '', reason: '', loc: '', to_loc: '', batch: '', applicant: '',
+        use_line: '', use_device: '', expected_return: '', sub_type: 'borrow',
+        out_type: 'general', in_type: 'purchase', destination: '', receiver: '', contact: '', repair_type: '',
+        condition: 'good', locs: _locs, cond_summary: d.cond_summary || {}});
+      added++;
+    }
+  }).catch(() => {}));
+  Promise.all(jobs).then(() => { ioSave(); renderIo(); if(added) ioMsg(TR('已添加') + ' ' + added + ' ' + TR('行')); });
+}
+
+function ioIndex(pid){ return IODRAFT.findIndex(r => r.pid === pid); }
+
+function ioOutLocs(r, noFifo){
+  // 出库只能从「有放置位置且有库存」的库位扣减；FIFO 时只显示最早批次。
+  // v1.0.34：报废(scrap) 按库位属性选库位、不受先进先出批次约束——
+  // 否则待报废库位的批次只要不是最早批次，报废下拉就会被 FIFO 挡成空，
+  // 出现「物料明明在待报废库位有库存却选不到库位」。
+  const has = r.locs.filter(l => Number(l.quantity) > 0 && Number(l.location_id));
+  if(SYS_FIFO && has.length && !noFifo){
+    const od = has[0].in_date || '', ob = has[0].batch_no || '';
+    // v1.0.40：维修件所在库位不受 FIFO 批次遮挡。不修这个，「维修品优先：请先从 X 出库」
+    // 指的那个库位在下拉里根本选不到（最早批次在别的库位时必现）——提示和可选项自相矛盾。
+    // 维修品先出本来就是既定规则，服务端扣减也是先扣 repair_qty。
+    return has.filter(function(l){
+      return ((l.in_date || '') === od && (l.batch_no || '') === ob) || locRepair(l) > 0;
+    });
+  }
+  return has;
+}
+
+// 先进先出取货计划：按顺序算出这单要动哪几个库位、各拿多少
+// list 需已按 FIFO 排好（in_date,id）；need 为空/0 时只标第一个（维持旧行为）
+// 返回 [{loc, take}]，下标+1 就是星标序号
+function fifoPickPlan(list, need){
+  const plan = [];
+  let remain = Number(need) || 0;
+  for(const l of list){
+    const q = Number(l.qty != null ? l.qty : l.quantity) || 0;
+    if(q <= 0) continue;
+    if(remain > 0 && remain <= 0) break;
+    const take = remain > 0 ? Math.min(q, remain) : (plan.length ? 0 : q);
+    if(take <= 0) continue;
+    plan.push({loc: l, take: take});
+    if(remain > 0) remain -= take;
+  }
+  return plan;
+}
+
+function ioRowHtml(r, i){
+  const _tAttr = rowOutAttr(r);
+  const typeSel = '<select class="f-input" style="max-width:82px" onchange="setIoRow(' + i + ',\'tx_type\',this.value)">' +
+    ['out', 'in', 'transfer', 'borrow'].map(t => {
+      const lab = t === 'out' ? TR('出库') : (t === 'in' ? TR('入库') : (t === 'transfer' ? TR('调库') : TR('借·换·检·修')));
+      // v1.0.24：待维修区物料根本不能走「出库」，只能改选「借·换·检·修」→「修(维修)」
+      const off = (t === 'out' && _tAttr === 'pending_repair') ? ' disabled' : '';
+      return '<option value="' + t + '"' + (r.tx_type === t ? ' selected' : '') + off + '>' + lab + '</option>';
+    }).join('') + '</select>';
+  const part = '<b class="mono">' + esc(r.code) + '</b><br><span class="muted">' + esc(r.name) + '</span>' +
+    (r.valuable ? ' <span class="badge badge-val">{{ tr('status_valuable') }}</span>' : '');
+  // v1.0.78：整库位调库数量由系统按该库位合计填入，不允许手改；批次可调小。
+  const _srcInfo0 = r.tx_type === 'transfer' ? transferSourceInfo(r.locs, r.loc) : null;
+  const _lockQty = !!(r.tx_type === 'transfer' && String(r.loc || '').indexOf('locall_') === 0);
+  const qty = '<input class="f-input" type="number" data-qty="1" id="io-qty-' + i + '" step="' + (r.dec ? '0.001' : '1') + '" min="' + (r.dec ? '0.001' : '1') + '"' +
+    (_srcInfo0 && !_lockQty ? ' max="' + esc(_srcInfo0.qty) + '"' : '') +
+    (_lockQty ? ' readonly title="' + TR('整库位调库数量为该库位合计，不可修改') + '" style="max-width:90px;background:#f1f5f9;color:#475569"' : ' style="max-width:90px"') +
+    ' value="' + esc(r.qty) + '" onchange="setIoRow(' + i + ',\'qty\',this.value)">';
+  // 原因按行填：出库必填（领用=申请原因，特殊类型=对应原因；返还=备注，可空）
+  const _reassess = r.tx_type === 'transfer' && ioScrapToRepair(r, ioTransferSrcLocId(r), r.to_loc);
+  const _reasonOptional = (r.tx_type === 'out' && r.out_type === 'giveback');
+  const _reasonLabel = r.tx_type === 'out'
+    ? (r.out_type === 'return' ? TR('退货原因') : (r.out_type === 'exchange' ? TR('换货原因') : (r.out_type === 'internal' ? TR('转移原因') : (r.out_type === 'giveback' ? TR('备注') : (r.out_type === 'maintenance' ? TR('维修原因') : (r.out_type === 'verify' ? TR('校验/测试原因') : (r.out_type === 'scrap' ? TR('报废原因') : TR('申请原因'))))))))
+    : null;
+  const reasonCell = '<input class="f-input" type="text" style="min-width:140px' +
+    (_reassess ? ';border-color:#cf1322;background:#fff1f0' : '') + '" placeholder="' +
+    (_reassess ? (TR('复判原因') + TR('（') + TR('必填') + TR('）'))
+     : (_reasonLabel ? (_reasonLabel + TR('（') + TR(_reasonOptional ? '可空' : '必填') + TR('）')) : (r.tx_type === 'out' ? TR('申请原因') + TR('（') + TR('必填') + TR('）') : TR('备注') + TR('（') + TR('可空') + TR('）')))) +
+    '" value="' + esc(r.reason || '') + '" onchange="setIoRow(' + i + ',\'reason\',this.value)">';
+  let extra = '';
+  if(r.tx_type === 'out'){
+    const ot = r.out_type || 'general';
+    const _rowAttr = rowOutAttr(r);
+    // v1.0.22：按库位属性限制可选出库库位——待维修仅维修可出、待报废仅报废可出，其余出库类型只从良品区出
+    // v1.0.34：报废按属性选库位，跳过 FIFO 批次过滤（早批次在良品库位时不再挡住待报废库位）
+    const _noFifo = (ot === 'scrap' || ot === 'maintenance');
+    // v1.0.73：待维修/待报废是共用库位，同库位多批次合并展示（良品仍逐批次）。
+    const list = repairFirst(mergeLocsByLocation(ioOutLocs(r, _noFifo).filter(l => locOutOk(l.attribute, ot)), true));
+    let locOpts = ['<option value="">' + TR('扣减库位…') + '</option>'];
+    // 一单要跨多个库位时，把要动的库位全部打星并标 1/2/3（先进先出取货顺序）
+    const planSeq = {};
+    if(SYS_FIFO) fifoPickPlan(list, r.qty).forEach((p, i) => { planSeq[String(p.loc.location_id)] = i + 1; });
+    list.forEach((l, idx) => {
+      const bat = (SYS_FIFO && l.batch_no) ? (TR('请出库此批次') + ' ' + l.batch_no + '，') : '';
+      const n = planSeq[String(l.location_id)];
+      const tag = n ? ('⭐' + n + ' ') : '';
+      // v1.0.21：有维修件的库位前面打红三角，并写出件数，仓管低头看实物就能对上
+      const rep = locRepair(l);
+      const repTag = rep > 0 ? ('▲ ') : '';
+      // v1.0.40：原来写「（维修 N）」，跟属性标签里的「维修」撞词，看着像「这个库位是维修区」。
+      // 改成「含维修 N」——明白表示这批里混着几件修好回来的。
+      const repTxt = rep > 0 ? ('（' + TR('含维修') + ' ' + fmt(rep) + '）') : '';
+      // v1.0.31：库位名后带属性标签，一眼分清良品/待维修/待报废
+      // v1.0.40：良品区不再标【良品】——能出库的就是良品区，标了等于没信息；
+      // 只标待维修/待报废（标错就出不了库，这两个必须留）。
+      const _attr = l.attribute || 'good';
+      const attrTxt = _attr === 'good' ? '' : ('【' + attrName(_attr) + '】');
+      locOpts.push('<option value="' + esc(l.location_id || '') + '"' + (r.loc === String(l.location_id || '') ? ' selected' : '') + '>' + tag + repTag + attrTxt + ' ' + esc(l.location) + '，' + bat + TR('库存') + ' ' + fmt(l.quantity) + repTxt + '</option>');
+    });
+    if(!list.length){
+      const anyStock = ioOutLocs(r, _noFifo).length > 0;
+      if(_rowAttr === 'pending_repair') locOpts.push('<option value="" disabled>' + TR('待维修区物料不能走「出库」，请改选「借·换·检·修」→「修(维修)」') + '</option>');
+      else if(ot === 'scrap' && anyStock) locOpts.push('<option value="" disabled>' + TR('该物料没有「待报废」库位的库存') + '</option>');
+      else if(ot !== 'scrap' && anyStock) locOpts.push('<option value="" disabled>' + TR('该物料没有「良品区」库存（待维修/待报废库位需走对应出库类型）') + '</option>');
+      else locOpts.push('<option value="" disabled>' + TR('无可出库库位（无库存或全部待定）') + '</option>');
+    }
+    const appOpts = '<option value=""' + (r.applicant ? '' : ' selected') + '>' + TR('领用人') + '</option>' +
+      IO_USERS.map(u => '<option value="' + u.id + '"' + (String(r.applicant) === String(u.id) ? ' selected' : '') + '>' + esc(u.display_name) + '</option>').join('');
+    // 出库类型：领用（业务不变）/ 退货 / 内部转移 / 返还 / 报废。换货/维修/校验·测试已并入「借·换·检·修」入口
+    // v1.0.27：子选项由共享规则层按「物料状态 cond_summary + 所选库位属性」动态生成。
+    // 含不良品才出现返修/报废；报废只在待报废库位；全不良隐藏领用/内部转移。
+    const _kindLabels = {general:TR('领用'), return:TR('退货'), internal:TR('内部转移'),
+                         giveback:TR('返还'), scrap:TR('报废'), misc:TR('其它')};
+    const _kindOpts = CondRules.outKindOptions(CondRules.summary(r), _rowAttr, _kindLabels);
+    if(!_kindOpts.length) _kindOpts.push({key:'general', label:_kindLabels.general, disabled:false});
+    const _kindPairs = _kindOpts.map(o => [o.key, o.label]);
+    const _kindDis = {}; _kindOpts.forEach(o => { _kindDis[o.key] = o.disabled; });
+    const kindSel = '<select class="f-input" style="max-width:92px" onchange="setIoRow(' + i + ',\'out_type\',this.value)">' +
+      _kindPairs.map(kv =>
+        '<option value="' + kv[0] + '"' + ((r.out_type || 'general') === kv[0] ? ' selected' : '') +
+        (outKindDisabled(_rowAttr, kv[0]) || _kindDis[kv[0]] ? ' disabled' : '') + '>' + esc(kv[1]) + '</option>').join('') + '</select> ';
+    const appSel = '<select class="f-input" style="max-width:120px" onchange="setIoRow(' + i + ',\'applicant\',this.value)">' + appOpts + '</select> ';
+    const locSel = '<select class="f-input" style="max-width:190px" onchange="setIoRow(' + i + ',\'loc\',this.value);showNewWrap()">' + locOpts.join('') + '</select>';
+    if(r.out_type === 'misc'){
+      // v1.0.44：领用人框只给「领用」行；其它类型处理人一律默认当前登录用户，
+      // 与其它出库类型口径一致。这里只留「出库类型 + 扣减库位」两个框。
+      const tipMisc = TR('「其它」出库只需扣减库位；处理人默认为当前登录用户，贵重物料仍按审批档走');
+      extra = kindSel + locSel +
+        ' <span class="muted small" style="cursor:help" title="' + tipMisc + '">ⓘ</span>';
+    } else if(r.out_type && r.out_type !== 'general'){
+      // 特殊出库：目的地/接收人/联系方式。v1.0.18：出库人由服务端默认取当前登录用户，页面不再出现录入框
+      const TRACK5 = (r.out_type === 'maintenance' || r.out_type === 'verify');
+      const destPh = TRACK5 ? TR('目的公司/地址') : TR('目的地或目的公司');
+      const erField = r.out_type === 'exchange'
+        ? ' <input class="f-input dt-auto dtp-input" type="text" data-dtp="1" readonly placeholder="' + TR('预计回库时间') + '" style="max-width:190px" title="' + TR('预计回库时间') + '" value="' + esc(spmsDtDisplay(r.expected_return)) + '" onchange="setIoRow(' + i + ',\'expected_return\',spmsNormDateTime(this.value));this.blur()">'
+        : (TRACK5
+          ? ' <input class="f-input dt-auto dtp-input" type="text" data-dtp="1" readonly placeholder="' + TR('预计回库时间') + '" style="max-width:190px" title="' + TR('预计回库时间') + '" value="' + esc(spmsDtDisplay(r.expected_return)) + '" onchange="setIoRow(' + i + ',\'expected_return\',spmsNormDateTime(this.value));this.blur()">'
+          : '');
+      // v1.0.27：报废不显示目的地/接收人/联系方式三个框（服务端同步免校验、免落库）
+      const kindFields = (r.out_type === 'scrap') ? '' :
+        '<input class="f-input" type="text" style="max-width:170px" placeholder="' + destPh + '" value="' + esc(r.destination || '') + '" onchange="setIoRow(' + i + ',\'destination\',this.value)"> ' +
+        '<input class="f-input" type="text" style="max-width:100px" placeholder="' + TR('接收人') + '" value="' + esc(r.receiver || '') + '" onchange="setIoRow(' + i + ',\'receiver\',this.value)"> ' +
+        '<input class="f-input" type="text" style="max-width:130px" placeholder="' + TR('联系方式') + '" value="' + esc(r.contact || '') + '" onchange="setIoRow(' + i + ',\'contact\',this.value)">' + erField;
+      const tip = TR('按「审批设置」里的档位走审批；处理人默认为当前登录用户');
+      extra = kindSel + kindFields + ' ' + locSel +
+        ' <span class="muted small" style="cursor:help" title="' + tip + '">ⓘ</span>';
+      // v1.0.28：返还子模式即时提示可返还批次库位（借入批次优先 / 维修品 / 先进先出）
+      if(r.out_type === 'giveback'){
+        extra += '<div class="muted small gb-hint" data-pid="' + esc(r.pid) + '">' +
+          TR('优先返还借入批次；') +
+          '<span class="gb-list"></span></div>';
+      }
+    } else {
+      extra = kindSel + appSel +
+      '<select class="f-input" style="max-width:110px" onchange="setIoRow(' + i + ',\'use_line\',this.value)">' + lineOptions(r.use_line) + '</select> ' +
+      '<select class="f-input" style="max-width:130px" onchange="setIoRow(' + i + ',\'use_device\',this.value)">' + devOptions(r.use_line, r.use_device) + '</select> ' +
+      locSel +
+      (r.valuable ? ' <span class="muted small">' + TR('转审批') + '</span>' : '');
+      // v1.0.40：维修品优先提示就写在本行控件下方的空白处——只对领用行、且该物料确有维修品时出现
+      extra += rowRepairHint(r);
+    }
+  } else if(r.tx_type === 'borrow'){
+    // v1.0.61：领用人默认显示「借用人」占位，不再自动选中当前登录用户（系统管理员）；
+    // 编辑老单据回显 r.applicant 仍正常。
+    const appOpts = '<option value=""' + (r.applicant ? '' : ' selected') + '>' + TR('借用人') + '</option>' +
+      IO_USERS.map(u => '<option value="' + u.id + '"' + (String(r.applicant) === String(u.id) ? ' selected' : '') + '>' + esc(u.display_name) + '</option>').join('');
+    // 借·换·检·修 统一入口：子类型 借(借用) / 换货 / 维修 / 校验·测试
+    const _bAttr = rowOutAttr(r);
+    const subSel = '<select class="f-input" style="max-width:104px" onchange="setIoRow(' + i + ',\'sub_type\',this.value)">' +
+      [['borrow',TR('借(借用)')],['exchange',TR('换(换货)')],['maintenance',TR('修(维修)')],['verify',TR('检(校验/测试)')]].map(kv =>
+        '<option value="' + kv[0] + '"' + ((r.sub_type || 'borrow') === kv[0] ? ' selected' : '') +
+        (borrowSubDisabled(_bAttr, kv[0]) ? ' disabled' : '') + '>' + kv[1] + '</option>').join('') + '</select> ';
+    const st = r.sub_type || 'borrow';
+    if(st === 'borrow'){
+      // 借用：借用人 + 预计归还日 + 借出库位（借用只能从良品区出，待维修/待报废区受属性限制）
+      const list = repairFirst(mergeLocsByLocation(r.locs.filter(l => Number(l.quantity) > 0 && Number(l.location_id) && locOutOk(l.attribute, 'borrow')), true));
+      let locOpts = ['<option value="">' + TR('借出库位') + '…</option>'];
+      list.forEach(l => {
+        const rep = locRepair(l);
+        const mark = rep > 0 ? ('▲ ' + TR('维修') + ' ' + fmt(rep) + '，') : '';
+        const attrTxt = '【' + attrName(l.attribute) + '】';
+        locOpts.push('<option value="' + esc(l.location_id || '') + '"' + (r.loc === String(l.location_id || '') ? ' selected' : '') + '>' + mark + attrTxt + ' ' + esc(l.location) + '，' + TR('库存') + ' ' + fmt(l.quantity) + '</option>');
+      });
+      if(!list.length) locOpts.push('<option value="" disabled>' + TR('无可出库库位（无库存或全部待定）') + '</option>');
+      extra = subSel + '<select class="f-input" style="max-width:120px" onchange="setIoRow(' + i + ',\'applicant\',this.value)">' + appOpts + '</select> ' +
+        '<input class="f-input dt-auto dtp-input" type="text" data-dtp="1" readonly placeholder="' + TR('预计回库时间') + '" style="max-width:185px" title="' + TR('预计回库时间') + '" value="' + esc(spmsDtDisplay(r.expected_return)) + '" onchange="setIoRow(' + i + ',\'expected_return\',spmsNormDateTime(this.value));this.blur()"> ' +
+        '<select class="f-input" style="max-width:200px" title="{{ tr('借出库位') }}" onchange="setIoRow(' + i + ',\'loc\',this.value)">' + locOpts.join('') + '</select>' +
+        ' <span class="muted small" style="cursor:help" title="{{ tr('借用免审批，登记后进借·换·检·修台账') }}">ⓘ</span>';
+    } else {
+      // v1.0.18：换/检/修 出库人默认当前登录用户，页面不再出现录入框
+      // 其余字段：目的公司/地址、接收人、联系方式、预计返回时间；维修再加维修品类型
+      const TRACK5 = (st === 'maintenance' || st === 'verify');
+      const destPh = TRACK5 ? TR('目的公司/地址') : TR('目的地或目的公司');
+      const erField = st === 'exchange'
+        ? ' <input class="f-input dt-auto dtp-input" type="text" data-dtp="1" readonly placeholder="' + TR('预计回库时间') + '" style="max-width:190px" title="' + TR('预计回库时间') + '" value="' + esc(spmsDtDisplay(r.expected_return)) + '" onchange="setIoRow(' + i + ',\'expected_return\',spmsNormDateTime(this.value));this.blur()">'
+        : (TRACK5
+          ? ' <input class="f-input dt-auto dtp-input" type="text" data-dtp="1" readonly placeholder="' + TR('预计回库时间') + '" style="max-width:190px" title="' + TR('预计回库时间') + '" value="' + esc(spmsDtDisplay(r.expected_return)) + '" onchange="setIoRow(' + i + ',\'expected_return\',spmsNormDateTime(this.value));this.blur()">'
+          : '');
+      // v1.0.21：「维修品类型」不再在出库时让仓管选 —— 修好退回入库时就已标成维修件，
+      // 实物上也另有标记，出库只需要看库位。
+      const rtField = '';
+      // v1.0.31：换/检/修 也必须选「出库库位」（服务端按库位属性限制——维修只能从待维修/待报废区出，换/检只能从良品区出）
+      const bList = repairFirst(mergeLocsByLocation(r.locs.filter(l => Number(l.quantity) > 0 && Number(l.location_id) && locOutOk(l.attribute, st)), true));
+      let bLocOpts = ['<option value="">' + TR('出库库位') + '…</option>'];
+      bList.forEach(l => {
+        const rep = locRepair(l);
+        const mark = rep > 0 ? ('▲ ' + TR('维修') + ' ' + fmt(rep) + '，') : '';
+        // v1.0.31：带属性标签；维修经 locOutOk 已只剩待维修/待报废库位
+        const attrTxt = '【' + attrName(l.attribute) + '】';
+        bLocOpts.push('<option value="' + esc(l.location_id || '') + '"' + (r.loc === String(l.location_id || '') ? ' selected' : '') + '>' + mark + attrTxt + ' ' + esc(l.location) + '，' + TR('库存') + ' ' + fmt(l.quantity) + '</option>');
+      });
+      if(!bList.length){
+        const anyStock = r.locs.filter(l => Number(l.quantity) > 0 && Number(l.location_id)).length > 0;
+        if(st === 'maintenance' && anyStock) bLocOpts.push('<option value="" disabled>' + TR('不良品只能入「待维修 / 待报废」库位') + '</option>');
+        else if(anyStock) bLocOpts.push('<option value="" disabled>' + TR('该物料没有「良品区」库存（待维修/待报废需走对应类型）') + '</option>');
+        else bLocOpts.push('<option value="" disabled>' + TR('无可出库库位（无库存或全部待定）') + '</option>');
+      }
+      const bLocSel = '<select class="f-input" style="max-width:200px" title="' + TR('出库库位') + '" onchange="setIoRow(' + i + ',\'loc\',this.value)">' + bLocOpts.join('') + '</select> ';
+      const tip = TRACK5 ? TR('维修、校验/测试办理后扣减库存，还回后恢复，登记进借·换·检·修台账监控')
+                         : TR('按「审批设置」里的档位走审批；换货办理后扣减库存，还回后恢复，登记进借·换·检·修台账');
+      extra = subSel + bLocSel +
+        '<input class="f-input" type="text" style="max-width:150px" placeholder="' + destPh + '" value="' + esc(r.destination || '') + '" onchange="setIoRow(' + i + ',\'destination\',this.value)"> ' +
+        '<input class="f-input" type="text" style="max-width:90px" placeholder="' + TR('接收人') + '" value="' + esc(r.receiver || '') + '" onchange="setIoRow(' + i + ',\'receiver\',this.value)"> ' +
+        '<input class="f-input" type="text" style="max-width:110px" placeholder="' + TR('联系方式') + '" value="' + esc(r.contact || '') + '" onchange="setIoRow(' + i + ',\'contact\',this.value)">' + erField + rtField +
+        ' <span class="muted small" style="cursor:help" title="' + tip + '">ⓘ</span>';
+    }
+  } else if(r.tx_type === 'in'){
+    const cond = r.condition || 'good';
+    const seen = {};
+    r.locs.filter(l => Number(l.quantity) > 0 && Number(l.location_id)).forEach(l => { if(!seen[l.location_id]) seen[l.location_id] = l; });
+    // v1.0.22：库位属性约束——良品/维修品可入良品区与待维修区；不良品只能入待维修/待报废
+    const haveLocs = Object.keys(seen).filter(k => condLocOk(seen[k].attribute, cond));
+    let locOpts = ['<option value="">' + TR('入库库位…') + '</option>'];
+    if(haveLocs.length){
+      // v1.0.38：现有库位也带属性分组（不良品时待维修/待报废排前），条目显示库存
+      const _exItems = haveLocs.map(k => ({id: k, name: seen[k].location, attr: seen[k].attribute || 'good',
+        extra: '（' + TR('库存') + ' ' + fmt(seen[k].quantity) + '）'}));
+      locOpts.push(groupLocsByAttr(_exItems, r.loc, ['pending_repair', 'pending_scrap', 'good'], 'existing'));
+    }
+    // v1.0.36：待维修/待报废共用库位——已被其它料号占用的也列出来，可继续混放
+    const _sharedG = sharedLocGroupsForCond(cond, r.loc, seen);
+    if(_sharedG) locOpts.push(_sharedG);
+    // v1.0.29：空库位按属性过滤——良品/维修品入良品区空位并可新建；
+    // 不良品入待维修/待报废空位（新建的这类库位此前不在「现有库位」里，会入不进去）。
+    const _fitFree = freeLocGroupsForCond(cond, r.loc);
+    const _anyFitFree = freeLocs().some(l => condLocOk(l.attribute, cond));
+    if(_fitFree) locOpts.push(_fitFree);
+    if(condLocOk('good', cond)){
+      if(!haveLocs.length && !_anyFitFree) locOpts.push('<option value="" disabled>' + TR('暂无可用空位') + '</option>');
+      locOpts.push('<option value="__NEW__"' + (r.loc === '__NEW__' ? ' selected' : '') + '>＋ {{ tr('新库位') }}…</option>');
+    }
+    // v1.0.38：待定对所有配件状态开放——良品到货也可能还没定库位，
+    // 旧版只有不良品能选待定，良品只能硬挑一个库位，落错位置再调库更费事。
+    locOpts.push('<option value="PENDING"' + (r.loc === 'PENDING' ? ' selected' : '') + '>' +
+      TR('待定') + locParen(esc(COND_NAMES[cond] || '')) + '</option>');
+    // v1.0.38：这里该确认的是「放不放得下」，不再是重复一遍类型约束
+    locOpts.push('<option value="" disabled title="' + TR('放入前，请先确认库位空间是否够放下此物料') + '">' +
+      TR('放入前，请先确认库位空间是否够放下此物料') + '</option>');
+    // v1.0.13：入库子类型，默认采购；与出库子类型共用同一列但值域独立
+    const inKindSel = '<select class="f-input" style="max-width:92px" onchange="setIoRow(' + i + ',\'in_type\',this.value)">' +
+      [['purchase',TR('采购')],['repair',TR('返修')],['transfer_in',TR('转入')],['other',TR('借入')],['line_return',TR('产线退回')],['misc',TR('其它')]].map(kv =>
+        '<option value="' + kv[0] + '"' + ((r.in_type || 'purchase') === kv[0] ? ' selected' : '') + '>' + kv[1] + '</option>').join('') + '</select> ';
+    // v1.0.22：配件好坏状态（良品 / 不良品 / 维修品）
+    const condSel = '<select class="f-input" style="max-width:92px" onchange="setIoRow(' + i + ',\'condition\',this.value)">' +
+      COND_LIST.map(c => '<option value="' + c + '"' + (cond === c ? ' selected' : '') + '>' + esc(COND_NAMES[c]) + '</option>').join('') + '</select> ';
+    // v1.0.32：待维修/待报废库位混放多种物料——选中后提示现场确认能否放下
+    // v1.0.80：FIFO 摆放原则放进入库行「明细信息」格内；关闭先进先出或文案留空则不显示
+    extra = condSel + inKindSel +
+      '<select class="f-input" style="max-width:200px" onchange="setIoRow(' + i + ',\'loc\',this.value);showNewWrap();ioLocHoldNote(' + i + ',this.value)">' + locOpts.join('') + '</select> ' +
+      '<input class="f-input" type="text" style="max-width:130px" placeholder="{{ tr('批次号(空=按日期)') }}" value="' + esc(r.batch) + '" onchange="setIoRow(' + i + ',\'batch\',this.value)">' +
+      '<span class="f-note" id="io-hold-note-' + i + '">' + inLocHoldNote(ioLocAttr(r, r.loc)) + '</span>' +
+      rowFifoInTip(r);
+  } else {
+    // v1.0.78：源下拉按「库位」分组，组首整库位（locall_）、组下逐批（inv_）。
+    const srcOpts = transferSourceOptions(r.locs, r.loc, fmt, TR('整库位'));
+    // 源行的配件状态决定目标库位范围（与服务端 _cond_attr_allowed 同源）
+    const _srcInfo = transferSourceInfo(r.locs, r.loc);
+    const srcRow = _srcInfo && _srcInfo.row ? _srcInfo.row : null;
+    const srcCond = _srcInfo ? _srcInfo.cond : 'good';
+    // 整库位没有单一「源行」，用 value 里的库位 id 决定目标过滤（不能拿 null 代替）
+    const _sk = String(r.loc || '');
+    const _srcLocRaw = _sk.indexOf('locall_') === 0 ? _sk.slice(7)
+      : (_sk.indexOf('loc_') === 0 ? _sk.slice(4) : (srcRow ? String(srcRow.location_id) : ''));
+    const srcLocId = _srcLocRaw && _srcLocRaw !== 'NULL' ? Number(_srcLocRaw) : null;
+    let toOpts = ['<option value="" disabled' + (r.to_loc ? '' : ' selected') + '>' + TR('目标库位') + '</option>'];
+    const shown = {};    // 已列出的目标 id：草稿恢复时避免把已列库位误标「已占用」
+    let mine = [];
+    if(srcCond === 'defective'){
+      // v1.0.34：不良品（含待定不良品）调库只能调到待维修库位——待维修是通用库位，
+      // 已被其它物料占用的也要列出来（所有物料的不良品可混放同一个待维修库位），
+      // 良品 / 待报废库位一律不展示。
+      const own = {};
+      r.locs.forEach(l => { if(l.location_id != null) own[l.location_id] = Number(l.quantity) || 0; });
+      const items = LOCS.filter(l => Number(l.id) && (l.attribute || 'good') === 'pending_repair'
+                                   && String(l.id) !== String(srcLocId))
+        .map(l => ({id: l.id, name: locName(l), attr: 'pending_repair',
+                    extra: own[l.id] ? ('（' + TR('现有') + ' ' + fmt(own[l.id]) + '）') : ''}));
+      const g = groupLocsByAttr(items, r.to_loc, ['pending_repair']);
+      if(g) toOpts.push(g);
+      else toOpts.push('<option value="" disabled>' + TR('暂无待维修库位，请先创建待维修库位') + '</option>');
+      items.forEach(l => { shown[String(l.id)] = 1; });
+    } else {
+      // 目标：本物料已有库存的其它库位（同料合并，不算占用，按属性放行） / 待定 / 空库位
+      mine = r.locs.filter(l => l.location_id != null && String(l.location_id) !== String(srcLocId) && condLocOk(l.attribute, srcCond));
+      // v1.0.38：目标库位也按「现有库位（属性）/ 空位（属性）」分组，不再一路平铺
+      mine.forEach(l => { shown[String(l.location_id)] = 1; });
+      // v1.0.73：目标按库位合并，同库位多批次只显示一行合计库存
+      const _tItems = mergeLocsByLocation(mine, false).map(l => ({id: l.location_id, name: l.location, attr: l.attribute || 'good',
+        extra: '（' + TR('库存') + ' ' + fmt(l.quantity) + '）'}));
+      const _g1 = groupLocsByAttr(_tItems, r.to_loc, ['pending_repair', 'pending_scrap', 'good'], 'existing');
+      if(_g1) toOpts.push(_g1);
+      const _freeItems = EMPTY_LOCS.filter(l => condLocOk(l.attribute, srcCond)).map(l => {
+        // v1.0.34：空库位按属性放行（/api/locations/empty 已下发 attribute），
+        // 良品调不进待维修/待报废空位，与服务端校验一致
+        shown[String(l.id)] = 1;
+        return {id: l.id, name: l.full_name, attr: l.attribute || 'good'};
+      });
+      const _g2 = groupLocsByAttr(_freeItems, r.to_loc, ['pending_repair', 'pending_scrap', 'good'], 'free');
+      if(_g2) toOpts.push(_g2);
+    }
+    if(r.to_loc && !shown[String(r.to_loc)]){
+      const cur = LOCS.find(l => String(l.id) === String(r.to_loc));
+      toOpts.push('<option value="' + r.to_loc + '" selected>' + esc(cur ? cur.full_name : r.to_loc) + TR('（已占用）') + '</option>');
+    }
+    if(srcLocId == null && _sk){
+      toOpts = toOpts.filter(o => o.indexOf('value=""') < 0);
+      if(!toOpts.length) toOpts.push('<option value="" disabled>' + TR('暂无空库位，请先清理库位') + '</option>');
+    }
+    // v1.0.37：两个下拉各自带字段名（源库位 / 目标库位），一格一字段排成一排。
+    // 原来中间那个「→」是纯文本节点，进 grid 会变成一个匿名网格项，把目标库位
+    // 顶到第二排；方向由标签表达，箭头去掉。
+    extra = '<select class="f-input" style="max-width:210px" onchange="setIoRow(' + i + ',\'loc\',this.value)">' + srcOpts.join('') + '</select>' +
+      '<select class="f-input" style="max-width:200px" onchange="setIoRow(' + i + ',\'to_loc\',this.value)">' + toOpts.join('') + '</select>';
+  }
+  const _av = ioAvail(r);
+  return '<tr>' +
+    '<td>' + typeSel + '</td>' +
+    '<td>' + part + '</td>' +
+    '<td class="num"' + (_av === null ? ' title="' + TR('入库不占用现有库存，此处不显示可用数') + '"' : '') + '>' +
+      (_av === null ? '<span class="muted">—</span>' : fmt(_av) + ' ' + esc(r.unit)) + '</td>' +
+    '<td>' + qty + '</td>' +
+    '<td>' + reasonCell + '</td>' +
+    '<td><div class="io-extra">' + extra + '</div></td>' +
+    '<td><button class="btn btn-xs btn-danger" onclick="delIoRow(' + i + ')">✕</button></td>' +
+    '</tr>';
+}
+
+// v1.0.23：把「附加信息」列里挤成一团的下拉拆成带字段标签的整齐网格。
+// 标签优先取 data-lb / title / placeholder；都没有时用下拉首项的提示语（如「线别…」）。
+// v1.0.23：标签优先取「字段名」而不是控件当前值。onchange 里的
+// setIoRow(i,'xxx',...) 带着真实字段名，映射成已登记词条后网格里每格都看得懂。
+function ioFieldLabel(el){
+  var lb = el.getAttribute('data-lb') || '';
+  if(lb) return lb;
+  var m = /setIoRow\(\s*\d+\s*,\s*'([^']+)'/.exec(el.getAttribute('onchange') || '');
+  var NAME = {
+    out_type: TR('出库类型'), applicant: TR('领用人'), loc: TR('扣减库位'),
+    use_line: TR('线别'), use_device: TR('设备'), sub_type: TR('借·换·检·修'),
+    destination: TR('目的地或目的公司'), receiver: TR('接收人'),
+    contact: TR('联系方式'), expected_return: TR('预计返回日期'),
+    condition: TR('配件状态'), in_type: TR('入库类型'),
+    to_loc: TR('目标库位'),
+    repair_type: TR('维修品类型')
+  };
+  // 库位选择框的方向随业务变（扣减/入库/借出/出库/源库位），以控件自身提示语为准
+  if(m && NAME[m[1]] && m[1] !== 'loc') return NAME[m[1]];
+  lb = el.getAttribute('title') || el.getAttribute('placeholder') || '';
+  if(!lb && el.tagName === 'SELECT' && el.options.length){
+    var t = String(el.options[0].text || '').trim();
+    if(t.indexOf('…') >= 0 || t.indexOf('...') >= 0 || t.indexOf(TR('选择')) >= 0) lb = t;
+  }
+  return lb || TR('业务字段');
+}
+
+function ioFieldKey(el){
+  var m = /setIoRow\(\s*\d+\s*,\s*'([^']+)'/.exec(el.getAttribute('onchange') || '');
+  return m ? m[1] : '';
+}
+
+// v1.0.35：按字段给宽度，让「借·换·检·修」那 6 个框在同一排排满——
+// 原来统统一格 150px，一行只放得下 5 个，预计返回日期被挤到第二排。
+var IO_W = {
+  sub_type: '104px', out_type: '96px', applicant: 'minmax(96px,124px)',
+  loc: 'minmax(130px,240px)', destination: 'minmax(110px,210px)',
+  receiver: 'minmax(72px,96px)', contact: 'minmax(88px,116px)',
+  expected_return: 'minmax(120px,158px)',
+  in_type: '96px', condition: '96px', batch: 'minmax(96px,136px)',
+  to_loc: 'minmax(130px,240px)',
+  use_line: 'minmax(88px,108px)', use_device: 'minmax(96px,128px)'
+};
+// v1.0.35：一格一字段、整行不换行。宽屏按上限铺开，窄屏缩到下限，
+// 再窄就横向滚动（表格本来就带 overflow-x），不会折成两排。
+function layoutIoExtra(box){
+  var kids = [].slice.call(box.children).filter(function(el){
+    return el.classList && el.classList.contains('io-f');
+  });
+  if(!kids.length) return;
+  box.style.gridTemplateColumns = kids.map(function(el){
+    return IO_W[el.getAttribute('data-field') || ''] || 'minmax(96px,150px)';
+  }).join(' ');
+}
+
+function decorateIoExtra(){
+  document.querySelectorAll('#io-draft-body .io-extra').forEach(function(box){
+    var kids = [].slice.call(box.children).filter(function(el){
+      return el.classList && el.classList.contains('f-input');
+    });
+    var wrapped = [];
+    kids.forEach(function(el){
+      var lb = ioFieldLabel(el);
+      var wrap = document.createElement('label');
+      wrap.className = 'io-f';
+      wrap.setAttribute('data-field', ioFieldKey(el));
+      var s = document.createElement('small');
+      s.className = 'io-lb';
+      s.textContent = lb.replace(/[…\.]+$/, '').trim();
+      wrap.title = s.textContent;
+      // v1.0.42：子表头不再显示在框上方——字段名写进控件自身。
+      // 下拉首项已是字段名（如「扣减库位…」）的不用动；其余（日期、人名下拉等）补 title，
+      // 悬停即见字段名，视觉上每行只剩一排选择框。
+      if(!el.getAttribute('title')){
+        var first = (el.tagName === 'SELECT' && el.options.length) ? String(el.options[0].text || '').trim() : '';
+        if(!/[…\.]/.test(first) && first.indexOf(TR('选择')) < 0){
+          el.setAttribute('title', s.textContent);
+        }
+      }
+      box.insertBefore(wrap, el);
+      wrap.appendChild(s);
+      wrap.appendChild(el);
+      wrapped.push(wrap);
+    });
+    // 行末那个光秃秃的 ⓘ 说明图标原本也占一格网格，会把整行挤到第二排；
+    // 收进最后一格的标签里（悬停看说明），保证「都在一排」。
+    [].slice.call(box.children).forEach(function(sp){
+      if(sp.tagName !== 'SPAN' || !/muted/.test(sp.className || '')) return;
+      if((sp.textContent || '').trim() !== 'ⓘ') return;
+      var last = wrapped[wrapped.length - 1];
+      if(!last) return;
+      var lb2 = last.querySelector('.io-lb');
+      if(lb2) lb2.textContent += ' ⓘ';
+      if(sp.getAttribute('title')) last.title = sp.getAttribute('title');
+      sp.parentNode.removeChild(sp);
+    });
+    layoutIoExtra(box);
+  });
+}
+
+function renderIo(){
+  const tb = document.getElementById('io-draft-body');
+  IODRAFT.forEach(normalizeOutKind);   // v1.0.24：按库位属性统一纠正子项
+  // v1.0.40：维修品提示已下沉到行内（ioRowHtml 里的 rowRepairHint），这里不再统一渲染
+  if(!IODRAFT.length){
+    tb.innerHTML = '<tr><td colspan="7" class="muted center">{{ tr('还没有选择物料') }}{{ mk('。') }}{{ tr('点击「选择物料」开始') }}{{ mk('。') }}</td></tr>';
+    return;
+  }
+  tb.innerHTML = IODRAFT.map((r, i) => ioRowHtml(r, i)).join('');
+  decorateIoExtra();
+  loadGivebackHints();
+}
+
+// v1.0.28：返还子模式提示「未借入的批次库位」。数据来自 /api/part_batches
+// （mode=giveback 时按借入批次 → 维修品 → 先进先出排序），与服务端扣减顺序同源。
+function loadGivebackHints(){
+  document.querySelectorAll('#io-draft-body .gb-hint:not([data-loaded])').forEach(function(box){
+    box.setAttribute('data-loaded', '1');
+    const pid = box.getAttribute('data-pid');
+    if(!pid) return;
+    fetch('/api/part_batches?part_id=' + encodeURIComponent(pid) + '&mode=giveback')
+      .then(x => x.json()).then(d => {
+        const bs = (d.batches || []).slice(0, 8);
+        if(!bs.length) return;
+        const lines = bs.map(b => esc(b.batch_no) + ' @ ' + esc(b.location || '—') +
+          ' ×' + b.quantity + (b.unborrowed ? '（' + TR('未借入批次') + '）' : ''));
+        const out = box.querySelector('.gb-list');
+        if(out) out.innerHTML = '<br>' + lines.join('<br>');
+      }).catch(() => {});
+  });
+}
+
+function fixRowLoc(r){
+  // 切换类型/状态后，原选库位可能不再合法（如报废区只能报废、不良品不能入良品区），清空重选
+  if(!r.loc || r.loc === '__NEW__') return;
+  const comp = (r.locs || []).find(l => String(l.location_id) === String(r.loc));
+  if(!comp) return;
+  if(r.tx_type === 'in'){
+    if(!condLocOk(comp.attribute, r.condition || 'good')) r.loc = '';
+  } else if(r.tx_type === 'out'){
+    if(!locOutOk(comp.attribute, r.out_type || 'general')) r.loc = '';
+  } else if(r.tx_type === 'borrow'){
+    if(!locOutOk(comp.attribute, r.sub_type || 'borrow')) r.loc = '';
+  }
+}
+
+function setIoRow(i, k, v){
+  if(!IODRAFT[i]) return;
+  IODRAFT[i][k] = v;
+  // v1.0.78：调库源变化时自动带出数量——整库位填合计且锁框，批次填该批数量可改小。
+  if(k === 'loc' && IODRAFT[i].tx_type === 'transfer'){
+    const _si = transferSourceInfo(IODRAFT[i].locs, v);
+    if(_si) IODRAFT[i].qty = _si.qty;
+  }
+  // 换线体后，原来选的设备若不属于新线体就清掉
+  if(k === 'use_line' && IODRAFT[i].use_device && !devFitsLine(IODRAFT[i].use_device, v)) IODRAFT[i].use_device = '';
+  const r = IODRAFT[i];
+  // v1.0.61：出库方向/子类型切换时清空处理人（回到占位），不再自动填当前登录用户；
+  // 既防止残留的人被误提交，也避免一下拉就显示「系统管理员」让人以为已经选好。
+  if((k === 'tx_type' || k === 'out_type') && r.tx_type === 'out') r.applicant = '';
+  // 切到「借·换·检·修」时复位子类型（属性兼容判断保留）；v1.0.46 起不再默认选库位
+  if(k === 'tx_type' && v === 'borrow'){
+    const _ba = rowOutAttr(r);
+    r.sub_type = (_ba === 'pending_repair' || _ba === 'pending_scrap') ? 'maintenance' : 'borrow';
+  }
+  // v1.0.46：切回出库也不再默认选库位（原 v1.0.21 的维修件库位默认已取消）
+  // v1.0.22：切换条件/类型后，原选库位若不合法则清空
+  if(k === 'condition' || k === 'out_type' || k === 'sub_type' || k === 'tx_type') fixRowLoc(r);
+  if(k === 'tx_type' || k === 'sub_type' || k === 'out_type' || k === 'use_line' || k === 'loc' || k === 'condition') renderIo();
+  ioSave();
+}
+
+function delIoRow(i){ IODRAFT.splice(i, 1); ioSave(); renderIo(); }
+function clearIoDraft(){ if(IODRAFT.length && confirm(TR('确定清空全部勾选行吗？'))){ IODRAFT = []; ioSave(); renderIo(); } }
+function ioMsg(t){ /* 预留：批量结果提示走 flash 重载 */ }
+
+function showNewWrap(){
+  const need = IODRAFT.some(r => r.tx_type === 'in' && r.loc === '__NEW__');
+  document.getElementById('io-new-wrap').style.display = need ? 'flex' : 'none';
+  if(need) ioNewReset();
+}
+
+function validateIoRows(){
+  for(const r of IODRAFT){
+    const n = TR('明细') + ' [' + r.code + ']：';
+    const q = parseFloat(r.qty);
+    if(!q || q <= 0) return n + TR('请填写数量');
+    if(!r.dec && parseFloat(q) !== parseInt(q)) return n + TR('该物料数量必须为整数');
+    if(r.tx_type === 'out'){
+      const ot = r.out_type || 'general';
+      // v1.0.24：受限库位不能在出库主流程办理，前端先拦住（服务端 _parse_exec_location 同源校验）
+      const _va = rowOutAttr(r);
+      if(_va === 'pending_repair')
+        return n + TR('待维修区物料不能走「出库」，请改选「借·换·检·修」→「修(维修)」');
+      if(_va === 'pending_scrap' && ot !== 'scrap')
+        return n + TR('待报废区物料只能「报废」出库；送修请走「借·换·检·修」→「修(维修)」');
+      // 返还是「备注」，可空；其余出库类型的原因必填
+      if(ot !== 'giveback' && !(r.reason || '').trim()) return n + TR('请填写申请原因');
+      // v1.0.44：领用人框只给「领用」行；其余类型处理人自动取当前登录用户，不再要求申请人
+      if(ot === 'general' && !r.applicant) return n + TR('请选择申请人');
+      // v1.0.44：校验必须与本行实际渲染的框一一对应。
+      //  - general（领用）：线别 + 设备（报废/其它都不渲染这两个框，绝不能在这里要求）
+      //  - scrap（报废）/ misc（其它）：免目的地三字段，也免线别设备
+      //  - 其余特殊出库：目的地 + 接收人 + 联系方式，换/检/测另要返回时间
+      if(ot === 'general'){
+        if(!r.use_line) return n + TR('请选择使用线别');
+        if(!r.use_device) return n + TR('请选择使用设备');
+      } else if(ot !== 'scrap' && ot !== 'misc'){
+        if(!(r.destination || '').trim()) return n + TR('请填写目的地或目的公司');
+        if(!(r.receiver || '').trim()) return n + TR('请填写接收人');
+        if(!(r.contact || '').trim()) return n + TR('请填写联系方式');
+        if(ot === 'exchange' && !(r.expected_return || '').trim()) return n + TR('请选择预计返回日期');
+        if((ot === 'maintenance' || ot === 'verify') && !(r.expected_return || '').trim()) return n + TR('请选择预计返回时间');
+      }
+      if(!r.valuable && !r.loc) return n + TR('请选择扣减库位');
+      // 出库数量不能超过所选库位的现有库存（后端也会校验，这里提前拦住）
+      if(!r.valuable && r.loc){
+        const atLoc = (r.locs || []).filter(l => String(l.location_id || '') === String(r.loc))
+          .reduce((a, l) => a + Number(l.quantity || 0), 0);
+        if(atLoc && q > atLoc + 1e-9)
+          return n + TR('数量超过该库位库存') + '（' + fmt(atLoc) + '）';
+      }
+    }
+    if(r.tx_type === 'borrow'){
+      const bst = r.sub_type || 'borrow';
+      if(bst === 'borrow'){
+        if(!r.applicant) return n + TR('请选择借用人');
+        if(!r.expected_return) return n + TR('请选择预计归还日');
+        if(!r.loc) return n + TR('请选择库位');
+        const _avail = ioAvail(r) || 0; if(q > _avail) return n + TR('数量超过可用库存') + '（' + fmt(_avail) + '）';
+        // v1.0.19：借用也实扣库存，首取库位不够时服务端按 FIFO 跨库位自动补足，不再卡单库位
+      } else {
+        if(!(r.destination || '').trim()) return n + TR('请填写目的地或目的公司');
+        if(!(r.receiver || '').trim()) return n + TR('请填写接收人');
+        if(!(r.contact || '').trim()) return n + TR('请填写联系方式');
+        if(bst === 'exchange' && !(r.expected_return || '').trim()) return n + TR('请选择预计返回日期');
+        if((bst === 'maintenance' || bst === 'verify') && !(r.expected_return || '').trim()) return n + TR('请选择预计返回时间');
+        const _avail = ioAvail(r) || 0; if(q > _avail) return n + TR('数量超过可用库存') + '（' + fmt(_avail) + '）';
+      }
+    }
+    if(r.tx_type === 'in' && !r.loc) return n + TR('请选择入库库位（或新库位）');
+    if(r.tx_type === 'in' && r.loc === '__NEW__' && !document.getElementById('io-new-loc-id').value)
+      return n + TR('请先在上方选择新库位（仓库-货架-货位-格位）');
+    if(r.tx_type === 'transfer'){
+      if(!r.loc) return n + TR('请选择源库位');
+      const _si = transferSourceInfo(r.locs, r.loc);
+      if(_si && _si.whole && Math.abs(q - _si.qty) > 1e-9)
+        return n + TR('整库位调库数量为该库位合计，不可修改');
+      if(_si && !_si.whole && q > _si.qty + 1e-9)
+        return n + TR('该批次只有') + ' ' + fmt(_si.qty) + ' ' + esc(r.unit) + '，' + TR('不足调出') + ' ' + fmt(q);
+      const src = (r.locs || []).find(l => 'inv_' + l.inv_id === String(r.loc || ''));
+      const _srcKey = String(r.loc || '');
+      const srcLoc = src ? src.location_id
+        : ((_srcKey.indexOf('locall_') === 0 || _srcKey.indexOf('loc_') === 0)
+           ? _srcKey.slice(_srcKey.indexOf('locall_') === 0 ? 7 : 4) : null);
+      if(String(srcLoc) === 'NULL' && !r.to_loc) return n + TR('源库位已是待定，请选择目标位置');
+      if(r.to_loc && srcLoc != null && String(srcLoc) !== 'NULL' && String(r.to_loc) === String(srcLoc))
+        return n + TR('源库位与目标位置相同，无需调库');
+      if(src){
+        const sq = Number(src.quantity) || 0;
+        if(q > sq + 1e-9) return n + TR('该批次只有') + ' ' + fmt(sq) + ' ' + esc(r.unit) + '，' + TR('不足调出') + ' ' + fmt(q);
+      }
+      if(ioScrapToRepair(r, srcLoc, r.to_loc)){
+        if(!(r.reason || '').trim()) return n + TR('待报废转待维修必须填写复判原因');
+        if(!CAN_REASSESS) return n + TR('待报废转待维修需要复判审批权限');
+      }
+    }
+  }
+  return '';
+}
+
+function ioFifoLines(){
+  // 只对「直接出库（非贵重）且有扣减库位」的行算，贵重行走审批不涉及拿货
+  const outs = IODRAFT.filter(r => r.tx_type === 'out' && !r.valuable && r.loc);
+  if(!outs.length) return Promise.resolve([]);
+  return Promise.all(outs.map(r =>
+    fetch('/api/part_batches?part_id=' + r.pid + '&location_id=' + r.loc)
+      .then(x => x.json()).then(d => {
+        const bs = d.batches || [];
+        let remain = parseFloat(r.qty) || 0, used = [];
+        for(const b of bs){
+          if(remain <= 0) break;
+          const take = Math.min(Number(b.quantity) || 0, remain);
+          used.push(b.batch_no + (b.in_date ? '(' + b.in_date + ')' : '') + ' ×' + take);
+          remain -= take;
+        }
+        return r.code + '：' + (used.join('；') || '—') + (remain > 0 ? ' ⚠️' + TR('库存不足') : '');
+      }).catch(() => r.code + '：—')
+  ));
+}
+
+function executeBatch(){
+  if(!IODRAFT.length){ alert(TR('请先选择物料')); return; }
+  const bad = validateIoRows();
+  if(bad){ alert(bad); return; }
+  const items = IODRAFT.map(r => {
+    // v1.0.42：借·换·检·修 的「修(维修)」必须保留 tx_type=borrow 提交。
+    // 旧写法把它降级成 out+maintenance，服务端 _normal_out_type_ok 明确禁止正常出库走
+    // maintenance（只许台账链），于是仓管明明选了待维修库位却弹「出库类型不合法」。
+    // 服务端 borrow 分支本来就完整支持 exchange/maintenance/verify（扣库存+登记台账）。
+    const _effTx = r.tx_type;
+    const _effOut = r.out_type || 'general';
+    return ({
+    tx_type: _effTx, part_id: r.pid, quantity: parseFloat(r.qty),
+    reason: (r.reason || '').trim(),
+    location_id: r.loc === '__NEW__' ? document.getElementById('io-new-loc-id').value : r.loc,
+    new_location_id: r.tx_type === 'in' && r.loc === '__NEW__' ? document.getElementById('io-new-loc-id').value : '',
+    to_location_id: r.tx_type === 'transfer' ? (r.to_loc || 'PENDING') : '',
+    batch_no: r.batch || '',
+    // v1.0.44：非领用出库的处理人一律当前登录用户（双保险——即便草稿行残留他人也不外传）
+    applicant_id: (r.tx_type === 'out' && (r.out_type || 'general') !== 'general') ? String(IO_CUR) : (r.applicant || ''),
+    expected_return: r.expected_return || '',
+    out_type: _effOut,
+    // v1.0.22：入库携带配件好坏状态（良品/不良品/维修品）
+    condition: r.tx_type === 'in' ? (r.condition || 'good') : '',
+    // v1.0.16：按方向提交子类型；借·换·检·修 子类型随借出/换/检/修一并提交；后端统一按 tx_type 归一化
+    sub_type: r.tx_type === 'in' ? (r.in_type || 'purchase')
+              : (r.tx_type === 'borrow' ? (r.sub_type || 'borrow')
+                 : (_effTx === 'out' ? _effOut : '')),
+    destination: (r.destination || '').trim(),
+    receiver: (r.receiver || '').trim(),
+    contact: (r.contact || '').trim(),
+    repair_type: (r.repair_type || '').trim(),
+    use_line: r.use_line === OFFLINE ? '' : (r.use_line || ''),
+    use_device: r.use_device || '',
+    offline: r.use_line === OFFLINE ? 1 : 0
+  }); });
+  ioFifoLines().then(lines => {
+  const fifo = lines.length
+    ? '📦 ' + TR('先进先出：从最早批次扣') + '\n' + lines.join('\n') + '\n\n'
+    : '';
+  const shared = ioSharedLocRows();
+  const sharedMsg = shared.length
+    ? '⚠ ' + TR('此库位为共用库位，请确认是否能放下此物件') + '\n' + shared.join('\n') + '\n\n'
+    : '';
+  if(!confirm(sharedMsg + fifo + TR('确认执行本批') + ' ' + items.length + ' ' + TR('行操作吗？任一行校验不过整批不执行。'))) return;
+  fetch('{{ url_for("inout_batch") }}', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({reason: document.getElementById('io-reason').value.trim(), items: items})
+  }).then(r => r.json()).then(d => {
+    if(d.ok){
+      const parts = [];
+      if(d.executed) parts.push(TR('已执行') + ' ' + d.executed + ' ' + TR('行'));
+      // v1.0.44：提示按实际业务类型生成——内部转移/退货等转审批不再误报「贵重出库」
+      if(d.submitted){
+        const _kn = {general:TR('领用'), misc:TR('其它'), return:TR('退货'),
+          internal:TR('内部转移'), giveback:TR('返还'), exchange:TR('换货'),
+          maintenance:TR('维修'), verify:TR('校验/测试'), scrap:TR('报废')};
+        const _ks = d.submitted_kinds || {};
+        const _segs = Object.keys(_ks).map(function(k){
+          return (_kn[k] || k) + TR('出库已提交审批') + ' ' + _ks[k] + ' ' + TR('行');
+        });
+        parts.push(_segs.length ? _segs.join('，') : (TR('已提交审批') + ' ' + d.submitted + ' ' + TR('行')));
+      }
+      alert(parts.join('，'));
+      IODRAFT = [];
+      ioSave();
+      location.reload();
+    } else {
+      alert(d.error || TR('执行失败，请重试'));
+    }
+  }).catch(() => alert(TR('执行失败，请重试')));
+  });
+}
+
+/* 新库位级联（批量入库共享） */
 function ioNewReset(){
-  const whs = [...new Set(LOCS.map(l=>l.warehouse))];
+  // v1.0.38：仓库/货架/货位三级取「全部库位」，只有最后一格才限定空位。
+  // 旧版整条链都只认空位，库里一旦没有空库位行（货位全占满），第一级就是空的，
+  // 整个「＋新库位」看着像坏了，根本原因只是没东西可选。
+  const whs = [...new Set(LOCS.map(l => l.warehouse).filter(Boolean))];
   fillSel(document.getElementById('io-new-wh'), whs, TR('仓库号…'));
   fillSel(document.getElementById('io-new-rack'), [], TR('货架号…'));
   fillSel(document.getElementById('io-new-shelf'), [], TR('货位号…'));
   fillSel(document.getElementById('io-new-bin'), [], TR('格位号…'));
-  document.getElementById('io-new-loc-id').value='';
+  document.getElementById('io-new-loc-id').value = '';
 }
 function ioNewWh(){ cascadeNew('io', document.getElementById('io-new-wh').value, '', ''); }
 function ioNewRack(){ cascadeNew('io', document.getElementById('io-new-wh').value, document.getElementById('io-new-rack').value, ''); }
 function ioNewShelf(){ cascadeNew('io', document.getElementById('io-new-wh').value, document.getElementById('io-new-rack').value, document.getElementById('io-new-shelf').value); }
 function ioNewPick(){ pickNew('io', document.getElementById('io-new-bin')); }
 
-/* ---------- {{ tr('执行申请单') }}（{{ tr('出入库') }}） ---------- */
+/* ---------- 执行申请单（按行） ---------- */
 function openExecFrom(btn){
   openExec(Number(btn.dataset.aid), btn.dataset.no, Number(btn.dataset.pid), btn.dataset.code,
-    Number(btn.dataset.qty), btn.dataset.type, btn.dataset.loc,
-    btn.dataset.line, btn.dataset.device, btn.dataset.reason);
+    Number(btn.dataset.qty), btn.dataset.type, btn.dataset.loc, btn.dataset.otype, btn.dataset.cdt);
 }
-function openExec(aid, no, pid, code, qty, type, locText, line, device, reason){
+function openExec(aid, no, pid, code, qty, type, locText, otype, cdt){
   EXEC_TYPE = type;
-  document.getElementById('exec-form').action='/applications/'+aid+'/execute';
-  document.getElementById('exec-info').innerHTML='<b>'+no+'</b> '+code+' × '+qty+'{{ tr('（') }}'+(type==='in'?TR('入库'):TR('出库'))+'{{ tr('）') }}'
-    + (line ? '<br>{{ tr('使用线别') }}{{ tr('：') }}'+esc(line)+' {{ tr('｜') }} {{ tr('设备') }}{{ tr('：') }}'+esc(device||'—') : '')
-    + (reason ? '<br>{{ tr('领出原因') }}{{ tr('：') }}'+esc(reason) : '');
+  EXEC_OTYPE = otype || '';
+  EXEC_PID = pid;
+  // v1.0.48：执行数量可改，但只能减少；默认等于申请数量
+  EXEC_APPLY_QTY = parseFloat(qty) || 0; EXEC_QTY = EXEC_APPLY_QTY;
+  const qi = document.getElementById('exec-qty');
+  qi.value = EXEC_APPLY_QTY; qi.max = EXEC_APPLY_QTY; qi.min = 0; qi.step = 'any';
+  document.getElementById('exec-qty-hint').textContent = TR('申请数量') + '：' + fmt(EXEC_APPLY_QTY);
+  document.getElementById('exec-form').action = '/applications/' + aid + '/execute';
+  document.getElementById('exec-info').innerHTML = '<b>' + no + '</b> ' + code + ' × ' + qty + '（' + (type === 'in' ? TR('入库') : TR('出库')) + '）';
+  // v1.0.80：执行入库（含调库生成的转入单）时展示 FIFO 摆放原则；出库不展示，
+  // 系统设置关闭先进先出（SYS_FIFO=0）或文案留空也不展示
+  const _ft = document.getElementById('exec-fifo-tip');
+  _ft.textContent = (SYS_FIFO && type === 'in' && SYS_FIFO_TIP) ? SYS_FIFO_TIP : '';
+  _ft.style.display = _ft.textContent ? 'block' : 'none';
   document.getElementById('exec-loc-info').innerHTML = locText
-    ? '{{ tr('备件库位分布') }}{{ tr('：') }}<span class="mono">'+esc(locText)+'</span>'+TR('{{ tr('（') }}出库请从有库存的库位扣减{{ tr('）') }}')
-    : TR('该备件无任何库存库位');
+    ? '{{ tr('物料库位分布') }}：<span class="mono">' + esc(locText) + '</span>' + '（{{ tr('出库请从有库存的库位扣减') }}）'
+    : TR('该物料无任何库存库位');
   const sel = document.getElementById('exec-loc');
-  sel.innerHTML = '<option value="">{{ tr('加载中') }}…</option>';
-  document.getElementById('exec-loc-new-wrap').style.display='none';
-  document.getElementById('ex-new-loc-id').value='';
-  document.getElementById('exec-modal').style.display='flex';
-  fetch('/api/parts/'+pid).then(r=>r.json()).then(d=>{
+  sel.innerHTML = '<option value="">{{ tr('加载中…') }}</option>';
+  document.getElementById('exec-loc-new-wrap').style.display = 'none';
+  document.getElementById('ex-new-loc-id').value = '';
+  document.getElementById('exec-batch-wrap').style.display = (type === 'in') ? '' : 'none';
+  document.getElementById('exec-batch').value = '';
+  document.getElementById('exec-cond-wrap').style.display = 'none';
+  document.getElementById('exec-modal').style.display = 'flex';
+  fetch('/api/parts/' + pid).then(r => r.json()).then(d => {
     const locs = d.locations || [];
+    EXEC_LOCS_RAW = locs;
+    EXEC_UNIT = d.unit || '';
     let html = '';
-    if(type==='out'){
-      // 出库只能从「有放置位置且有库存」的库位扣减（待定行不可出库）
-      const has = locs.filter(l=>Number(l.quantity)>0 && Number(l.location_id));
+    if(type === 'out'){
+      const ot = EXEC_OTYPE || 'general';
+      // v1.0.22：按库位属性限制可选出库库位（待维修仅维修、待报废仅报废，其余只从良品区出）
+      const has = locs.filter(l => Number(l.quantity) > 0 && Number(l.location_id) && locOutOk(l.attribute, ot));
       if(!has.length){
-        html = '<option value="">{{ tr('该备件当前没有可出库的库位') }}{{ tr('（') }}{{ tr('无库存或全部处于待定') }}{{ tr('）') }}</option>';
+        EXEC_LOCS = [];
+        const anyStock = locs.filter(l => Number(l.quantity) > 0 && Number(l.location_id)).length > 0;
+        if(ot === 'scrap' && anyStock) html = '<option value="" disabled>' + TR('该物料没有「待报废」库位的库存') + '</option>';
+        else if(ot !== 'scrap' && anyStock) html = '<option value="" disabled>' + TR('该物料没有「良品区」库存（待维修/待报废库位需走对应出库类型）') + '</option>';
+        else html = '<option value="">{{ tr('该物料当前没有可出库的库位') }}（{{ tr('无库存或全部处于待定') }}）</option>';
         sel.disabled = true;
       } else {
-        has.forEach(l=>{ html += '<option value="'+esc(l.location_id||'')+'">'+esc(l.location)+'{{ tr('（') }}{{ tr('库存') }} '+fmt(l.quantity)+'{{ tr('）') }}</option>'; });
+        // 同一库位可能有多批次行（inventory 每批次一行）→ 按库位聚合，数量相加；顺序沿用 FIFO（in_date,id）
+        // v1.0.37：聚合时把每个批次行也留下来（rows），下方取货提示要按批次说清
+        // 「哪个批次、本批有几件、其中几件是维修件」，只给库位合计不够仓管核对实物。
+        const byLoc = [], idx = {};
+        has.forEach(l => {
+          const k = String(l.location_id);
+          if(!(k in idx)){
+            idx[k] = byLoc.length;
+            byLoc.push({ id: l.location_id, name: l.location, qty: 0, rep: 0,
+                         batch: l.batch_no || '', date: l.in_date || '', attr: l.attribute || 'good',
+                         rows: [] });
+          }
+          const it = byLoc[idx[k]];
+          const rep = locRepair(l);
+          it.qty += Number(l.quantity) || 0;
+          it.rep += rep;                              // v1.0.21：该库位维修件数（多批次相加）
+          if(!it.batch && l.batch_no) it.batch = l.batch_no;
+          it.rows.push({ batch: l.batch_no || '', qty: Number(l.quantity) || 0, rep: rep,
+                         date: l.in_date || '', cond: l.condition || 'good' });
+        });
+        // 批次行排序：维修件优先，其余按入库先后（与服务端扣减口径一致）
+        byLoc.forEach(it => {
+          it.rows.sort((a, b) => (b.rep > 0 ? 1 : 0) - (a.rep > 0 ? 1 : 0));
+        });
+        // 有维修件的库位排最前，其余按 FIFO
+        byLoc.sort((a, b) => (b.rep > 0 ? 1 : 0) - (a.rep > 0 ? 1 : 0));
+        EXEC_LOCS = byLoc;
+        byLoc.forEach((l, i) => {
+          // v1.0.37：单批次才写「请出库此批次 X」；多批次改写成批次数，避免指着某一批误导
+          const bat = l.rows.length > 1
+            ? (TR('共') + ' ' + l.rows.length + ' ' + TR('个批次') + '，')
+            : (l.batch ? (TR('请出库此批次') + ' ' + l.batch + '，') : '');
+          const mark = l.rep > 0 ? ('▲ ') : '';
+          const repTxt = l.rep > 0 ? ('（' + TR('维修') + ' ' + fmt(l.rep) + '）') : '';
+          html += '<option value="' + esc(l.id || '') + '">' + mark + esc(l.name) + '，' + bat + TR('库存') + ' ' + fmt(l.qty) + repTxt + '</option>';
+        });
         sel.disabled = false;
-        if(has.length===1) sel.value = String(has[0].location_id||'');
+        // v1.0.46：执行弹窗不默认选中库位，首项「请选择库位」保持空白。
+        // execRefreshBatchHint() 在未选时会从第 0 库位预演 FIFO 提示，不受影响。
       }
     } else {
-      const seen = {};
-      locs.forEach(l=>{ if(!seen[l.location]) seen[l.location]={id:l.location_id, q:Number(l.quantity)||0}; });
-      Object.keys(seen).forEach(loc=>{ html += '<option value="'+esc(seen[loc].id||'')+'">'+esc(loc)+'{{ tr('（') }}{{ tr('现有') }} '+fmt(seen[loc].q)+'{{ tr('）') }}</option>'; });
-      if(!Object.keys(seen).length) html += '<option value="">{{ tr('尚无任何库存库位') }}</option>';
-      html += '<option value="__NEW__">＋ {{ tr('新库位') }}…</option>';
+      // v1.0.29：申请单已确定配件状态——执行时只读展示，不再让仓管重新选
+      //   申请单条件来自 data-cdt（applications.condition），非法值回落良品；
+      //   真实校验仍由服务端按 app_row.condition 做，前端只负责过滤可入库库位。
+      EXEC_COND = cdt || 'good';
+      if(!COND_NAMES[EXEC_COND]) EXEC_COND = 'good';
+      document.getElementById('exec-cond').value = EXEC_COND;
+      document.getElementById('exec-cond-show').textContent = COND_NAMES[EXEC_COND];
+      document.getElementById('exec-cond-wrap').style.display = '';
+      html = execBuildInLocs(locs);
       sel.disabled = false;
     }
     sel.innerHTML = '<option value="">{{ tr('请选择库位') }}</option>' + html;
     execLocChange();
-  }).catch(()=>{
-    sel.innerHTML = '<option value="">{{ tr('库位加载失败') }}{{ tr('，') }}{{ tr('请重试') }}</option>';
+  }).catch(() => {
+    sel.innerHTML = '<option value="">{{ tr('库位加载失败') }}，{{ tr('请重试') }}</option>';
     sel.disabled = false;
   });
 }
+
+// v1.0.22：入库执行弹窗——按配件状态（良品/不良品/维修品）过滤可入库库位
+function execBuildInLocs(locs){
+  const cond = EXEC_COND || 'good';
+  const seen = {};
+  locs.filter(l => Number(l.quantity) > 0 && Number(l.location_id) && condLocOk(l.attribute, cond))
+    .forEach(l => { if(!seen[l.location_id]) seen[l.location_id] = {id: l.location_id, name: l.location, q: Number(l.quantity) || 0, attr: l.attribute || 'good'}; });
+  const keys = Object.keys(seen);
+  let html = '';
+  if(keys.length){
+    // v1.0.31：现有库位也按属性分组 + 标签（不良品入库时待报废/待维修排前）
+    const items = keys.map(k => ({id: seen[k].id, name: seen[k].name, attr: seen[k].attr,
+                                  extra: '（' + TR('库存') + ' ' + fmt(seen[k].q) + '）'}));
+    html += groupLocsByAttr(items, '', ['pending_repair', 'pending_scrap', 'good'], 'existing');
+  }
+  // v1.0.36：待维修/待报废共用库位——已被其它料号占用也要列（批量行同源）
+  const _sharedG = sharedLocGroupsForCond(cond, '', seen);
+  if(_sharedG) html += _sharedG;
+  // v1.0.29：新建的待维修/待报废库位还没有该物料库存，不在 locs 里——
+  // 按属性单列「空位」，不良品/维修品才能入；良品区空位仍只放行良品/维修品。
+  const _fitFree = freeLocGroupsForCond(cond, '');
+  const _anyFitFree = freeLocs().some(l => condLocOk(l.attribute, cond));
+  if(_fitFree) html += _fitFree;
+  if(condLocOk('good', cond)){
+    if(!keys.length && !_anyFitFree) html += '<option value="" disabled>' + TR('暂无可用空位') + '</option>';
+    html += '<option value="__NEW__">＋ {{ tr('新库位') }}…</option>';
+  }
+  // v1.0.38：待定对所有配件状态开放，与批量行同源（良品也能先落地再定库位）
+  html += '<option value="PENDING">' + TR('待定') + locParen(esc(COND_NAMES[cond] || '')) + '</option>';
+  html += '<option value="" disabled title="' + TR('放入前，请先确认库位空间是否够放下此物料') + '">' +
+    TR('放入前，请先确认库位空间是否够放下此物料') + '</option>';
+  return html;
+}
+
+// v1.0.29：配件状态由申请单确定，执行弹窗只读展示，不再提供切换入口。
 function execLocChange(){
-  const show = document.getElementById('exec-loc').value==='__NEW__';
+  const _v = document.getElementById('exec-loc').value;
+  const show = _v === '__NEW__';
   document.getElementById('exec-loc-new-wrap').style.display = show ? 'flex' : 'none';
   if(show) exNewReset();
+  // v1.0.32：入库选中待维修/待报废库位时提示确认可放置性
+  const note = document.getElementById('exec-hold-note');
+  if(note){
+    const hit = (EXEC_LOCS_RAW || []).find(l => String(l.location_id) === String(_v));
+    // __NEW__ 的新库位属性由 exNewPick 决定，选中时按其最终属性提示
+    let attr = hit ? (hit.attribute || 'good') : '';
+    if(show){
+      const nid = document.getElementById('ex-new-loc-id').value;
+      const nl = LOCS.find(l => String(l.id) === String(nid));
+      attr = nl ? (nl.attribute || 'good') : 'good';
+    }
+    note.innerHTML = _v && EXEC_TYPE === 'in' ? inLocHoldNote(attr) : '';
+  }
+  execMarkStars();
+  execRefreshBatchHint();
+}
+// 星标：把这一单真正要动的库位全部标出来，星后跟 1/2/3（先进先出取货顺序）
+// 起点跟随当前选择，和下面「将从以下库位依次取货」的计划一致；改选库位会重排序号
+function execMarkStars(){
+  const sel = document.getElementById('exec-loc');
+  if(!sel || EXEC_TYPE !== 'out') return;
+  const list = (EXEC_LOCS || []).slice();
+  if(!list.length) return;
+  const cur = String(sel.value || '');
+  const at = list.findIndex(x => String(x.id) === cur);
+  const seqList = at > 0 ? list.slice(at).concat(list.slice(0, at)) : list;
+  const seqOf = {};
+  if(SYS_FIFO) fifoPickPlan(seqList, EXEC_QTY).forEach((p, i) => { seqOf[String(p.loc.id)] = i + 1; });
+  Array.from(sel.options).forEach(op => {
+    const id = String(op.value || '');
+    const l = list.find(x => String(x.id) === id);
+    if(!l) return;
+    const bat = (l.rows && l.rows.length > 1)
+      ? (TR('共') + ' ' + l.rows.length + ' ' + TR('个批次') + '，')
+      : (l.batch ? (TR('请出库此批次') + ' ' + l.batch + '，') : '');
+    const n = seqOf[id];
+    // v1.0.21：维修件库位始终带红三角 ▲ 与「（维修 N）」，不能让星标重绘把它覆盖掉
+    const rmark = l.rep > 0 ? '▲ ' : '';
+    const rTxt = l.rep > 0 ? ('（' + TR('维修') + ' ' + fmt(l.rep) + '）') : '';
+    op.text = rmark + (n ? '⭐' + n + ' ' : '') + l.name + '，' + bat + TR('库存') + ' ' + fmt(l.qty) + rTxt;
+  });
+}
+let EXEC_PID = 0, EXEC_QTY = 0, EXEC_APPLY_QTY = 0, EXEC_TYPE = null, EXEC_LOCS = [], EXEC_OTYPE = '', EXEC_COND = 'good',
+    EXEC_LOCS_RAW = [], EXEC_UNIT = '';
+// v1.0.48：仓管改执行数量后同步 FIFO 预演与星标序号（只减不增由前端+服务端双重把关）
+function execQtyChange(){
+  const qi = document.getElementById('exec-qty');
+  const v = parseFloat(qi.value);
+  EXEC_QTY = (isFinite(v) && v > 0) ? v : 0;
+  execMarkStars();
+  execRefreshBatchHint();
+}
+function execRefreshBatchHint(){
+  const hint = document.getElementById('exec-batch-hint');
+  const pid = EXEC_PID, lid = document.getElementById('exec-loc').value;
+  if(!hint) return;
+  // 未选库位也先按先进先出预演一遍取货计划（星标序号就是按这个顺序打的），
+  // 选过之后从所选库位往后排，两者口径一致
+  if(EXEC_TYPE !== 'out' || !pid || lid === '__NEW__'){ hint.style.display = 'none'; hint.innerHTML = ''; return; }
+  const list = (EXEC_LOCS || []).slice();
+  const total = list.reduce((s, x) => s + (Number(x.qty) || 0), 0);
+  const found = list.findIndex(x => String(x.id) === String(lid));
+  const start = found >= 0 ? found : 0;
+  const seq = list.slice(start).concat(list.slice(0, start));
+  const unit = EXEC_UNIT || '';
+  let remain = EXEC_QTY, lines = [], hasRep = false;
+  // v1.0.37：取货计划细化到批次行——旧版只报「库位（批次） 数量」，
+  // 一个库位多批次时看不出到底从哪批拿、这批还有几件，出维修品时更是对不上实物。
+  for(const l of seq){
+    if(remain <= 0) break;
+    if((Number(l.qty) || 0) <= 0) continue;
+    let left = Math.min(Number(l.qty) || 0, remain);
+    const rows = (l.rows && l.rows.length)
+      ? l.rows.slice()
+      : [{ batch: l.batch || '', qty: Number(l.qty) || 0, rep: l.rep || 0 }];
+    for(const r of rows){
+      if(left <= 0) break;
+      const rq = Number(r.qty) || 0;
+      if(rq <= 0) continue;
+      const take = Math.min(rq, left);
+      left -= take; remain -= take;
+      if(Number(r.rep) > 0) hasRep = true;
+      const repTxt = Number(r.rep) > 0 ? ('，' + TR('维修') + ' ' + fmt(r.rep)) : '';
+      lines.push(
+        '<b>' + esc(l.name) + '</b> · ' + TR('批次') + ' ' + esc(r.batch || '—') +
+        ' · ' + TR('出库') + ' ' + fmt(take) + ' ' + esc(unit) +
+        '<span class="muted">（' + TR('该批库存') + ' ' + fmt(rq) + repTxt + '）</span>');
+    }
+  }
+  if(!lines.length){ hint.style.display = 'none'; hint.innerHTML = ''; return; }
+  // v1.0.38：两行提示原来一行用 ▲、一行用 📦，字号粗细还不一样，堆在一起显乱。
+  // 现在统一成「同一行小字说明 + 编号批次列表（左竖线缩进）」，只保留一个 ▲ 交给维修件标记。
+  // v1.0.45：现场反馈「指示文字不通顺、不够醒目」——单批文案改通顺，整个提示块
+  // 换成与行内维修品优先提示同款的红色高亮底（不再灰字灰线，一眼能看到）。
+  const headTxt = lines.length > 1
+    ? TRP('本单需 {qty}，将从以下库位按先进先出依次取货', {qty: fmt(EXEC_QTY) + ' ' + unit})
+    : TR('先进先出：请优先从以下批次出库');
+  const head = '<span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap">' +
+    (hasRep ? '<b style="color:var(--orange)">▲ ' + TR('维修件优先出库') + '</b>' : '') +
+    '<b>' + esc(headTxt) + '</b></span>';
+  const body = '<div style="margin-top:5px;padding:6px 10px;border-left:3px solid #cf1322;'
+    + 'background:#fff1f0;color:#a8071a;border-radius:5px;display:flex;flex-direction:column;gap:3px">'
+    + lines.map((t, i) => '<div>' + (i + 1) + '. ' + t + '</div>').join('') + '</div>';
+  hint.style.display = '';
+  hint.innerHTML = head + body + (remain > 0
+    ? '<div style="margin-top:5px">⚠️ ' + TR('库存不足！') + ' ' + TRP('当前总可用 {qty}', {qty: fmt(total)}) + '</div>'
+    : '');
 }
 function beforeExecSubmit(){
+  const qi = document.getElementById('exec-qty');
+  const v = parseFloat(qi.value);
+  if(!isFinite(v) || v <= 0){ alert(TR('执行数量必须大于 0')); return false; }
+  if(v > EXEC_APPLY_QTY + 1e-9){ alert(TR('执行数量不能超过申请数量（只能减少）')); return false; }
   const sel = document.getElementById('exec-loc');
-  if(sel.value==='__NEW__'){
+  if(sel.value === '__NEW__'){
     const lid = document.getElementById('ex-new-loc-id').value;
-    if(!lid){ alert(TR('请选择新库位{{ tr('（') }}仓库-货架-货位-格位{{ tr('）') }}')); return false; }
+    if(!lid){ alert(TR('请选择新库位（仓库-货架-货位-格位）')); return false; }
     sel.value = lid;
     document.getElementById('ex-new-loc-id').name = 'new_location_id';
     sel.removeAttribute('required');
   }
-  if(!sel.value && EXEC_TYPE==='out'){
+  if(!sel.value && EXEC_TYPE === 'out'){
     alert(TR('出库请选择有库存的库位')); return false;
   }
   return true;
 }
+// v1.0.48：调库/借出执行弹窗的数量校验（上限写在 input.max，打开弹窗时按申请数量灌入）
+function beforeSimpleExecSubmit(id){
+  const qi = document.getElementById(id);
+  if(!qi) return true;
+  const v = parseFloat(qi.value), mx = parseFloat(qi.max);
+  if(!isFinite(v) || v <= 0){ alert(TR('执行数量必须大于 0')); return false; }
+  if(isFinite(mx) && v > mx + 1e-9){ alert(TR('执行数量不能超过申请数量（只能减少）')); return false; }
+  return true;
+}
 /* 新库位级联（执行弹窗） */
 function exNewReset(){
-  const whs = [...new Set(LOCS.map(l=>l.warehouse))];
+  const whs = [...new Set(LOCS.map(l => l.warehouse).filter(Boolean))];   // v1.0.38：同上，导航用全量
   fillSel(document.getElementById('ex-new-wh'), whs, TR('仓库号…'));
   fillSel(document.getElementById('ex-new-rack'), [], TR('货架号…'));
   fillSel(document.getElementById('ex-new-shelf'), [], TR('货位号…'));
   fillSel(document.getElementById('ex-new-bin'), [], TR('格位号…'));
-  document.getElementById('ex-new-loc-id').value='';
-  document.getElementById('ex-new-msg').textContent='';
+  document.getElementById('ex-new-loc-id').value = '';
+  document.getElementById('ex-new-msg').textContent = '';
 }
 function exNewWh(){ cascadeNew('ex', document.getElementById('ex-new-wh').value, '', ''); }
 function exNewRack(){ cascadeNew('ex', document.getElementById('ex-new-wh').value, document.getElementById('ex-new-rack').value, ''); }
@@ -428,68 +1735,135 @@ function exNewPick(){ pickNew('ex', document.getElementById('ex-new-bin')); }
 
 /* 新库位级联公共逻辑 */
 function fillSel(sel, opts, placeholder){
-  sel.innerHTML = '<option value="">'+placeholder+'</option>' + opts.map(o=>'<option value="'+esc(o)+'">'+esc(o)+'</option>').join('');
+  sel.innerHTML = '<option value="">' + placeholder + '</option>' + opts.map(o => '<option value="' + esc(o) + '">' + esc(o) + '</option>').join('');
 }
 function cascadeNew(prefix, wh, rack, shelf){
-  const selWh = document.getElementById(prefix+'-new-wh');
-  const selRack = document.getElementById(prefix+'-new-rack');
-  const selShelf = document.getElementById(prefix+'-new-shelf');
-  const selBin = document.getElementById(prefix+'-new-bin');
-  const locId = document.getElementById(prefix+'-new-loc-id');
-  locId.value='';
-  if(prefix==='io') document.getElementById('io-new-loc-id').name='new_location_id';
-  if(prefix==='ex') document.getElementById('ex-new-loc-id').name='new_location_id';
+  const selRack = document.getElementById(prefix + '-new-rack');
+  const selShelf = document.getElementById(prefix + '-new-shelf');
+  const selBin = document.getElementById(prefix + '-new-bin');
+  const locId = document.getElementById(prefix + '-new-loc-id');
+  locId.value = '';
+  if(prefix === 'ex') document.getElementById('ex-new-loc-id').name = 'new_location_id';
+  // v1.0.38：前三级只负责「走到哪个货位」，用全量库位导航；
+  // 最后一级才只列空位——真正能落货的只有空库位行，这一层不能放宽。
+  const pool = freeLocs();
+  const all = LOCS;
   if(!wh){ fillSel(selRack, [], TR('货架号…')); fillSel(selShelf, [], TR('货位号…')); fillSel(selBin, [], TR('格位号…')); return; }
   if(!rack){
-    const racks=[...new Set(LOCS.filter(l=>l.warehouse===wh).map(l=>l.rack))].sort();
+    const racks = [...new Set(all.filter(l => l.warehouse === wh).map(l => l.rack).filter(Boolean))].sort();
     fillSel(selRack, racks, TR('货架号…')); fillSel(selShelf, [], TR('货位号…')); fillSel(selBin, [], TR('格位号…'));
     return;
   }
   if(!shelf){
-    const shelves=[...new Set(LOCS.filter(l=>l.warehouse===wh&&l.rack===rack).map(l=>l.shelf))].sort();
+    const shelves = [...new Set(all.filter(l => l.warehouse === wh && l.rack === rack).map(l => l.shelf).filter(Boolean))].sort();
     fillSel(selShelf, shelves, TR('货位号…')); fillSel(selBin, [], TR('格位号…'));
     return;
   }
-  const list = LOCS.filter(l=>l.warehouse===wh&&l.rack===rack&&l.shelf===shelf);
-  const seen = {};
-  list.forEach(l=>{ const k=l.bin||'__WHOLE__'; if(!seen[k]) seen[k]=[]; seen[k].push(l); });
-  const keys = Object.keys(seen).sort((a,b)=>(a==='__WHOLE__'?-1:0)-(b==='__WHOLE__'?-1:0)||a.localeCompare(b));
-  const opts = keys.map(k=>{ const ls=seen[k]; const occ=ls.find(x=>x.part_id);
-    const label=(k==='__WHOLE__'?TR('整货位'):k)+(occ?TR('{{ tr('（') }}占用:')+occ.part_code+TR('{{ tr('）') }}'):TR('{{ tr('（') }}空位{{ tr('）') }}'));
-    return {v:String(ls[0].id), label:label, occ:!!occ}; });
-  opts.sort((a,b)=>(a.occ?1:0)-(b.occ?1:0));
-  selBin.innerHTML = '<option value="">{{ tr('格位号…') }}</option>' + opts.map(o=>'<option value="'+esc(o.v)+'">'+esc(o.label)+'</option>').join('');
+  // 格位级：该货位已拆格位 → 只列空格位；未拆格 → 给「整货位」一项
+  const list = pool.filter(l => l.warehouse === wh && l.rack === rack && l.shelf === shelf);
+  const hasSub = list.some(l => l.bin && String(l.bin).trim());
+  let opts = [];
+  if(hasSub){
+    opts = list.filter(l => l.bin && String(l.bin).trim())
+      .sort((a, b) => String(a.bin).localeCompare(String(b.bin)))
+      .map(l => ({v: String(l.id), label: String(l.bin)}));
+  } else {
+    opts = list.map(l => ({v: String(l.id), label: TR('整货位') + '（' + TR('不细分格位') + '）'}));
+  }
+  if(!opts.length){
+    // 说清楚「不是功能坏了，是这个货位占满了」，并指出下一步去哪儿加格位
+    opts = [{v: '', label: TR('该货位已占满，请先到「货架管理」新增格位'), disabled: true}];
+  }
+  selBin.innerHTML = '<option value="">{{ tr('格位号…') }}</option>' +
+    opts.map(o => '<option value="' + esc(o.v) + '"' + (o.disabled ? ' disabled' : '') + '>' + esc(o.label) + '</option>').join('');
 }
 function pickNew(prefix, bin){
-  const locId = document.getElementById(prefix+'-new-loc-id');
-  const msg = document.getElementById(prefix==='ex'?'ex-new-msg':'io-new-msg');
-  if(!bin.value){ locId.value=''; return; }
-  const loc = LOCS.find(l=>String(l.id)===bin.value);
-  if(loc.part_id){ locId.value=''; if(msg) msg.textContent=TR('该位置已被备件占用{{ tr('，') }}')+TR('不能入库'); return; }
+  const locId = document.getElementById(prefix + '-new-loc-id');
+  const msg = document.getElementById(prefix === 'ex' ? 'ex-new-msg' : 'io-new-msg');
+  if(!bin.value){ locId.value = ''; return; }
+  const loc = LOCS.find(l => String(l.id) === bin.value);
+  if(loc.part_id){ locId.value = ''; if(msg) msg.textContent = TR('该位置已被物料占用，') + TR('不能入库'); return; }
   locId.value = String(loc.id);
-  if(msg) msg.textContent='';
+  if(msg) msg.textContent = '';
+  // v1.0.32：新建库位选定后按该空位属性刷新「确认能否放下」提示
+  if(prefix === 'ex' && typeof execLocChange === 'function') execLocChange();
 }
 
-function openTransferExec(aid, no, code, fromTxt, toTxt){
-  document.getElementById('tf-exec-form').action='/applications/'+aid+'/execute';
-  document.getElementById('tf-exec-info').innerHTML='<b>'+no+'</b> '+code+'{{ tr('：') }}<span class="mono">'+esc(fromTxt)+'</span> {{ tr('→') }} <span class="mono">'+esc(toTxt)+'</span>';
-  document.getElementById('tf-exec-modal').style.display='flex';
+// 页面加载：恢复上次填了一半的批量草稿，并加载空库位（调库目标候选）
+loadEmptyLocs();
+if(IODRAFT.length) renderIo();
+
+function openTransferExec(btn){
+  const d = btn.dataset;
+  const aid = Number(d.aid), q = parseFloat(d.qty) || 0;
+  const srcQty = parseFloat(d.srcQty) || 0, batch = d.batch || '';
+  window.TF_APPLY_QTY = q; window.TF_SRC_QTY = srcQty;
+  document.getElementById('tf-exec-form').action = '/applications/' + aid + '/execute';
+  const qi = document.getElementById('tf-exec-qty');
+  qi.value = q; qi.max = q; qi.min = 0; qi.step = 'any';
+  document.getElementById('tf-exec-info').innerHTML = '<b>' + esc(d.no) + '</b> ' + esc(d.code) + '：<span class="mono">' + esc(d.from) + '</span> → <span class="mono">' + esc(d.to) + '</span>';
+  const bp = document.getElementById('tf-exec-batch');
+  bp.style.display = batch ? '' : 'none';
+  bp.textContent = batch ? (TR('批次') + ' ' + batch) : '';
+  document.getElementById('tf-exec-modal').style.display = 'flex';
 }
+function openBorrowExec(btn){
+  const aid = Number(btn.dataset.aid), pid = Number(btn.dataset.pid);
+  const qty = Number(btn.dataset.qty) || 0;
+  const qi = document.getElementById('borrow-exec-qty');
+  qi.value = qty; qi.max = qty; qi.min = 0; qi.step = 'any';
+  document.getElementById('borrow-exec-info').innerHTML =
+    '<b class="mono">' + esc(btn.dataset.no) + '</b>　' + esc(btn.dataset.code) + ' × ' + fmt(qty) +
+    '<br>' + TR('借用人') + '：' + esc(btn.dataset.borrower || '-') +
+    '　' + TR('预计归还日') + '：' + esc(btn.dataset.er || '-') +
+    (btn.dataset.note ? '<br>' + TR('备注') + '：' + esc(btn.dataset.note) : '');
+  document.getElementById('borrow-exec-form').action = '/applications/' + aid + '/execute';
+  // 库位：仓管要知道去哪儿拿货，只列该物料真正有库存的库位，并带上现存量
+  const st = btn.dataset.subtype || 'borrow';
+  const sel = document.getElementById('borrow-exec-loc');
+  const tip = document.getElementById('borrow-exec-locs');
+  sel.disabled = true;
+  sel.innerHTML = '<option value="">' + TR('加载中…') + '</option>';
+  tip.innerHTML = '';
+  document.getElementById('borrow-exec-modal').style.display = 'flex';
+  fetch('/api/parts/' + pid).then(r => r.json()).then(d => {
+    // v1.0.31：按库位属性限制——维修只能从待维修/待报废区出，借用/换/检只能从良品区出
+    const has = (d.locations || [])
+      .filter(l => Number(l.quantity) > 0 && Number(l.location_id) && locOutOk(l.attribute, st))
+      .sort((a, b) => Number(b.quantity) - Number(a.quantity));
+    if(!has.length){
+      const anyStock = (d.locations || []).filter(l => Number(l.quantity) > 0 && Number(l.location_id)).length > 0;
+      if(st === 'maintenance' && anyStock) sel.innerHTML = '<option value="">' + TR('不良品只能入「待维修 / 待报废」库位') + '</option>';
+      else if(anyStock) sel.innerHTML = '<option value="">' + TR('该物料没有「良品区」库存（待维修/待报废需走对应类型）') + '</option>';
+      else sel.innerHTML = '<option value="">' + TR('该物料当前没有可出库的库位') + '</option>';
+      tip.innerHTML = TR('该物料无任何库存库位') + '（' + TR('无库存或全部处于待定') + '）';
+      return;
+    }
+    // v1.0.46：借出执行弹窗补空占位，不再默认选中第一库位
+    sel.innerHTML = '<option value="">' + TR('请选择库位') + '</option>' + has.map(l =>
+      '<option value="' + esc(l.location_id) + '">【' + attrName(l.attribute) + '】' + esc(l.location) + '，' +
+      TR('库存') + ' ' + fmt(l.quantity) + '</option>').join('');
+    sel.disabled = false;
+    tip.innerHTML = TR('物料库位分布') + '：<span class="mono">' +
+      esc(has.map(l => l.location + '（' + fmt(l.quantity) + '）').join('　')) + '</span>';
+  }).catch(() => {
+    sel.innerHTML = '<option value="">' + TR('库位加载失败') + '，' + TR('请重试') + '</option>';
+  });
+}
+
 function openReject(aid, no){
-  document.getElementById('reject-form').action='/applications/'+aid+'/execute';
-  const f=document.createElement('input'); f.type='hidden'; f.name='action'; f.value='reject';
+  document.getElementById('reject-form').action = '/applications/' + aid + '/execute';
+  const f = document.createElement('input'); f.type = 'hidden'; f.name = 'action'; f.value = 'reject';
   document.getElementById('reject-form').appendChild(f);
-  document.getElementById('reject-modal').style.display='flex';
+  document.getElementById('reject-modal').style.display = 'flex';
 }
-function openCancelApprove(aid, no){
-  document.getElementById('cancel-app-form').action='/applications/'+aid+'/cancel-approve';
-  document.getElementById('cancel-app-modal').style.display='flex';
+function openCancelApproveDoc(docNo){
+  document.getElementById('cancel-app-form').action = '/applications/doc/' + encodeURIComponent(docNo) + '/cancel-approve';
+  document.getElementById('cancel-app-modal').style.display = 'flex';
 }
-function openCancelReject(aid, no){
-  document.getElementById('cancel-rej-form').action='/applications/'+aid+'/cancel-reject';
-  document.getElementById('cancel-rej-modal').style.display='flex';
+function openCancelRejectDoc(docNo){
+  document.getElementById('cancel-rej-form').action = '/applications/doc/' + encodeURIComponent(docNo) + '/cancel-reject';
+  document.getElementById('cancel-rej-modal').style.display = 'flex';
 }
-function esc(s){ const d=document.createElement('div'); d.textContent=s==null?'':String(s); return d.innerHTML; }
-function fmt(v){ return Number(v||0).toLocaleString('zh-CN'); }
 </script>
 {% endblock %}

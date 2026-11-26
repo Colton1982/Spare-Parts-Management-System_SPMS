@@ -1,0 +1,379 @@
+{# SPMS 备件辅料仓管系统 | 作者：菜鸟大叔 (@rookie-uncle / @Colton1982) | 邮箱：510658927@qq.com | QQ：510658927 | Gitee：https://gitee.com/rookie-uncle | GitHub：https://github.com/Colton1982 | Copyright (c) 2026 rookie-uncle. All rights reserved. | Apache-2.0 #}
+{% extends "base.html" %}
+{% block title %}{{ tr('借·换·检·修管理') }} - Inventory Management System{% endblock %}
+{% block page_title %}{{ tr('借·换·检·修管理') }}{% endblock %}
+{% block content %}
+
+<div class="card">
+  <div class="card-title">{{ tr('借·换·检·修管理') }}
+    <span style="float:right">
+      {% if can('borrow', 'export') %}<a class="btn btn-xs" href="/api/borrow/export">📥 {{ tr('btn_export') }}</a>{% endif %}
+    </span>
+  </div>
+  <div class="muted small ui-hint" style="margin:-6px 0 12px">{{ tr('borrow.cur_borrowed') }}{{ mk('：') }}<span style="color:#16a34a">●</span> {{ tr('正常') }}{{ mk('，') }}<span style="color:#d97706">●</span> {{ tr('即将到期') }}{{ mk('，') }}<span style="color:#dc2626">●</span> {{ tr('已逾期') }}{{ mk('；') }}{{ tr('已还回') }}{{ mk('。') }}<span class="muted"> {{ tr('借出在出入库页办理并扣减库存，本页办理回库后恢复库存，可分次还回') }}</span></div>
+  {% if can('borrow', 'manage') %}
+  <div class="muted small ui-hint" style="margin:-8px 0 12px">{{ tr('borrow.manage_hint') }}</div>
+  {% else %}
+  <div class="muted small ui-hint" style="margin:-8px 0 12px">{{ tr('borrow.mine_only_hint', name=cur_user.display_name) }}</div>
+  {% endif %}
+
+  <div class="stat-row">
+    <div class="stat-card"><div class="stat-label">{{ tr('borrow.status_borrowed') }}</div><div class="stat-num" id="stBorrowed">0</div></div>
+    <div class="stat-card"><div class="stat-label">{{ tr('borrow.stat_overdue') }}</div><div class="stat-num" style="color:#dc2626" id="stOverdue">0</div></div>
+    <div class="stat-card"><div class="stat-label">{{ tr('borrow.stat_warning') }}</div><div class="stat-num" style="color:#d97706" id="stWarning">0</div></div>
+    <div class="stat-card"><div class="stat-label">{{ tr('已还回') }}</div><div class="stat-num" style="color:#64748b" id="stReturned">0</div></div>
+  </div>
+
+  <div class="inline-form" style="margin-bottom:10px">
+    <input class="f-input" id="borrowKw" placeholder="{{ tr('borrow.search_ph') }}" oninput="borrowDebounce()" style="min-width:240px">
+    <select class="f-input" id="borrowKind" onchange="refreshBorrows()" title="{{ tr('台账类型') }}">
+      <option value="">{{ tr('全部类型') }}</option>
+      <option value="borrow">{{ tr('借(借用)') }}</option>
+      <option value="exchange">{{ tr('换(换货)') }}</option>
+      <option value="maintenance">{{ tr('修(维修)') }}</option>
+      <option value="verify">{{ tr('检(校验/测试)') }}</option>
+    </select>
+    <select class="f-input" id="borrowStatus" onchange="refreshBorrows()">
+      <option value="">{{ tr('ui.all') }}</option>
+      <option value="borrowed" selected>{{ tr('borrow.filter_borrowed') }}</option>
+      <option value="returned">{{ tr('borrow.filter_returned') }}</option>
+      <option value="cancelled">{{ tr('已驳回') }}</option>
+    </select>
+    <button class="btn" onclick="refreshBorrows()">{{ tr('ui.search') }}</button>
+  </div>
+
+  <div class="table-wrap table-sticky" style="overflow:auto;max-height:clamp(360px, calc(100vh - 320px), 900px)">
+    <table class="table" id="borrowTable">
+      <thead><tr>
+        <th style="width:136px;white-space:nowrap">{{ tr('borrow.borrow_no') }}</th>
+        <th style="min-width:180px">{{ tr('物料') }}</th>
+        <th style="width:150px">{{ tr('borrow.borrower') }}</th>
+        <th style="width:186px">{{ tr('borrow.location') }}</th>
+        <th style="width:150px">{{ tr('返还库位') }}</th>
+        <th style="width:152px">{{ tr('borrow.borrowed_at') }}</th>
+        <th style="width:158px">{{ tr('borrow.expected_return') }}</th>
+        <th>{{ tr('borrow.note') }}</th>
+        <th style="width:112px;white-space:nowrap">{{ tr('数量 / 已还 / 未还') }}</th>
+        <th style="width:104px">{{ tr('剩余时间') }}</th>
+        <th style="width:96px">{{ tr('th_status') }}</th>
+        <th style="width:158px">{{ tr('th_ops') }}</th>
+      </tr></thead>
+      <tbody id="borrowBody"><tr><td colspan="12" class="muted center">{{ tr('borrow.empty') }}</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- 办理回库弹窗（v1.0.47 文案统一为办理回库） -->
+<div class="modal-mask" id="returnModal" style="display:none" onclick="if(event.target===this)closeModal('returnModal')">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-head"><span>{{ tr('办理回库') }}</span><button class="modal-x" onclick="closeModal('returnModal')">✕</button></div>
+    <div class="modal-body">
+      <p id="returnInfo" class="muted small" style="margin-bottom:10px"></p>
+      <label class="f-label">{{ tr('本次还回数量') }}<span class="req">*</span>
+        <input class="f-input" type="number" id="returnQty" min="0" step="any" value="1">
+      </label>
+      <p class="muted small" id="returnQtyTip" style="margin:-2px 0 10px"></p>
+      {# v1.0.23：维修单还回必须先选维修结果，它决定可回的库位属性与回库状态 #}
+      <div id="returnRepairWrap" style="display:none;margin:10px 0;padding:10px;border:1px solid var(--line);border-radius:8px">
+        <div class="f-label" style="margin-bottom:6px">{{ tr('维修结果') }}<span class="req">*</span></div>
+        <label style="margin-right:18px;cursor:pointer"><input type="radio" name="repairOk" value="1" onchange="onRepairOkChange()"> {{ tr('已修好') }}</label>
+        <label style="cursor:pointer"><input type="radio" name="repairOk" value="0" checked onchange="onRepairOkChange()"> {{ tr('未修好') }}</label>
+        {# v1.0.45：还回时登记维修品类型（设置页「表头设置」可配置，出厂字典兜底）， #}
+        {# 回写借用行后供首页维修柏拉图按类型统计；未修好的还回在柏拉图上单独成柱。 #}
+        <label class="f-label" style="margin-top:8px">{{ tr('维修品类型') }}<span class="req">*</span>
+          <select class="f-input" id="returnRepairType">
+            <option value="">{{ tr('请选择维修品类型') }}</option>
+            {% for g in repair_cats %}
+            <optgroup label="{{ g['group'] }}">
+              {% for it in (g['items'] or []) %}
+              <option value="{{ it }}">{{ it }}</option>
+              {% endfor %}
+            </optgroup>
+            {% endfor %}
+          </select>
+        </label>
+        <p class="muted small ui-hint" id="returnRepairHint" style="margin:8px 0 0"></p>
+      </div>
+      <label class="f-label">{{ tr('返还库位') }}<span class="req">*</span>
+        <select class="f-input" id="returnLoc" onchange="onReturnLocChange()">
+          <option value="">{{ tr('加载中…') }}</option>
+        </select>
+      </label>
+      <p class="muted small ui-hint" style="margin-top:6px">{{ tr('留空数量表示一次还清；办理回库后库存按实际还回数量回补到所选库位') }}</p>
+      <p class="muted small" id="returnLocTip" style="margin-top:2px"></p>
+      <label class="f-label" style="margin-top:8px">{{ tr('还回说明') }}
+        <input class="f-input" type="text" id="returnNote" maxlength="120" placeholder="{{ tr('可空') }}">
+      </label>
+      <div id="returnHistory" class="muted small" style="margin-top:10px;max-height:120px;overflow-y:auto"></div>
+    </div>
+    <div class="modal-foot">
+      <button type="button" class="btn" onclick="closeModal('returnModal')">{{ tr('btn_cancel') }}</button>
+      <button type="button" class="btn btn-primary" onclick="confirmReturn()">{{ tr('办理回库') }}</button>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const CAN_RETURN = {{ 'true' if can('borrow', 'return') else 'false' }};
+let borrowRows = [];
+let borrowTimer = null;
+
+function borrowDebounce(){ if(borrowTimer) clearTimeout(borrowTimer); borrowTimer = setTimeout(refreshBorrows, 400); }
+
+function refreshBorrows(){
+  const kw = (document.getElementById('borrowKw').value || '').trim();
+  const st = document.getElementById('borrowStatus').value;
+  const kd = (document.getElementById('borrowKind') || {}).value || '';
+  const url = '/api/borrows?kw=' + encodeURIComponent(kw) + '&status=' + encodeURIComponent(st) + '&kind=' + encodeURIComponent(kd);
+  fetch(url).then(function(r){ return r.json(); }).then(function(d){
+    if(!d.ok) return;
+    borrowRows = d.rows || [];
+    document.getElementById('stBorrowed').textContent = d.stats.borrowed;
+    document.getElementById('stOverdue').textContent = d.stats.overdue;
+    document.getElementById('stWarning').textContent = d.stats.warning;
+    document.getElementById('stReturned').textContent = d.stats.returned || 0;
+    renderBorrowTable();
+  }).catch(function(){});
+}
+
+function borrowQtyCell(b){
+  const q = Number(b.qty || 0);
+  const done = Number(b.returned_qty || 0);
+  const left = Math.max(0, q - done);
+  const f = function(v){ return String(Math.round(v * 1000) / 1000); };
+  if(b.status === 'cancelled') return esc(f(q)) + ' <span class="muted">/</span> -';
+  if(done > 1e-9 && left > 1e-9)
+    return esc(f(q)) + ' / <span style="color:#16a34a">'+esc(f(done))+'</span> / <span style="color:#d97706">'+esc(f(left))+'</span>';
+  return esc(f(q)) + ' / '+esc(f(done))+' / <span class="muted">'+esc(f(left))+'</span>';
+}
+
+function borrowColorTag(color, status){
+  if(status === 'returned') return '<span class="badge" style="background:#e2e8f0;color:#475569">'+TR('已还回')+'</span>';
+  if(status === 'cancelled') return '<span class="badge" style="background:#e2e8f0;color:#475569">'+TR('已驳回')+'</span>';
+  if(color === 'red') return '<span class="badge" style="background:#fee2e2;color:#dc2626">'+TR('已逾期')+'</span>';
+  if(color === 'yellow') return '<span class="badge" style="background:#fef3c7;color:#d97706">'+TR('即将到期')+'</span>';
+  return '<span class="badge" style="background:#dcfce7;color:#16a34a">'+TR('正常')+'</span>';
+}
+
+function borrowRemain(b){
+  if(b.status !== 'borrowed') return '-';
+  const er = b.expected_return ? new Date(b.expected_return.replace(/-/g, '/')) : null;
+  if(!er || isNaN(er.getTime())) return '-';
+  const diff = er - new Date();
+  if(diff < 0) return '<span style="color:#dc2626">'+TR('已逾期')+'</span>';
+  const days = Math.floor(diff / 86400000);
+  const hrs = Math.floor((diff % 86400000) / 3600000);
+  const seg = [];
+  if(days > 0) seg.push(days + ' ' + TR('天'));
+  if(hrs > 0 || days === 0) seg.push(hrs + ' ' + TR('小时'));
+  return TR('剩余') + ' ' + seg.join(' ');
+}
+
+/* 注意：前端 TR() 查的是 tr_json（key = 中文原文），传语义 ID（borrow.xxx）
+   会原样显示成 ID —— 只有服务端的 tr() 能认 ID。JS 里一律写中文原文。 */
+function renderBorrowTable(){
+  const tb = document.getElementById('borrowBody');
+  if(!borrowRows.length){ tb.innerHTML = '<tr><td colspan="12" class="muted center">'+TR('暂无借换记录')+'</td></tr>'; return; }
+  let html = '';
+  borrowRows.forEach(function(b){
+    let ops;
+    if(b.status === 'cancelled'){
+      ops = '<span class="muted small">'+TR('已驳回')+'</span>';
+    } else if(b.status === 'returned'){
+      ops = '<span class="muted small">'+TR('已还回')+'</span>';
+    } else {
+      // 借出在出入库页办理，台账这里只处理归还
+      ops = CAN_RETURN
+        ? '<button type="button" class="btn btn-xs btn-primary" onclick="openReturnModal('+b.id+')">'+TR('办理回库')+'</button>'
+        : '<span class="muted small">'+TR('借/换中')+'</span>';
+    }
+    const rowBg = (b.status === 'borrowed' && b.color === 'red') ? ' style="background:#fff5f5"' :
+                  (b.status === 'borrowed' && b.color === 'yellow') ? ' style="background:#fffbeb"' : '';
+    html += '<tr' + rowBg + '>' +
+      '<td class="mono">'+esc(b.borrow_no)+'</td>' +
+      '<td>'+esc(b.part_name||'')+(b.part_code ? ' <span class="muted small">'+esc(b.part_code)+'</span>' : '')+
+        (b.kind === 'exchange'
+          ? ' <span class="badge badge-info">'+TR('换货')+'</span>'
+          : (b.kind === 'maintenance'
+            ? ' <span class="badge badge-warn">'+TR('维修')+'</span>'
+            : (b.kind === 'verify'
+              ? ' <span class="badge badge-warn">'+TR('校验/测试')+'</span>'
+              : ' <span class="badge" style="background:#e0e7ff;color:#3730a3">'+TR('借用')+'</span>')))+'</td>' +
+      '<td>'+((b.kind==='maintenance'||b.kind==='verify') ? TR('出库人')+'：' : '')+esc(b.borrower||'')+(b.borrower_name ? ' <span class="muted small">('+esc(b.borrower_name)+')</span>' : '')+'</td>' +
+      '<td class="mono small" style="white-space:nowrap">'+esc(b.location||'-')+'</td>' +
+      '<td class="mono small" style="white-space:nowrap">'+esc(b.return_location||'-')+'</td>' +
+      '<td class="mono" style="white-space:nowrap">'+esc(b.borrowed_at||'')+'</td>' +
+      '<td class="mono" style="white-space:nowrap">'+esc(b.expected_return||'-')+'</td>' +
+      '<td>'+esc(b.status === 'cancelled' ? (b.cancel_note || b.note || '') : (b.note||''))+'</td>' +
+      '<td class="mono small" style="white-space:nowrap">'+ borrowQtyCell(b) +'</td>' +
+      '<td>'+borrowRemain(b)+'</td>' +
+      '<td>'+borrowColorTag(b.color, b.status)+'</td>' +
+      '<td>'+ops+'</td>' +
+      '</tr>';
+  });
+  tb.innerHTML = html;
+}
+
+// v1.0.23：维修单还回 —— 维修结果决定候选库位属性与回库状态
+let RETURN_LOCS = [], RETURN_MAINT = false, RETURN_META = {};
+function isRepairOk(){
+  const r = document.querySelector('input[name="repairOk"]:checked');
+  return !!(r && r.value === '1');
+}
+function onRepairOkChange(){
+  if(RETURN_MAINT) fillReturnLocs(RETURN_META);
+}
+function fillReturnLocs(d){
+  const sel = document.getElementById('returnLoc');
+  if(!sel) return;
+  const ok = isRepairOk();
+  // v1.0.30：非维修单（借/换/检）还回的是良品，只能回良品属性库位；
+  // 以前列出全部库位，良品能被还进待报废/待维修区（服务端已同步加属性校验）。
+  let list = RETURN_LOCS.filter(function(l){
+    if(RETURN_MAINT){
+      return ok ? (l.attribute === 'good')
+                : (l.attribute === 'pending_repair' || l.attribute === 'pending_scrap');
+    }
+    return l.attribute === 'good';
+  });
+  const hint = document.getElementById('returnRepairHint');
+  if(hint && RETURN_MAINT){
+    hint.textContent = ok
+      ? TR('已修好：只能回良品区，回库后打上维修品状态，出库时优先发料')
+      : TR('未修好：只能回待维修或待报废区，按不良品入库');
+  }
+  if(!list.length){
+    sel.innerHTML = '<option value="">' + (RETURN_MAINT
+      ? (ok ? TR('暂无良品区库位，请先到信息维护里建立良品库位')
+            : TR('暂无待维修或待报废库位，请先到信息维护里建立对应库位'))
+      : TR('暂无良品区库位，请先到信息维护里建立良品库位')) + '</option>';
+    return;
+  }
+  let html = '';
+  list.forEach(function(l){
+    const isDef = (l.id === d.default) && (!RETURN_MAINT || ok === (l.attribute === 'good'));
+    html += '<option value="' + esc(l.id) + '"' + (isDef ? ' selected' : '') + '>' +
+            esc(l.text) + (l.is_origin ? '（' + TR('原库位') + '）' : '') +
+            (RETURN_MAINT ? '［' + esc(l.attr_name || '') + '］' : '') +
+            '　' + TR('库存') + ' ' + fmtQty(l.qty) + ' ' + esc(d.unit || '') + '</option>';
+  });
+  sel.innerHTML = html;
+  if(!sel.value && list.length) sel.value = String(list[0].id);
+  onReturnLocChange();
+}
+
+function openReturnModal(id){
+  const b = borrowRows.find(function(x){ return x.id === id; }); if(!b) return;
+  RETURN_LOCS = []; RETURN_MAINT = false; RETURN_META = {};
+  const rw = document.getElementById('returnRepairWrap');
+  if(rw) rw.style.display = 'none';
+  const r0 = document.querySelector('input[name="repairOk"][value="0"]');
+  if(r0) r0.checked = true;
+  const rtSel = document.getElementById('returnRepairType');
+  if(rtSel) rtSel.value = '';
+  document.getElementById('returnInfo').textContent =
+    (b.borrow_no||'') + ' ｜ ' + (b.part_name||'') + ' ｜ ' + ((b.kind==='maintenance'||b.kind==='verify') ? TR('出库人') : TR('借用人')) + '：' + (b.borrower||'') +
+    ' ｜ ' + TR('出库时间') + '：' + (b.borrowed_at||'');
+  const sel = document.getElementById('returnLoc');
+  const tip = document.getElementById('returnLocTip');
+  const qEl = document.getElementById('returnQty');
+  const qTip = document.getElementById('returnQtyTip');
+  sel.innerHTML = '<option value="">' + TR('加载中…') + '</option>';
+  if(tip) tip.textContent = '';
+  if(qEl){ qEl.value = ''; qEl.max = ''; }
+  if(qTip) qTip.textContent = TR('加载中…');
+  const nEl = document.getElementById('returnNote');
+  if(nEl) nEl.value = '';
+  const hist = document.getElementById('returnHistory');
+  if(hist) hist.innerHTML = '';
+  document.getElementById('returnModal').dataset.id = id;
+  document.getElementById('returnModal').style.display = 'flex';
+  // 还回必须先确认「放回哪个库位」，默认原库位；数量默认 = 剩余未还
+  fetch('/api/borrows/' + id + '/return_locations').then(function(r){ return r.json(); }).then(function(d){
+    RETURN_LOCS = d.locations || [];
+    RETURN_MAINT = !!d.is_maintenance;
+    RETURN_META = d;
+    if(rw) rw.style.display = RETURN_MAINT ? 'block' : 'none';
+    const left = Number(d.remaining_qty != null ? d.remaining_qty : (b.qty || 0));
+    if(qEl){ qEl.max = String(left); qEl.value = String(left); }
+    if(qTip) qTip.textContent = TR('未还数量') + '：' + fmtQty(left) + ' ' + (d.unit || '') +
+                               '（' + TR('留空则一次还清') + '）';
+    const hist = document.getElementById('returnHistory');
+    const rs = d.returns || [];
+    if(hist && rs.length){
+      let h = '<b>' + TR('已还回记录') + '</b>';
+      rs.forEach(function(x){
+        h += '<div style="border-top:1px dashed var(--line);padding:3px 0">' +
+             esc(x.created_at||'') + ' ｜ ' + TR('还回') + ' ' + fmtQty(x.quantity) +
+             ' ' + esc(d.unit||'') + ' ｜ ' + TR('回补') + ' ' + fmtQty(x.restocked_qty) +
+             ' ' + esc(d.unit||'') + ' ｜ ' + esc(x.location||'') +
+             (RETURN_MAINT && x.condition ? ' ｜ ' + (Number(x.repair_ok) ? TR('已修好') : TR('未修好')) : '') +
+             (x.return_note ? ' ｜ ' + esc(x.return_note) : '') + '</div>';
+      });
+      hist.innerHTML = h;
+    }
+    fillReturnLocs(d);
+  }).catch(function(){
+    sel.innerHTML = '<option value="">' + TR('网络错误') + '</option>';
+  });
+}
+
+function onReturnLocChange(){
+  const sel = document.getElementById('returnLoc');
+  const tip = document.getElementById('returnLocTip');
+  if(!sel || !tip) return;
+  const opt = sel.options[sel.selectedIndex];
+  const isOrigin = opt && opt.text.indexOf(TR('原库位')) >= 0;
+  tip.style.color = isOrigin ? '#64748b' : '#d97706';
+  tip.textContent = isOrigin ? '' : (opt && opt.value ? TR('该库位不是原库位：还回的库存将直接放到这里') : '');
+}
+
+function fmtQty(n){
+  const v = Number(n);
+  if(!isFinite(v)) return '0';
+  return (v === Math.round(v)) ? String(Math.round(v)) : v.toFixed(2);
+}
+
+function confirmReturn(){
+  const id = document.getElementById('returnModal').dataset.id;
+  const lid = document.getElementById('returnLoc').value;
+  const qv = (document.getElementById('returnQty').value || '').trim();
+  const note = (document.getElementById('returnNote').value || '').trim();
+  if(!lid){ alert(TR('请选择返还库位')); return; }
+  if(qv !== '' && (!isFinite(Number(qv)) || Number(qv) <= 0)){
+    alert(TR('还回数量必须大于 0')); return;
+  }
+  // v1.0.45：维修单还回必须登记维修品类型（回写借用行，供维修柏拉图统计）
+  let repairType = '';
+  if(RETURN_MAINT){
+    const rtSel = document.getElementById('returnRepairType');
+    repairType = rtSel ? (rtSel.value || '').trim() : '';
+    if(!repairType){ alert(TR('请选择维修品类型')); return; }
+  }
+  fetch('/api/borrow/return', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ id: id, location_id: lid, qty: qv, return_note: note,
+                           repair_ok: (RETURN_MAINT && isRepairOk()) ? 1 : 0,
+                           repair_type: repairType })
+  }).then(function(r){ return r.json(); }).then(function(d){
+    if(d.ok){ alert(d.msg || TR('已办理回库')); closeModal('returnModal'); refreshBorrows(); }
+    else { alert(d.msg || TR('提交失败')); }
+  }).catch(function(){ alert(TR('网络错误')); });
+}
+
+function esc(s){
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
+    return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]);
+  });
+}
+
+document.addEventListener('DOMContentLoaded', refreshBorrows);
+if (typeof window !== 'undefined') {
+  window.addEventListener('focus', refreshBorrows);
+  setInterval(refreshBorrows, 60000);
+}
+</script>
+{% endblock %}

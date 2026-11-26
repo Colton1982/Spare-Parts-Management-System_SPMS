@@ -1,47 +1,175 @@
+{# SPMS 备件辅料仓管系统 | 作者：菜鸟大叔 (@rookie-uncle / @Colton1982) | 邮箱：510658927@qq.com | QQ：510658927 | Gitee：https://gitee.com/rookie-uncle | GitHub：https://github.com/Colton1982 | Copyright (c) 2026 rookie-uncle. All rights reserved. | Apache-2.0 #}
 {% extends "base.html" %}
-{% block title %}{{ tr('page_approval') }} - Spare Parts Management System{% endblock %}
-{% block page_title %}>{{ tr('page_approval') }}{% endblock %}
+{% block title %}{{ tr('page_approval') }} - Inventory Management System{% endblock %}
+{% block page_title %}{{ tr('page_approval') }}{% endblock %}
 {% block content %}
 
 <div class="card">
-  <div class="card-title">{{ tr('待审批') }} / {{ tr('已处理') }} · {{ tr('贵重备件出库申请') }}</div>
+  <div class="card-title">{{ tr('出库审批单') }} · {{ tr('出库申请（贵重件与退货/换货/内部转移/报废）') }}</div>
+  <div class="muted small ui-hint" style="margin:-6px 0 12px">{{ tr('按申请单分组，一次审批整单') }}{{ mk('；') }}{{ tr('审批完成的单自动移出本列表') }}{% if is_admin %}{{ mk('；') }}{{ tr('管理员可查看全站待办，未指派给您的单仅可查看') }}{% endif %}</div>
   <div class="table-wrap">
     <table class="table">
       <thead><tr>
-        <th>{{ tr('th_no') }}</th><th>{{ tr('th_time') }}</th><th>{{ tr('th_part') }}</th><th>{{ tr('规格') }}</th><th>{{ tr('单价(元)') }}</th>
-        <th>{{ tr('th_quantity') }}</th><th>{{ tr('th_amount') }}</th><th>{{ tr('申请人（部门）') }}</th><th>{{ tr('th_reason') }}</th><th>{{ tr('放置位置') }}</th><th>{{ tr('th_status') }}</th><th>{{ tr('th_ops') }}</th>
+        <th>{{ tr('th_part') }}</th><th>{{ tr('规格') }}</th><th>{{ tr('单价(元)') }}</th>
+        <th>{{ tr('th_quantity') }}</th><th>{{ tr('th_amount') }}</th><th>{{ tr('放置位置') }}</th><th>{{ tr('th_status') }}</th>
       </tr></thead>
-      <tbody>
-        {% for a in apps %}
+      {% for d in docs %}
+      <tbody class="doc-group">
+        <tr class="doc-head">
+          <td colspan="7" style="background:var(--bg-tertiary,#f4f5f7)">
+            <b class="mono">{{ d.doc_no }}</b>
+            <span class="muted small">{{ tn('application_doc.rows', d.n_rows) }} · {{ d.created_at }}
+              · {{ tr('申请人（部门）') }}{{ mk('：') }}<b class="app-who">{{ d.rows[0].app_name or '-' }}</b>{% if d.rows[0].app_dept %}（{{ d.rows[0].app_dept }}）{% endif %}
+              {% if d.assignee_name %} · {{ tr('指派') }}{{ mk('：') }}<b>{{ d.assignee_name }}</b>{% endif %}
+              {% if not d.mine %}<span class="badge badge-muted">{{ tr('仅查看（未指派给您）') }}</span>{% endif %}
+              {% if d.reason %} · {{ tr('th_reason') }}{{ mk('：') }}{{ d.reason }}{% endif %}</span>
+            <span style="float:right">
+              {% if d.actionable %}
+              {% if d.attach_required and d.attach_count == 0 %}
+              <span class="badge badge-warn">{{ tr('未传签字附件，不能审批') }}</span>
+              <button class="btn btn-xs btn-ok" disabled title="{{ tr('请先上传签字附件') }}">{{ tr('btn_approve') }}</button>
+              {% else %}
+              <button class="btn btn-xs btn-ok" onclick="openApproval('{{ d.doc_no }}', 'approve')">{{ tr('btn_approve') }}</button>
+              {% endif %}
+              <button class="btn btn-xs btn-danger" onclick="openApproval('{{ d.doc_no }}', 'reject')">{{ tr('btn_reject') }}</button>
+              {% if d.attach_count > 0 %}<button class="btn btn-xs" style="margin-left:4px" onclick="viewAttach('{{ d.doc_no }}')">{{ tr('查看签字附件') }} ({{ d.attach_count }})</button>{% endif %}
+              {% if d.has_pending2 %}<span class="muted small">{{ tr('含二级审批行') }}</span>{% endif %}
+              {% else %}<span class="muted small">{{ tr('已处理') }}</span>{% endif %}
+            </span>
+          </td>
+        </tr>
+        {% for a in d.rows %}
         <tr>
-          <td class="mono">{{ a.app_no }}</td>
-          <td class="mono">{{ a.created_at }}</td>
-          <td>{{ a.part_code }}<br><span class="muted">{{ a.name }}</span></td>
+          <td>{{ a.part_code }}<br><span class="muted">{{ a.name }}</span>
+            {% if a.out_type=='return' %}<span class="badge badge-warn">{{ tr('outkind.return') }}</span>
+            {% elif a.out_type=='exchange' %}<span class="badge badge-info">{{ tr('outkind.exchange') }}</span>
+            {% elif a.out_type=='internal' %}<span class="badge badge-info">{{ tr('outkind.internal') }}</span>
+            {% elif a.out_type=='giveback' %}<span class="badge badge-info">{{ tr('outkind.giveback') }}</span>
+            {% elif a.out_type=='maintenance' %}<span class="badge badge-info">{{ tr('outkind.maintenance') }}</span>
+            {% elif a.out_type=='verify' %}<span class="badge badge-info">{{ tr('outkind.verify') }}</span>{% endif %}
+            {% if a.out_type in ('return','exchange','internal','giveback','maintenance','verify') %}<br><span class="muted small">{% if a.out_type in ('maintenance','verify') %}{{ tr('出库人') }}{{ mk('：') }}{{ a.out_person or '—' }}{{ mk('，') }}{{ tr('目的公司/地址') }}{{ mk('：') }}{{ a.destination or '—' }}{% else %}{{ tr('目的地或目的公司') }}{{ mk('：') }}{{ a.destination or '—' }}{% endif %}{{ mk('，') }}{{ tr('接收人') }}{{ mk('：') }}{{ a.receiver or '—' }}{{ mk('，') }}{{ tr('联系方式') }}{{ mk('：') }}{{ a.contact or '—' }}{% if a.out_type=='exchange' and a.expected_return %}{{ mk('，') }}{{ tr('预计返回日期') }}{{ mk('：') }}{{ a.expected_return[:10] }}{% elif a.out_type in ('maintenance','verify') and a.expected_return %}{{ mk('，') }}{{ tr('预计返回时间') }}{{ mk('：') }}{{ a.expected_return[:16] }}{% endif %}</span>{% endif %}</td>
           <td class="mono">{{ a.spec or '-' }}</td>
           <td class="num">{{ '%.2f'|format(a.unit_price) }}</td>
           <td class="num">{{ a.quantity }}</td>
           <td class="num"><b>{{ '%.2f'|format(a.quantity * a.unit_price) }}</b></td>
-          <td>{{ a.app_name or '-' }}{% if a.app_dept %}<div class="muted small">{{ a.app_dept }}</div>{% endif %}</td>
-          <td class="muted">{{ a.reason or '-' }}</td>
           <td class="mono small">{% if a.all_locs_text %}{{ a.all_locs_text }}{% else %}{{ a.location_text or '-' }}{% endif %}</td>
           <td>
             {% if a.status=='pending' %}<span class="badge badge-info">{{ tr('待审批') }}</span>
+            {% elif a.status=='pending2' %}<span class="badge badge-info">{{ tr('二级审批中') }}</span>
             {% elif a.status=='approved' %}<span class="badge badge-ok">{{ tr('status_approved') }}</span>
             {% elif a.status=='rejected' %}<span class="badge badge-warn">{{ tr('status_rejected') }}</span>
             {% elif a.status=='canceled' %}<span class="badge badge-muted">{{ tr('status_canceled') }}</span>
             {% else %}<span class="badge badge-ok">{{ tr('已完成出库') }}</span>{% endif %}
-            {% if a.approval_note %}<div class="muted small">{{ tr('意见') }}{{ tr('：') }}{{ a.approval_note }}</div>{% endif %}
-          </td>
-          <td class="ops">
-            {% if a.status=='pending' %}
-            <button class="btn btn-xs btn-ok" onclick="openApproval({{ a.id }}, 'approve', '{{ a.app_no }}')">{{ tr('btn_approve') }}</button>
-            <button class="btn btn-xs btn-danger" onclick="openApproval({{ a.id }}, 'reject', '{{ a.app_no }}')">{{ tr('btn_reject') }}</button>
-            {% else %}<span class="muted small">{{ tr('已处理') }}</span>{% endif %}
+            {% if a.approval_note %}<div class="muted small">{{ tr('意见') }}{{ mk('：') }}{{ a.approval_note }}</div>{% endif %}
           </td>
         </tr>
-        {% else %}<tr><td colspan="12" class="muted center">{{ tr('没有贵重备件出库申请') }}</td></tr>{% endfor %}
+        {% endfor %}
+      </tbody>
+      {% else %}<tbody><tr><td colspan="7" class="muted center">{{ tr('没有贵重物料出库申请') }}</td></tr></tbody>{% endfor %}
+    </table>
+  </div>
+</div>
+
+{# v1.0.15：盘点审批统一收口到本页，盘点详情页不再放审批操作区 #}
+<div class="card" style="margin-top:14px">
+  <div class="card-title">{{ tr('盘点审批单') }}</div>
+  <div class="muted small ui-hint" style="margin:-6px 0 12px">{{ tr('差异分析随提交审批一并填写，审批时可直接查看') }}{{ mk('；') }}{{ tr('通过后系统自动按盘点结果校准库存') }}</div>
+  <div class="table-wrap">
+    <table class="table">
+      <thead><tr>
+        <th>{{ tr('盘点单号') }}</th><th>{{ tr('范围') }}</th><th>{{ tr('创建人') }}</th>
+        <th>{{ tr('差异') }}</th><th>{{ tr('审批进度') }}</th><th>{{ tr('差异分析') }}</th><th>{{ tr('操作') }}</th>
+      </tr></thead>
+      <tbody>
+      {% set ns = namespace(prev=none) %}
+      {% for s in stk_docs %}
+        {% if ns.prev is none or s.can_act != ns.prev %}
+        <tr class="doc-head"><td colspan="7" style="background:var(--bg-tertiary,#f4f5f7)">
+          <b>{{ tr('待我审批') if s.can_act else tr('其他待审批单') }}</b>
+          <span class="muted small">{{ mk('（') }}{{ stk_docs | selectattr('can_act', 'equalto', s.can_act) | list | length }}{{ mk('）') }}</span>
+        </td></tr>
+        {% set ns.prev = s.can_act %}
+        {% endif %}
+        <tr>
+          <td><a class="mono" href="{{ url_for('stocktake_detail', sid=s.id) }}" title="{{ tr('查看盘点明细') }}">{{ s.no }}</a>
+            <div class="muted small">{{ s.created_at }}</div></td>
+          <td class="small">{{ s.scope_disp }}</td>
+          <td>{{ s.created_name or '—' }}</td>
+          <td class="num small">{{ s.diff_rows }} {{ tr('条') }}<div class="muted small">{{ fmt_money(s.diff_amt) }}</div></td>
+          <td>
+            {% if s.status=='pending1' %}<span class="badge badge-info">{{ tr('待一级审批') }}</span>
+            {% else %}<span class="badge badge-warn">{{ tr('待二级审批') }}</span>{% endif %}
+            {% if s.assigned_name %}<div class="muted small">{{ tr('指派') }}{{ mk('：') }}{{ s.assigned_name }}</div>{% endif %}
+          </td>
+          <td class="small">
+            {% if s.cause %}<div>{{ tr('原因分析') }}{{ mk('：') }}{{ s.cause[:80] }}{% if s.cause|length > 80 %}…{% endif %}</div>{% endif %}
+            {% if s.action %}<div class="muted">{{ tr('改善行动') }}{{ mk('：') }}{{ s.action[:60] }}{% if s.action|length > 60 %}…{% endif %}</div>{% endif %}
+            {% if not s.cause and not s.action %}<span class="muted">—</span>{% endif %}
+          </td>
+          <td>
+            {% if s.can_act %}
+            <form method="post" action="{{ url_for('stocktake_approve', sid=s.id) }}" style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">
+              <input type="hidden" name="level" value="{{ s.level }}">
+              <input type="hidden" name="next" value="approval">
+              <input class="f-input" type="text" name="note" placeholder="{{ tr('审批意见') }}" style="max-width:120px;padding:3px 6px;font-size:12px">
+              <button class="btn btn-xs btn-ok" type="submit" name="action" value="approve">{{ tr('通过') }}</button>
+              <button class="btn btn-xs btn-danger" type="submit" name="action" value="reject"
+                      onclick="return confirm('{{ tr('驳回将退回草稿，确认？') }}')">{{ tr('驳回') }}</button>
+            </form>
+            {% else %}<span class="muted small">{{ tr('仅查看（未指派给您）') }}</span>{% endif %}
+          </td>
+        </tr>
+      {% else %}<tr><td colspan="7" class="muted center">{{ tr('暂无待审批的盘点单') }}</td></tr>{% endfor %}
       </tbody>
     </table>
+  </div>
+</div>
+
+{# v1.0.51：审批人查看自己已审批的历史记录 #}
+<div class="card" style="margin-top:14px">
+  <div class="card-title">{{ tr('我的审批历史') }} <span class="muted small" style="font-weight:400">{{ tr('我审批通过或驳回过的单据') }}</span></div>
+  <div class="table-wrap">
+    <table class="table">
+      <thead><tr>
+        <th>{{ tr('申请单号') }}</th><th>{{ tr('物料') }}</th><th>{{ tr('数量') }}</th>
+        <th>{{ tr('申请人') }}</th><th>{{ tr('审批结果') }}</th><th>{{ tr('审批意见') }}</th>
+        <th>{{ tr('处理时间') }}</th><th>{{ tr('th_ops') }}</th>
+      </tr></thead>
+      <tbody>
+      {% for h in my_history %}
+        <tr>
+          <td class="mono"><a href="javascript:void(0)" onclick="viewDocDetail('{{ h.doc_no }}')" title="{{ tr('查看详情') }}">{{ h.doc_no }}</a></td>
+          <td class="small">{{ h.part_codes or '-' }}</td>
+          <td class="num">{{ h.qty or '-' }}</td>
+          <td>{{ h.applicant or '-' }}</td>
+          <td>{% if h.status=='approved' %}<span class="badge badge-ok">{{ tr('status_approved') }}</span>
+              {% elif h.status=='rejected' %}<span class="badge badge-warn">{{ tr('status_rejected') }}</span>
+              {% else %}<span class="badge badge-info">{{ tr('status_completed') }}</span>{% endif %}</td>
+          <td class="small muted">{{ h.approval_note or '-' }}</td>
+          <td class="mono small">{{ h.processed_at or '-' }}</td>
+          <td>{% if h.attach_count %}<button class="btn btn-xs" onclick="viewAttach('{{ h.doc_no }}')">{{ tr('查看签字附件') }} ({{ h.attach_count }})</button>{% else %}<span class="muted small">-</span>{% endif %}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="8" class="muted center">{{ tr('暂无审批历史') }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{# v1.0.51：签字附件查看弹窗（只读） #}
+<div class="modal-mask" id="view-attach-modal" style="display:none" onclick="if(event.target===this)closeModal('view-attach-modal')">
+  <div class="modal">
+    <div class="modal-head"><span>{{ tr('查看签字附件') }} <span id="view-attach-doc" class="mono"></span></span><button class="modal-x" onclick="closeModal('view-attach-modal')">✕</button></div>
+    <div class="modal-body"><div id="view-attach-list" class="muted small">{{ tr('加载中') }}…</div></div>
+  </div>
+</div>
+
+{# v1.0.52：单据详情弹窗（我的审批历史点单号） #}
+<div class="modal-mask" id="doc-detail-modal" style="display:none" onclick="if(event.target===this)closeModal('doc-detail-modal')">
+  <div class="modal" style="max-width:760px">
+    <div class="modal-head"><span>{{ tr('单据详情') }} <span id="dd-docno" class="mono"></span></span><button class="modal-x" onclick="closeModal('doc-detail-modal')">✕</button></div>
+    <div class="modal-body"><div id="dd-body" class="muted small">{{ tr('加载中') }}…</div></div>
   </div>
 </div>
 
@@ -49,6 +177,7 @@
   <div class="modal">
     <div class="modal-head"><span id="ap-title">{{ tr('审批') }}</span><button class="modal-x" onclick="closeModal('ap-modal')">✕</button></div>
     <form class="modal-body" method="post" id="ap-form">
+      <p id="ap-info" class="muted small"></p>
       <label class="f-label">{{ tr('审批意见') }}<textarea class="f-input" name="note" rows="2" placeholder="{{ tr('可空') }}"></textarea></label>
       <div class="modal-foot"><button class="btn btn-primary" type="submit" id="ap-btn">{{ tr('btn_confirm') }}</button>
       <button class="btn" type="button" onclick="closeModal('ap-modal')">{{ tr('btn_cancel') }}</button></div>
@@ -59,12 +188,58 @@
 {% block scripts %}
 <script>
 function closeModal(id){ document.getElementById(id).style.display='none'; }
-function openApproval(aid, action, no){
-  document.getElementById('ap-form').action='/applications/'+aid+'/'+action;
-  document.getElementById('ap-title').textContent = (action==='approve'?'{{ tr('批准出库') }}{{ tr('：') }}':'{{ tr('驳回') }}{{ tr('：') }}') + no;
-  document.getElementById('ap-btn').textContent = action==='approve' ? TR('确认批准') : TR('确认驳回');
-  document.getElementById('ap-btn').className = 'btn ' + (action==='approve'?'btn-ok':'btn-danger');
-  document.getElementById('ap-modal').style.display='flex';
+async function viewAttach(docNo){
+  const esc = function(s){ const div=document.createElement('div'); div.textContent=(s==null?'':String(s)); return div.innerHTML; };
+  document.getElementById('view-attach-doc').textContent = docNo;
+  const box = document.getElementById('view-attach-list');
+  box.innerHTML = TR('加载中') + '…';
+  document.getElementById('view-attach-modal').style.display = 'flex';
+  try {
+    const r = await fetch('/scrap/' + encodeURIComponent(docNo) + '/attachments');
+    const d = await r.json().catch(() => ({}));
+    if(!r.ok || !d.ok){ box.innerHTML = esc(d.error || TR('加载失败')); return; }
+    const list = d.items || [];
+    box.innerHTML = list.length
+      ? list.map(x => '<a href="/media/' + esc(x.image_name) + '" target="_blank" style="display:inline-block;margin:4px">'
+          + '<img src="/media/' + esc(x.image_name) + '" style="width:120px;height:120px;object-fit:cover;border-radius:6px;border:1px solid var(--border,#ddd)"></a>').join('')
+      : TR('还没有上传附件');
+  } catch(e){ box.innerHTML = TR('加载失败'); }
+}
+// v1.0.52：审批历史点单号查看详情（复用 /api/doc/<no>/detail）
+async function viewDocDetail(docNo){
+  const esc = function(s){ const div=document.createElement('div'); div.textContent=(s==null?'':String(s)); return div.innerHTML; };
+  document.getElementById('dd-docno').textContent = docNo;
+  const box = document.getElementById('dd-body');
+  box.innerHTML = TR('加载中') + '…';
+  document.getElementById('doc-detail-modal').style.display = 'flex';
+  try {
+    const r = await fetch('/api/doc/' + encodeURIComponent(docNo) + '/detail');
+    const d = await r.json().catch(() => ({}));
+    if(!r.ok || !d.ok){ box.innerHTML = '<span class="badge badge-warn">' + esc(d.error || TR('加载失败')) + '</span>'; return; }
+    const its = d.items || [];
+    let h = '<div class="muted small" style="margin-bottom:8px">' + esc(d.app_type || '') + ' · ' +
+      TR('申请人') + ' ' + esc(d.applicant || '') + ' · ' + esc(d.created_at || '') + ' · ' +
+      TR('状态') + ' ' + esc(d.overall || '') + '</div>';
+    if(d.approval_note) h += '<div style="margin-bottom:8px"><b>' + TR('审批意见') + '：</b>' + esc(d.approval_note) + '</div>';
+    h += '<table class="table" style="font-size:12px"><thead><tr><th>' + TR('物料') + '</th><th>' + TR('数量') +
+      '</th><th>' + TR('来源库位') + '</th><th>' + TR('目标库位') + '</th><th>' + TR('用途/原因') + '</th></tr></thead><tbody>';
+    its.forEach(function(x){
+      h += '<tr><td class="mono">' + esc(x.part_code) + '<br><span class="muted">' + esc(x.name) + '</span></td>' +
+        '<td class="num">' + esc(x.quantity) + ' ' + esc(x.unit) + '</td><td class="small">' + esc(x.from_loc) +
+        '</td><td class="small">' + esc(x.to_loc) + '</td><td class="small">' + esc(x.reason || x.out_type) + '</td></tr>';
+    });
+    h += '</tbody></table>';
+    if(d.attach_count) h += '<div class="muted small" style="margin-top:8px">' + TR('签字附件') + '：' + d.attach_count + '</div>';
+    box.innerHTML = h;
+  } catch(e){ box.innerHTML = TR('加载失败'); }
+}
+function openApproval(docNo, action){
+  document.getElementById('ap-form').action = '/applications/doc/' + encodeURIComponent(docNo) + '/' + action;
+  document.getElementById('ap-info').innerHTML = (action === 'approve' ? '{{ tr('批准出库') }}：' : '{{ tr('驳回') }}：') + '<b>' + docNo + '</b>'
+    + '<br>' + TR('整单审批：单内全部待审批行一起处理；库存不足的行自动驳回。');
+  document.getElementById('ap-btn').textContent = action === 'approve' ? TR('确认批准') : TR('确认驳回');
+  document.getElementById('ap-btn').className = 'btn ' + (action === 'approve' ? 'btn-ok' : 'btn-danger');
+  document.getElementById('ap-modal').style.display = 'flex';
 }
 </script>
 {% endblock %}

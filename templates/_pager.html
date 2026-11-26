@@ -1,0 +1,31 @@
+{# SPMS 备件辅料仓管系统 | 作者：菜鸟大叔 (@rookie-uncle / @Colton1982) | 邮箱：510658927@qq.com | QQ：510658927 | Gitee：https://gitee.com/rookie-uncle | GitHub：https://github.com/Colton1982 | Copyright (c) 2026 rookie-uncle. All rights reserved. | Apache-2.0 #}
+{# 通用分页条：列表页共用（信息查询 / 信息维护）
+   参数：
+     base   —— 已带上全部筛选条件的当前页 URL（不含 page / per_page）
+     total  —— 匹配到的总条数
+     page   —— 当前页（1 基）
+     pages  —— 总页数
+     per_page —— '10' / '20' / '50' / '100'
+   注意：from-import 必须写 with context，否则宏里的 tr/tn 未定义。
+#}
+{% macro pager(base, total, page, pages, per_page) %}
+{% set _q = '&' if '?' in base else '?' %}
+{% set PAGE_SIZES = [10, 20, 50, 100] %}
+<div class="pager" style="margin-top:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+  <select class="f-input" style="max-width:130px" data-base="{{ base }}"
+          onchange="location.href=this.dataset.base+(this.dataset.base.indexOf('?')>=0?'&':'?')+'per_page='+this.value+'&page=1'">
+    {% for v in PAGE_SIZES %}
+    <option value="{{ v }}" {{ 'selected' if per_page==(v|string) }}>{{ tn('ui.per_page', v) }}</option>
+    {% endfor %}
+  </select>
+  <span class="muted small">{{ tr('共 {0} 条 · 第 {1}/{2} 页').format(total, page, pages) }}</span>
+  {% if page > 1 %}
+  <a class="btn btn-xs" href="{{ base }}{{ _q }}page=1&per_page={{ per_page }}">{{ tr('首页') }}</a>
+  <a class="btn btn-xs" href="{{ base }}{{ _q }}page={{ page-1 }}&per_page={{ per_page }}">{{ tr('上一页') }}</a>
+  {% endif %}
+  {% if page < pages %}
+  <a class="btn btn-xs" href="{{ base }}{{ _q }}page={{ page+1 }}&per_page={{ per_page }}">{{ tr('下一页') }}</a>
+  <a class="btn btn-xs" href="{{ base }}{{ _q }}page={{ pages }}&per_page={{ per_page }}">{{ tr('末页') }}</a>
+  {% endif %}
+</div>
+{% endmacro %}

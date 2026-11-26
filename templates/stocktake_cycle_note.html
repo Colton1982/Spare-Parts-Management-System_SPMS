@@ -1,0 +1,21 @@
+{# SPMS 备件辅料仓管系统 | 作者：菜鸟大叔 (@rookie-uncle / @Colton1982) | 邮箱：510658927@qq.com | QQ：510658927 | Gitee：https://gitee.com/rookie-uncle | GitHub：https://github.com/Colton1982 | Copyright (c) 2026 rookie-uncle. All rights reserved. | Apache-2.0 #}
+{% extends "base.html" %}
+{% block title %}{{ tr('超期原因说明') }} - Inventory Management System{% endblock %}
+{% block page_title %}{{ tr('超期原因说明') }}{% endblock %}
+{% block content %}
+<div class="card" style="max-width:860px;margin:0 auto">
+  <div class="card-title" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+    <span>{{ tr('超期原因说明') }}</span>
+    <a class="btn btn-xs" href="{{ url_for('stocktakes_page') }}">← {{ tr('返回盘点管理') }}</a>
+  </div>
+  <div class="muted small ui-hint" style="margin:-6px 0 10px">{{ tr('该期未盘点，可在此直接备注原因。') }}</div>
+  <form method="post" action="{{ url_for('stocktake_cycle_note_save') }}">
+    <input type="hidden" name="cycle_key" value="{{ cycle_key }}">
+    <div class="mono small" style="margin-bottom:8px;font-weight:600">{{ cycle_key }}</div>
+    <textarea class="f-input" name="missed_reason" rows="4" maxlength="400" placeholder="{{ tr('填写未盘点原因') }}">{{ missed_reason }}</textarea>
+    <div style="margin-top:10px;display:flex;gap:8px;align-items:center">
+      <button class="btn btn-primary" type="submit">{{ tr('保存原因') }}</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,91 @@
+{# SPMS 备件辅料仓管系统 | 作者：菜鸟大叔 (@rookie-uncle / @Colton1982) | 邮箱：510658927@qq.com | QQ：510658927 | Gitee：https://gitee.com/rookie-uncle | GitHub：https://github.com/Colton1982 | Copyright (c) 2026 rookie-uncle. All rights reserved. | Apache-2.0 #}
+{% extends "base.html" %}
+{% block title %}{{ tr('新建盘点') }} - Inventory Management System{% endblock %}
+{% block page_title %}{{ tr('新建盘点') }}{% endblock %}
+{% block content %}
+<div class="card" style="max-width:860px">
+  <div class="card-title">{{ tr('新建盘点') }}</div>
+  <form method="post" style="display:flex;flex-direction:column;gap:14px;margin-top:6px">
+    {# v1.0.20：本期在库覆盖率提示 —— 盘了一部分也能开工，剩下的自动进未盘清单 #}
+    <div style="padding:9px 12px;border-radius:10px;border:1px solid var(--line,#dde3ea);background:color-mix(in srgb, var(--primary,#3b82f6) 6%, transparent)">
+      <div class="small">
+        {{ tr('本期应盘日') }} <b class="mono">{{ cycle_info.cycle_key }}</b>
+        · {{ tr('容差窗口') }} <span class="mono">{{ cycle_info.from }} ~ {{ cycle_info.to }}</span>
+      </div>
+      <div class="small" style="margin-top:4px">
+        {{ tr('在库总量') }} <b>{{ cycle_info.total }}</b>
+        · {{ tr('已盘') }} <b style="color:var(--green,#22c55e)">{{ cycle_info.counted }}</b>
+        · {{ tr('未盘') }} <b style="color:{{ 'var(--red)' if cycle_info.uncovered else 'var(--green)' }}">{{ cycle_info.uncovered }}</b>
+        {% if cycle_info.uncovered %}
+        <a class="small" style="margin-left:8px" href="{{ url_for('stocktake_uncovered') }}?cycle={{ cycle_info.cycle_key }}">{{ tr('查看未盘明细') }}</a>
+        {% endif %}
+      </div>
+      <div class="muted small" style="margin-top:4px">{{ tr('范围内所有在库行都会进单；进单后用「未盘 / 本期已盘」页签区分，已盘行锁定只读。') }}</div>
+    </div>
+    <div>
+      <div class="sub-h">{{ tr('盘点范围') }}</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+        <label class="f-check"><input type="radio" name="scope_mode" value="all" checked onchange="togglePicks(this.value)">{{ tr('全部库存') }}</label>
+        <label class="f-check"><input type="radio" name="scope_mode" value="warehouse" onchange="togglePicks(this.value)">{{ tr('按仓库') }}</label>
+        <label class="f-check"><input type="radio" name="scope_mode" value="rack" onchange="togglePicks(this.value)">{{ tr('按货架') }}</label>
+        <label class="f-check"><input type="radio" name="scope_mode" value="category" onchange="togglePicks(this.value)">{{ tr('按分类') }}</label>
+      </div>
+    </div>
+    <div id="pick-wrap" style="display:none">
+      <div class="sub-h">{{ tr('选择') }} <span id="pick-label"></span></div>
+      <div id="pick-box" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+    </div>
+    <div>
+      <div class="sub-h">{{ tr('审批人') }}</div>
+      <p class="muted small ui-hint" style="line-height:1.8;margin:4px 0">{{ tr('审批人按本部门配置自动确定') }}{{ mk('：') }}{{ tr('一级审批人') }} <b>{{ dep1_name or tr('未配置') }}</b>{% if approval_level and approval_level >= 2 %}{{ mk('，') }}{{ tr('二级审批人') }} <b>{{ dep2_name or tr('未配置') }}</b>{% endif %}{{ mk('。') }}<br>{{ tr('如需修改审批人，请在「部门配置」中调整') }}{{ mk('。') }}</p>
+      {% if approval_level == 0 %}<div class="muted small ui-hint" style="margin-top:6px">{{ tr('审批设置为「不审批」：盘点提交后将直接按结果校准库存并完成，无需审批') }}</div>
+      {% elif approval_level and approval_level < 2 %}<div class="muted small ui-hint" style="margin-top:6px">{{ tr('当前为一级审批模式；若盘点中发现贵重件差异，将自动升级为两级审批') }}</div>{% endif %}
+    </div>
+    <div>
+      <div class="sub-h">{{ tr('备注') }}</div>
+      <textarea class="f-input" name="note" rows="2" style="width:100%" placeholder="{{ tr('选填') }}"></textarea>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-primary" type="submit">{{ tr('创建盘点单') }}</button>
+      <a class="btn" href="{{ url_for('stocktakes_page') }}">{{ tr('返回') }}</a>
+    </div>
+  </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+window._PICKS = {
+  warehouse: {{ warehouses|map(attribute='warehouse')|list|tojson }},
+  rack: {{ rack_options|tojson }},
+  category: {{ cats|map(attribute='category')|list|tojson }}
+};
+function togglePicks(mode){
+  var w = document.getElementById('pick-wrap');
+  var box = document.getElementById('pick-box');
+  var lab = document.getElementById('pick-label');
+  box.innerHTML = '';
+  if(mode === 'all' || !window._PICKS[mode]){ w.style.display='none'; return; }
+  var arr = window._PICKS[mode];
+  var names = {warehouse:'{{ tr('仓库') }}', rack:'{{ tr('货架') }}', category:'{{ tr('分类') }}'};
+  lab.textContent = names[mode] || mode;
+  arr.forEach(function(v){
+    var l = document.createElement('label');
+    l.className = 'f-check';
+    var cb = document.createElement('input');
+    cb.type = 'checkbox'; cb.name = 'picks'; cb.value = v;
+    l.appendChild(cb);
+    // 超长取值（有人把分类名填成几百位）截断显示，全文放 title，别把整页撑宽
+    var s = String(v == null ? '' : v);
+    var t = document.createElement('span');
+    t.className = 'pick-txt';
+    if(s.length > 32){ t.textContent = s.slice(0, 32) + '…'; t.title = s; }
+    else { t.textContent = s; }
+    l.appendChild(t);
+    box.appendChild(l);
+  });
+  w.style.display = 'block';
+}
+/* 审批人选择器（可搜索、默认收窄为常用） */
+</script>
+{% endblock %}

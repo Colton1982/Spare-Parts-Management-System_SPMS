@@ -1,0 +1,196 @@
+{# SPMS 备件辅料仓管系统 | 作者：菜鸟大叔 (@rookie-uncle / @Colton1982) | 邮箱：510658927@qq.com | QQ：510658927 | Gitee：https://gitee.com/rookie-uncle | GitHub：https://github.com/Colton1982 | Copyright (c) 2026 rookie-uncle. All rights reserved. | Apache-2.0 #}
+{% extends "base.html" %}
+{% block title %}{{ tr('盘点管理') }} - Inventory Management System{% endblock %}
+{% block page_title %}{{ tr('盘点管理') }}{% endblock %}
+{% block content %}
+{# v1.0.33：盘点单列表已搬到「盘点记录」页；本页只留看板图 + 任务监控 #}
+<div class="card" style="margin-bottom:16px">
+  <div class="card-title" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+    <span>{{ tr('盘点管理') }}</span>
+    <span style="display:flex;gap:6px">
+      <a class="btn" href="{{ url_for('stocktake_reports') }}">{{ tr('盘点记录') }}</a>
+      {% if can('stocktake','create') %}<a class="btn btn-primary" href="{{ url_for('stocktake_new') }}">+ {{ tr('新建盘点') }}</a>{% endif %}
+    </span>
+  </div>
+  <div class="muted small ui-hint" style="margin:-6px 0 2px">{{ tr('对账面库存与实际库存核对') }}{{ mk('，') }}{{ tr('差异经审批后自动调整') }}{{ mk('。') }}{{ tr('盘点单列表见「盘点记录」页') }}</div>
+</div>
+
+{# 盘点计划与实盘看板图：蓝柱=数量无误、红柱=数量有误；虚线=盘点时间范围；箭头=时间轴 #}
+{# v1.0.40：未盘清单链接一律指向「当前期」。以前取 timeline|last，节点补齐未来期后
+   会指到还没到的未来周期（点进去是 0 行），跟卡片上的未盘数对不上。 #}
+{% set _cur = (cycle.timeline | selectattr('current') | list | first) %}
+<div class="card" id="card-stocktake-cycle">
+  <div class="card-title" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+    <span>{{ tr('盘点计划与实盘看板图') }}</span>
+    <span class="muted small" style="font-weight:400">{{ tr('每 {n} 天一个盘点节点', n=cycle.days) }}</span>
+  </div>
+  <div class="muted small ui-hint" style="margin:-6px 0 10px">{{ tr('蓝柱为数量无误的物料数，红柱为数量有误的物料数；虚线内为该期盘点时间范围，超期后后续节点按上期最后盘点日顺延。') }}</div>
+
+  {% if cycle.next_due %}
+  <div class="stk-due" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 12px;padding:8px 12px;border-radius:10px;border:1px solid var(--line,#dde3ea);background:{{ 'color-mix(in srgb, var(--red) 8%, transparent)' if cycle.next_due.state == 'missed' else 'color-mix(in srgb, var(--primary,#3b82f6) 7%, transparent)' }}">
+    <span class="small" style="font-weight:600">{{ tr('下次盘点窗口') }}</span>
+    <span class="mono small">{{ cycle.next_due.from }} ~ {{ cycle.next_due.to }}</span>
+    {% if cycle.next_due.left_days > 0 %}
+      <span class="small">{{ tr('还有 {n} 天进入', n=cycle.next_due.left_days) }}</span>
+    {% elif cycle.next_due.state == 'missed' %}
+      <span class="small" style="color:var(--red)">{{ tr('已超期 {n} 天', n=(0 - cycle.next_due.left_days)) }}</span>
+    {% else %}
+      <span class="small">{{ tr('窗口内还有 {n} 天', n=(0 - cycle.next_due.left_days)) }}</span>
+    {% endif %}
+    <span style="flex:1"></span>
+    <a class="btn btn-xs" href="{{ url_for('stocktake_uncovered') }}?cycle={{ (_cur.cycle_key if _cur else cycle.timeline|last|attr('cycle_key')) }}">{{ tr('查看本期未盘明细') }}</a>
+  </div>
+  {% endif %}
+
+  <div class="stat-row" style="margin:4px 0 8px">
+    <div class="stat-card"><div class="stat-label">{{ tr('在库总量') }}</div><div class="stat-num">{{ cycle.kpi.total }}</div><div class="muted small">{{ tr('库存行（物料×库位）') }}</div></div>
+    <div class="stat-card"><div class="stat-label">{{ tr('已盘') }}</div><div class="stat-num" style="color:var(--green,#22c55e)">{{ cycle.kpi.counted }}</div></div>
+    {# v1.0.40：未盘卡片可点，直接进未盘清单；旁边一行写清「未盘」到底指什么 #}
+    <a class="stat-card" href="{{ url_for('stocktake_uncovered') }}?cycle={{ (_cur.cycle_key if _cur else cycle.timeline|last|attr('cycle_key')) }}" style="text-decoration:none;color:inherit;cursor:pointer">
+      <div class="stat-label">{{ tr('未盘') }} ›</div>
+      <div class="stat-num" style="color:{{ 'var(--red)' if cycle.kpi.uncovered else 'var(--green)' }}">{{ cycle.kpi.uncovered }}</div>
+    </a>
+    <div class="stat-card"><div class="stat-label">{{ tr('覆盖率') }}</div><div class="stat-num">{% if cycle.kpi.ratio is not none %}{{ (cycle.kpi.ratio * 100)|round|int }}%{% else %}-{% endif %}</div></div>
+  </div>
+  {# v1.0.40：看板报「未盘 3」，用户第一反应是「我明明都盘了」——这句把口径说清楚，
+     每一行为什么算未盘，点进清单还有逐行原因 #}
+  <div class="muted small ui-hint" style="margin:0 0 10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+    <span>{{ tr('「未盘」指本期还没有任何已提交盘点单覆盖到的库存行：建单后才入库的新行、本单盘点范围之外的库位。') }}</span>
+    {% if cycle.kpi.counted > cycle.kpi.total %}
+    <span>{{ tr('已盘数含本期盘点后已出库/调库的库存行，可能大于在库总量；覆盖率按 100% 封顶。') }}</span>
+    {% endif %}
+    <a href="{{ url_for('stocktake_uncovered') }}?cycle={{ (_cur.cycle_key if _cur else cycle.timeline|last|attr('cycle_key')) }}">{{ tr('查看未盘明细与原因') }} →</a>
+  </div>
+  {# v1.0.41：横轴改自然时间比例后，把当前生效的周期/容差写在图上，
+     用户改了设置能立刻看到「参数变了、图也变了」，不必靠肉眼猜柱距。 #}
+  <div class="muted small ui-hint" style="margin:0 0 6px" id="stk-cycle-caption">
+    {{ tr('每 {n} 天一个盘点节点；下次应盘日 = 上期应盘日 + 周期，前后各 {p}% 内完成都算按期。', n=cycle_days, p=((cycle.tolerance or 0.2) * 100)|round|int) }}
+  </div>
+  <div class="stk-board-wrap" style="width:100%;height:330px">
+    <canvas id="chart-stk-cycle" style="width:100%;height:330px"></canvas>
+  </div>
+  {# 双柱图例 #}
+  <div class="stk-legend" style="display:flex;gap:16px;flex-wrap:wrap;padding:10px 2px 0">
+    <span class="small" style="display:inline-flex;align-items:center;gap:5px"><i style="width:10px;height:10px;border-radius:3px;background:#3b82f6;display:inline-block"></i>{{ tr('数量无误') }}</span>
+    <span class="small" style="display:inline-flex;align-items:center;gap:5px"><i style="width:10px;height:10px;border-radius:3px;background:#ef4444;display:inline-block"></i>{{ tr('数量有误') }}</span>
+    {# v1.0.40：底纹两段色的图例（盘点期间 / 非盘点期间） #}
+    <span class="small" style="display:inline-flex;align-items:center;gap:5px"><i style="width:16px;height:10px;border-radius:2px;background:rgba(59,130,246,.18);border:1px solid rgba(59,130,246,.5);display:inline-block"></i>{{ tr('盘点期间（应盘窗口）') }}</span>
+    <span class="small" style="display:inline-flex;align-items:center;gap:5px"><i style="width:16px;height:10px;border-radius:2px;background:rgba(148,163,184,.18);border:1px solid rgba(148,163,184,.45);display:inline-block"></i>{{ tr('非盘点期间') }}</span>
+    <span class="small muted stk-legend-hint">{{ tr('倒数第二列=本期盘点，最右列=下一期；左端=下限日，右端=上限日，中间箭头为盘点区间；月份带红点表示该期超期') }}</span>
+  </div>
+  {# 八状态图例：柱高只表达无误/有误，按期与否看这里和时间轴卡片 #}
+  {% set _legend = {'early': tr('提前完成'), 'on_time': tr('按期完成'), 'late': tr('超期完成'),
+                    'approving': tr('审批中'), 'draft': tr('草稿未提交'),
+                    'in_window': tr('窗口内待盘'), 'pending': tr('待盘'), 'missed': tr('未盘点'),
+                    'not_due': tr('未到盘点期')} %}
+  {% set _legend_c = {'early': '#3b82f6', 'on_time': '#22c55e', 'late': '#f59e0b',
+                      'approving': '#64748b', 'draft': '#94a3b8',
+                      'in_window': '#eab308', 'pending': '#cbd5e1', 'missed': '#ef4444',
+                      'not_due': '#94a3b8'} %}
+  <div class="stk-legend stk-legend-states" style="display:flex;gap:12px;flex-wrap:wrap;padding:9px 2px 0">
+    {% for k, v in _legend.items() %}
+    <span class="small" style="display:inline-flex;align-items:center;gap:5px"><i style="width:10px;height:10px;border-radius:3px;background:{{ _legend_c[k] }};display:inline-block"></i>{{ v }}</span>
+    {% endfor %}
+  </div>
+
+  {# 节点时间轴：每期一格，显示状态 + 无误/有误 + 实际完成日 #}
+  {% set _st = {'early': tr('提前完成'), 'on_time': tr('按期完成'), 'late': tr('超期完成'),
+                'approving': tr('审批中'), 'draft': tr('草稿未提交'),
+                'in_window': tr('窗口内待盘'), 'pending': tr('待盘'), 'missed': tr('未盘点'),
+                    'not_due': tr('未到盘点期')} %}
+  {% set _sc = {'early': '#3b82f6', 'on_time': '#22c55e', 'late': '#f59e0b',
+                'approving': '#64748b', 'draft': '#94a3b8',
+                'in_window': '#eab308', 'pending': '#cbd5e1', 'missed': '#ef4444',
+                      'not_due': '#94a3b8'} %}
+  <div class="stk-timeline" style="display:flex;gap:6px;overflow-x:auto;padding:10px 2px 4px">
+    {% for n in cycle.timeline %}
+    {# v1.0.56：未来期还没开始盘点，不渲染成可点击链接（柱子与节点卡片都不给报告入口） #}
+    {% set _nstyle = 'flex:1 0 104px;min-width:104px;border:1px solid ' ~ _sc.get(n.state, 'var(--line,#dde3ea)') ~ ';border-radius:8px;padding:6px 8px;background:' ~ ('color-mix(in srgb, ' ~ _sc.get(n.state, '#94a3b8') ~ ' 10%, transparent)') ~ ';text-decoration:none;color:inherit;' ~ ('cursor:default' if n.state == 'not_due' else 'cursor:pointer') %}
+    {# v1.0.69：填写入口只放在「盘点区间」节点卡片上。未盘期进后台原因页，
+       超期/提前完成进原单报告（有可编辑的超期原因备注），其它仍进合并报告。 #}
+    {% set _done_doc = (n.docs | selectattr('status', 'equalto', 'done') | list | first) %}
+    {% if n.state == 'missed' %}
+      {% set _node_url = url_for('stocktake_cycle_note_save', cycle_key=n.cycle_key) %}
+    {% elif n.state in ('late', 'early') and _done_doc %}
+      {% set _node_url = url_for('stocktake_report', sid=_done_doc.id) %}
+    {% else %}
+      {% set _node_url = n.report_url %}
+    {% endif %}
+    {% if n.state == 'not_due' %}
+    <div class="stk-node" style="{{ _nstyle }}">
+    {% else %}
+    <a class="stk-node" href="{{ _node_url }}" title="{{ n.plan_base }} · {{ n.from }} ~ {{ n.to }}" style="{{ _nstyle }}">
+    {% endif %}
+      <div class="mono small" style="white-space:nowrap">{{ n.label }}</div>
+      <div class="small" style="font-weight:600;color:{{ _sc.get(n.state, 'inherit') }}">{{ _st.get(n.state, n.state) }}</div>
+      <div class="small">{{ tr('无误') }} {{ n.ok }} / {{ tr('有误') }} {{ n.bad }}</div>
+      <div class="muted small" style="white-space:nowrap">
+        {% if n.done_date %}{{ n.done_date[5:] }}{% if n.offset is not none and n.offset != 0 %} ({{ '+' if n.offset > 0 else '' }}{{ n.offset }}d){% endif %}
+        {% elif n.estimated %}{{ tr('无快照') }}{% else %}-{% endif %}
+      </div>
+      {% if n.state == 'not_due' %}<div class="muted small">{{ tr('未到盘点期') }}</div>
+      {% elif n.uncovered %}<div class="muted small" style="color:var(--red)">{{ tr('未盘') }} {{ n.uncovered }}</div>{% endif %}
+    {% if n.state == 'not_due' %}</div>{% else %}</a>{% endif %}
+    {% else %}
+    <div class="muted small">{{ tr('暂无盘点节点') }}</div>
+    {% endfor %}
+  </div>
+
+  {# v1.0.69：本区纯展示，不给任何入口；填写从上方「盘点区间」节点卡片进入。 #}
+  {% set _delay_rows = [] %}
+  {% for n in cycle.timeline %}
+    {% if n.state in ('late','missed','early') %}{% set _ = _delay_rows.append(n) %}{% endif %}
+  {% endfor %}
+  {% if _delay_rows %}
+  <div style="margin-top:12px;border-top:1px dashed var(--line,#dde3ea);padding-top:10px">
+    <div class="small" style="font-weight:600;margin-bottom:6px">{{ tr('超期原因说明') }}</div>
+    {% for n in _delay_rows %}
+    <div style="padding:6px 8px;margin-bottom:6px;border-radius:8px;border:1px solid var(--line,#dde3ea);background:color-mix(in srgb, var(--warn,#b45309) 6%, transparent)">
+      <div class="small" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+        <span class="mono">{{ n.plan_base }}</span>
+        <span class="badge badge-{{ 'danger' if n.state=='missed' else 'warn' }}">{{ _st.get(n.state, n.state) }}</span>
+      </div>
+      <div class="small muted" style="margin-top:3px;white-space:pre-wrap">
+        {% if n.state == 'missed' %}{{ n.missed_reason or tr('未分析') }}
+        {% else %}{{ n.delay_reason or tr('未分析') }}{% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+
+{% include '_stocktake_tasks.html' with context %}
+<script src="{{ url_for('static', filename='js/charts.js', v='20261124a') }}"></script>
+<script>
+(function(){
+  {# 只把画图需要的字段下发到 JS：cause/action 里带计划完成日，
+     整段 tojson 会把「只看超期」筛掉的任务日期又带进页面 #}
+  var nodes = {{ chart_nodes | tojson }};
+  var stateNames = {{ {'early': tr('提前完成'), 'on_time': tr('按期完成'), 'late': tr('超期完成'),
+                       'approving': tr('审批中'), 'draft': tr('草稿未提交'),
+                       'in_window': tr('窗口内待盘'), 'pending': tr('待盘'), 'missed': tr('未盘点'),
+                    'not_due': tr('未到盘点期')} | tojson }};
+  function draw(){
+    if(typeof window.drawStkBoard !== 'function') return;
+    window.drawStkBoard('chart-stk-cycle', nodes, {
+      stateNames: stateNames,
+      okName: {{ tr('数量无误') | tojson }},
+      badName: {{ tr('数量有误') | tojson }},
+      rangeName: {{ tr('盘点时间范围') | tojson }},
+      doneName: {{ tr('完成日') | tojson }},
+      causeName: {{ tr('超期原因') | tojson }},
+      loName: {{ tr('下限') | tojson }},
+      hiName: {{ tr('上限') | tojson }},
+      rangeLabelName: {{ tr('盘点区间') | tojson }},
+      uncoveredName: {{ tr('未盘') | tojson }},
+      clickHint: {{ tr('点击查看该期报表') | tojson }},
+      cycleDays: {{ cycle_days | tojson }}
+    });
+  }
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', draw);
+  else draw();
+  window.addEventListener('resize', draw);
+})();
+</script>
+{% endblock %}

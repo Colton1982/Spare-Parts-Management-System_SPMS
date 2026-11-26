@@ -1,0 +1,560 @@
+{# SPMS 备件辅料仓管系统 | 作者：菜鸟大叔 (@rookie-uncle / @Colton1982) | 邮箱：510658927@qq.com | QQ：510658927 | Gitee：https://gitee.com/rookie-uncle | GitHub：https://github.com/Colton1982 | Copyright (c) 2026 rookie-uncle. All rights reserved. | Apache-2.0 #}
+{% extends "base.html" %}
+{% block title %}{{ tr('盘点详情') }} - Inventory Management System{% endblock %}
+{% block page_title %}{{ tr('盘点详情') }}{% endblock %}
+{% block content %}
+<div class="card">
+  <div class="card-title" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+    <span style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <a class="btn btn-xs" href="{{ url_for('stocktakes_page') }}">← {{ tr('返回') }}</a>
+      <span class="mono" style="font-size:15px">{{ st.no }}</span>
+      {% if st.status=='draft' %}<span class="badge badge-muted">{{ tr('草稿') }}</span>
+      {% elif st.status=='pending1' %}<span class="badge badge-info">{{ tr('待一级审批') }}</span>
+      {% elif st.status=='pending2' %}<span class="badge badge-warn">{{ tr('待二级审批') }}</span>
+      {% elif st.status=='done' %}<span class="badge badge-ok">{{ tr('已完成') }}</span>
+      {% else %}<span class="badge badge-danger">{{ tr('已取消') }}</span>{% endif %}
+      <span class="muted small">{{ tr('范围') }}: {{ scope_disp }}</span>
+      <span class="muted small">{{ tr('创建人') }}: {{ st.created_by_name }}</span>
+      <span class="muted small">{{ tr('创建时间') }}: {{ st.created_at }}</span>
+      {% if st.approver1_id or st.approver2_id %}
+      <span class="muted small">{{ tr('审批人') }}: {% if st.approver1_id %}{{ tr('一级') }} {{ ap1 or '-' }}{% endif %}{% if st.approver1_id and st.approver2_id %} / {% endif %}{% if st.approver2_id %}{{ tr('二级') }} {{ ap2 or '-' }}{% endif %}</span>
+      {% endif %}
+    </span>
+    <span style="display:flex;gap:6px;flex-wrap:wrap">
+      {% if st.status=='draft' %}
+      <a class="btn" href="{{ url_for('stocktake_mobile', sid=st.id) }}" target="_blank">{{ tr('手机盘点') }}</a>
+      {% if cur_role=='admin' or st.created_by_id == cur_uid %}
+      <button class="btn" type="button" id="stk-reset-all" onclick="resetAllStk()">{{ tr('整体重盘') }}</button>
+      {% endif %}
+      <button class="btn btn-primary" type="button" id="stk-prepare-submit" onclick="prepareSubmit()">{{ tr('提交审批') }}</button>
+      <form method="post" action="{{ url_for('stocktake_cancel', sid=st.id) }}" style="display:inline" onsubmit="return confirm('{{ tr('确认取消该盘点单？') }}')">
+        <button class="btn" type="submit">{{ tr('取消') }}</button>
+      </form>
+      {% endif %}
+      {% if st.status=='pending1' or st.status=='pending2' %}
+      <form method="post" action="{{ url_for('stocktake_cancel', sid=st.id) }}" style="display:inline" onsubmit="return confirm('{{ tr('确认取消该盘点单？') }}')">
+        <button class="btn" type="submit">{{ tr('取消') }}</button>
+      </form>
+      {% endif %}
+      {% if st.status=='done' %}
+      <a class="btn btn-primary" href="{{ url_for('stocktake_report', sid=st.id) }}">{{ tr('盘点报告') }}</a>
+      <a class="btn" href="{{ url_for('stocktake_export', sid=st.id) }}">{{ tr('导出 Excel') }}</a>
+      {% endif %}
+      {% if cur_role=='admin' and st.status in ('draft','pending1','pending2') %}
+      <form method="post" action="{{ url_for('stocktake_delete', sid=st.id) }}" style="display:inline" onsubmit="return confirm('{{ tr('确认删除该盘点单？删除后不可恢复') }}')">
+        <button class="btn btn-danger" type="submit">{{ tr('删除盘点单') }}</button>
+      </form>
+      {% endif %}
+    </span>
+  </div>
+
+  {% if st.status in ('draft','pending1','pending2') %}
+  <div class="muted small ui-hint" style="margin:-4px 0 10px">
+    {{ tr('审批通过、库存自动调整完成后，系统会生成本单的盘点报告：差异汇总 + 逐行原因归因 + 原因分析/改善行动 + 审批痕迹 + 签字栏，可导出 Excel 或打印归档。') }}
+  </div>
+  {% endif %}
+
+  {# v1.0.15：审批操作统一收口到「审批单」页，本页只留只读结论与跳转 #}
+  {% if st.status in ('pending1','pending2','done') %}
+  <div style="background:#f8fafc;border:1px solid var(--line);border-radius:10px;padding:12px;margin:10px 0">
+    <div class="sub-h">{{ tr('差异分析') }}
+      <span class="muted small" style="font-weight:400;font-size:12px">
+        {% if analysis.at %}{{ tr('最后保存：{name} · {time}', name=analysis.by or '—', time=analysis.at) }}{% else %}{{ tr('尚未填写') }}{% endif %}
+      </span>
+      {% if st.status in ('pending1','pending2') %}
+      <span style="float:right" class="muted small">{{ tr('审批操作') }}{{ mk('：') }}<a href="{{ url_for('approval_page') }}">{{ tr('nav_approval') }}</a></span>
+      {% endif %}
+    </div>
+    <div class="ana-grid">
+      <div><div class="f-label">{{ tr('原因分析') }}</div><div class="small" style="white-space:pre-wrap">{{ analysis.cause or '—' }}</div></div>
+      <div><div class="f-label">{{ tr('改善行动') }}</div><div class="small" style="white-space:pre-wrap">{{ analysis.action or '—' }}</div></div>
+    </div>
+    <div class="ana-grid" style="margin-top:8px">
+      <div class="muted small">{{ tr('责任人') }}{{ mk('：') }}{{ analysis.owner or '—' }}</div>
+      <div class="muted small">{{ tr('计划完成日期') }}{{ mk('：') }}{{ analysis.due or '—' }}</div>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if prior_cnt or done_here_cnt or diff_cnt %}
+  <div class="table-wrap" id="stk-tabs" style="border:0;padding:0;background:transparent;margin-bottom:8px">
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <button type="button" class="btn btn-xs stk-tab active" data-f="all">{{ tr('全部') }} {{ item_cnt }}</button>
+      <button type="button" class="btn btn-xs stk-tab" data-f="undo">{{ tr('未盘') }} <span id="stk-undo-n">{{ undo_cnt }}</span></button>
+      <button type="button" class="btn btn-xs stk-tab" data-f="done">{{ tr('本期已盘') }} <span id="stk-done-n">{{ prior_cnt + done_here_cnt }}</span></button>
+      <button type="button" class="btn btn-xs stk-tab" data-f="diff">{{ tr('仅看差异') }} <span id="stk-diff-n">{{ diff_cnt }}</span></button>
+      <span class="muted small ui-hint">{{ tr('灰底行本期已由别的单据盘过，实盘数只读；确需重盘点右侧「重盘」解锁') }}</span>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="table-wrap">
+    <table class="table" id="stk-table">
+      <thead><tr>
+        <th>{{ tr('料号') }}</th>
+        <th>{{ tr('名称') }}</th>
+        <th>{{ tr('库位') }}</th>
+        <th style="text-align:right">{{ tr('账面数量') }}</th>
+        <th style="text-align:right">{{ tr('实盘数量') }}</th>
+        <th style="text-align:right">{{ tr('差异') }}</th>
+        <th>{{ tr('实盘料号') }}</th>
+        <th>{{ tr('贵重') }}</th>
+        <th style="min-width:150px">{{ tr('本期状态') }}</th>
+      </tr></thead>
+      <tbody>
+        {% for it in items %}
+        {% set d = (it.actual_qty - it.book_qty) if it.actual_qty is not none else 0 %}
+        {% set isdiff = (d != 0) or (it.actual_part_id and it.actual_part_id != it.part_id) %}
+        {% set locked = (it.prior_st or '') != '' and st.status=='draft' %}
+        <tr data-id="{{ it.id }}" data-prior="{{ '1' if (it.prior_st or '') else '0' }}"
+            data-done="{{ '1' if it.actual_qty is not none else '0' }}" data-diff="{{ '1' if isdiff else '0' }}"{% if locked %} class="stk-locked" style="background:var(--panel-2,#f1f5f9);opacity:.72"{% endif %}>
+          <td class="mono">{{ it.part_code }}</td>
+          <td>{{ it.part_name }}</td>
+          <td>{{ it.location or '—' }}</td>
+          <td style="text-align:right">{{ it.book_qty }}</td>
+          <td style="text-align:right">
+            {% if st.status=='draft' %}
+            <input class="f-input in-qty" type="number" step="{{ 'any' if it.qty_decimal else '1' }}" min="0" style="width:110px;text-align:right"
+                   value="{{ it.actual_qty if it.actual_qty is not none else '' }}" placeholder="{{ tr('未盘') }}"
+                   {% if locked %}readonly{% endif %}
+                   oninput="if(parseFloat(this.value)<0){this.value=0;this.style.borderColor='#e74c3c';}else{this.style.borderColor='';}">
+            {% else %}
+            {{ it.actual_qty if it.actual_qty is not none else '—' }}
+            {% endif %}
+          </td>
+          <td style="text-align:right" class="in-diff">
+            {% if it.actual_qty is not none %}{{ (it.actual_qty - it.book_qty) if (it.actual_qty - it.book_qty)!=0 else 0 }}{% else %}—{% endif %}
+          </td>
+          <td>
+            {% if it.actual_part_id and it.actual_part_id != it.part_id %}<span class="tag tag-orange" title="{{ tr('盘点发现实物为其它料号') }}">{{ tr('错料') }} → {{ it.actual_part_code }}</span>{% else %}—{% endif %}
+          </td>
+          <td>{% if it.is_valuable %}<span class="badge badge-val">{{ tr('贵重') }}</span>{% else %}—{% endif %}</td>
+          <td>
+            {% if it.prior_st %}
+            <span class="small" style="color:var(--ok,#15803d)">{{ (it.prior_at or '')[:10] }} {{ tr('已盘') }} {{ it.prior_st }}</span>
+            {% if st.status=='draft' %}
+            <button type="button" class="btn btn-xs stk-reopen" style="margin-left:4px">{{ tr('重盘') }}</button>
+            {% endif %}
+            {% elif it.actual_qty is not none %}
+            <span class="small" style="color:var(--ok,#15803d)">{{ tr('本单已录') }}</span>
+            {% else %}
+            <span class="small muted">{{ tr('未盘') }}</span>
+            {% endif %}
+          </td>
+        </tr>
+        {# v1.0.17：每条差异紧跟一行分析填写区，随「保存」一起落库 #}
+        {% if isdiff %}
+        <tr class="ana-row" data-for="{{ it.id }}">
+          <td colspan="9" style="background:var(--panel-2,#f8fafc);padding:8px 12px;border-top:0">
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px;align-items:start">
+              <label class="f-label" style="margin:0">{{ tr('原因分析') }}
+                {% if st.status=='draft' %}
+                <textarea class="f-input in-cause" rows="2" maxlength="4000" placeholder="{{ tr('填写本条差异的原因') }}">{{ it.cause or '' }}</textarea>
+                {% else %}<div class="small" style="white-space:pre-wrap">{{ it.cause or '—' }}</div>{% endif %}
+              </label>
+              <label class="f-label" style="margin:0">{{ tr('改善处理') }}
+                {% if st.status=='draft' %}
+                <textarea class="f-input in-action" rows="2" maxlength="4000" placeholder="{{ tr('填写本条差异的改善处理') }}">{{ it.action or '' }}</textarea>
+                {% else %}<div class="small" style="white-space:pre-wrap">{{ it.action or '—' }}</div>{% endif %}
+              </label>
+              <label class="f-label" style="margin:0">{{ tr('责任人') }}
+                {% if st.status=='draft' %}
+                <input class="f-input in-owner" type="text" maxlength="60" value="{{ it.action_owner or '' }}" placeholder="{{ tr('填写跟进人姓名') }}">
+                {% else %}<div class="small">{{ it.action_owner or '—' }}</div>{% endif %}
+              </label>
+              <label class="f-label" style="margin:0">{{ tr('计划完成日期') }}
+                {% if st.status=='draft' %}
+                <input class="f-input in-due" type="date" value="{{ it.action_due or '' }}">
+                {% else %}<div class="small">{{ it.action_due or '—' }}</div>{% endif %}
+              </label>
+            </div>
+          </td>
+        </tr>
+        {% endif %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if st.status=='draft' %}
+  <div style="display:flex;gap:8px;margin-top:12px">
+    <button class="btn btn-primary" onclick="saveAll()">{{ tr('保存实盘数量') }}</button>
+    <span class="muted small" style="align-self:center" id="save-msg"></span>
+  </div>
+  {% endif %}
+
+  {% if audits %}
+  <div class="sub-h" style="margin-top:18px">{{ tr('操作记录') }}</div>
+  <div class="table-wrap">
+    <table class="table">
+      <thead><tr><th>{{ tr('时间') }}</th><th>{{ tr('操作人') }}</th><th>{{ tr('操作') }}</th><th>{{ tr('内容') }}</th></tr></thead>
+      <tbody>
+        {% for a in audits %}
+        <tr>
+          <td class="mono" style="white-space:nowrap">{{ a.created_at }}</td>
+          <td>{{ a.operator_name }}</td>
+          <td>
+            {% if a.action=='add' %}<span class="tag tag-green">{{ tr('创建') }}</span>
+            {% elif a.action=='submit' %}<span class="tag tag-blue">{{ tr('提交') }}</span>
+            {% elif a.action=='approve1' %}<span class="tag tag-green">{{ tr('一级审批通过') }}</span>
+            {% elif a.action=='approve2' %}<span class="tag tag-green">{{ tr('二级审批通过') }}</span>
+            {% elif a.action=='reject' %}<span class="tag tag-red">{{ tr('驳回') }}</span>
+            {% elif a.action=='adjust' %}<span class="tag tag-orange">{{ tr('库存调整') }}</span>
+            {% elif a.action=='cancel' %}<span class="tag tag-red">{{ tr('取消') }}</span>
+            {% elif a.action=='action_done' %}<span class="tag tag-green">{{ tr('改善行动完成') }}</span>
+            {% elif a.action=='action_undo' %}<span class="tag tag-orange">{{ tr('撤销完成') }}</span>
+            {% else %}{{ a.action }}{% endif %}
+          </td>
+          <td class="small" style="max-width:520px">{{ a.text }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+
+{# v1.0.17：提交时逐行确认原因分析/改善处理，整单结论由系统自动汇总 #}
+{% if st.status=='draft' %}
+<div class="modal-mask" id="submit-modal" style="display:none" onclick="if(event.target===this)this.style.display='none'">
+  <div class="modal" style="max-width:980px">
+    <div class="modal-head"><span>{{ tr('提交审批') }}</span><button class="modal-x" onclick="document.getElementById('submit-modal').style.display='none'">✕</button></div>
+    <form class="modal-body" method="post" action="{{ url_for('stocktake_submit', sid=st.id) }}" onsubmit="return stkSubmitCheck()">
+      <div class="muted small ui-hint" style="margin:-2px 0 10px">
+        {{ tr('每条差异都要选择差异原因并填写改善处理；差异原因选「其他」或「未标注」时才需另填原因分析，选了具体原因无需重复填写。') }}
+        {{ tr('未盘行提交后会自动跳过，不计入本次差异，仍保留在本期未盘清单里。') }}
+      </div>
+      {% if has_diff %}
+      <div class="sub-h">{{ tr('逐行差异分析') }}</div>
+      <div class="table-wrap" style="max-height:300px;overflow:auto">
+        <table class="table">
+          <thead><tr>
+            <th style="white-space:nowrap">{{ tr('料号') }}</th><th>{{ tr('差异') }}</th>
+            <th>{{ tr('差异原因') }}</th>
+            <th style="min-width:170px">{{ tr('原因分析') }} <span class="muted small">{{ tr('选其他/未标注时必填') }}</span></th>
+            <th style="min-width:170px">{{ tr('改善处理') }} <span style="color:var(--red)">*</span></th>
+            <th>{{ tr('责任人') }}</th><th>{{ tr('计划完成日期') }}</th>
+          </tr></thead>
+          <tbody>
+          {% for it in items %}
+            {% set d = (it.actual_qty - it.book_qty) if it.actual_qty is not none else 0 %}
+            {% if d != 0 or (it.actual_part_id and it.actual_part_id != it.part_id) %}
+            <tr>
+              <td class="mono">{{ it.part_code }}</td>
+              <td class="num">{{ d }}</td>
+              <td><select class="f-input sub-reason" name="reason_{{ it.id }}" data-for="{{ it.id }}" onchange="syncCauseNeed(this)" style="padding:3px 6px;font-size:12px;min-width:120px">
+                <option value="">{{ tr('未标注') }}</option>
+                {% for code, label in reasons %}<option value="{{ code }}" {{ 'selected' if it.reason == code }}>{{ label }}</option>{% endfor %}
+              </select></td>
+              <td><textarea class="f-input sub-cause" name="icause_{{ it.id }}" data-for="{{ it.id }}" rows="2" maxlength="4000">{{ it.cause or '' }}</textarea></td>
+              <td><textarea class="f-input sub-action" name="iaction_{{ it.id }}" data-for="{{ it.id }}" rows="2" maxlength="4000">{{ it.action or '' }}</textarea></td>
+              <td><input class="f-input sub-owner" type="text" name="iowner_{{ it.id }}" data-for="{{ it.id }}" maxlength="60" value="{{ it.action_owner or '' }}" style="min-width:100px"></td>
+              <td><input class="f-input sub-due" type="date" name="idue_{{ it.id }}" data-for="{{ it.id }}" value="{{ it.action_due or '' }}"></td>
+            </tr>
+            {% endif %}
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+      {# v1.0.18：逐行差异已各自填写，提交弹窗不再出现整单原因分析与改善行动；报告里由系统自动汇总 #}
+      <div class="muted small ui-hint" style="margin-top:10px">{{ tr('提交后系统会自动汇总逐行分析，无需填写整体结论。') }}</div>
+      <div class="modal-foot">
+        <button class="btn btn-primary" type="submit">{{ tr('提交审批并保存差异分析') }}</button>
+        <button class="btn" type="button" onclick="document.getElementById('submit-modal').style.display='none'">{{ tr('btn_cancel') }}</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
+<script>
+/* v1.0.17：表格里随时填的逐行分析，打开弹窗时同步进来，两处口径一致 */
+function openSubmit(){
+  document.querySelectorAll('.ana-row[data-for]').forEach(function(ar){
+    var id = ar.getAttribute('data-for');
+    [['.in-cause','.sub-cause'],['.in-action','.sub-action'],
+     ['.in-owner','.sub-owner'],['.in-due','.sub-due']].forEach(function(p){
+      var src = ar.querySelector(p[0]);
+      var dst = document.querySelector('#submit-modal ' + p[1] + '[data-for="' + id + '"]');
+      if(src && dst) dst.value = src.value;
+    });
+  });
+  document.querySelectorAll('#submit-modal .sub-reason').forEach(function(sel){ syncCauseNeed(sel); });
+  document.getElementById('submit-modal').style.display = 'flex';
+}
+/* v1.0.43：提交前统一收集当前页数据；先保存再打开确认框，
+   否则弹窗只提交原因分析，刚填进去的实盘数量会丢。 */
+function collectStkItems(){
+  var items = [], hasNegative = false;
+  document.querySelectorAll('#stk-table tbody tr[data-id]').forEach(function(r){
+    var q = r.querySelector('.in-qty');
+    if(!q) return;
+    var v = q.value.trim();
+    if(v !== '' && parseFloat(v) < 0){ hasNegative = true; q.style.borderColor = '#e74c3c'; }
+    var id = parseInt(r.getAttribute('data-id'), 10);
+    var item = {id: id, actual_qty: v === '' ? null : parseFloat(v)};
+    var ar = document.querySelector('.ana-row[data-for="' + id + '"]');
+    if(ar){
+      var c = ar.querySelector('.in-cause'), a = ar.querySelector('.in-action'),
+          o = ar.querySelector('.in-owner'), dd = ar.querySelector('.in-due');
+      if(c) item.cause = c.value;
+      if(a) item.action = a.value;
+      if(o) item.action_owner = o.value;
+      if(dd) item.action_due = dd.value;
+    }
+    items.push(item);
+  });
+  return {items: items, hasNegative: hasNegative};
+}
+function postStkSave(items){
+  return fetch('{{ url_for('stocktake_save', sid=st.id) }}', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({items: items})
+  }).then(function(r){ return r.json(); });
+}
+/* v1.0.56：整体重盘——清空本单所有实盘数与逐行分析，回到全未盘重盘 */
+function resetAllStk(){
+  if(!confirm('{{ tr('确定整体重盘吗？本单所有实盘数量与逐行差异分析将全部清空，需重新盘点。') }}')) return;
+  var btn = document.getElementById('stk-reset-all');
+  if(btn){ btn.disabled = true; }
+  fetch('{{ url_for('stocktake_reset_all', sid=st.id) }}', {method:'POST'})
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      if(!d.ok){ alert(d.msg || '{{ tr('整体重盘失败') }}'); if(btn) btn.disabled = false; return; }
+      location.reload();
+    })
+    .catch(function(){ alert('{{ tr('整体重盘失败') }}'); if(btn) btn.disabled = false; });
+}
+function prepareSubmit(){
+  var c = collectStkItems();
+  if(c.hasNegative){ alert('{{ tr('存在负数盘点数量，请先修正标红的输入框') }}'); return; }
+  if(!c.items.length){ alert('{{ tr('无可保存的明细') }}'); return; }
+  var btn = document.getElementById('stk-prepare-submit');
+  if(btn){ btn.disabled = true; btn.textContent = '{{ tr('正在保存，请稍候…') }}'; }
+  postStkSave(c.items).then(function(d){
+    if(!d.ok){
+      if(btn){ btn.disabled = false; btn.textContent = '{{ tr('提交审批') }}'; }
+      alert(d.msg || '{{ tr('保存失败') }}');
+      return;
+    }
+    try{ sessionStorage.setItem('stkSubmitReady', '{{ st.id }}'); }catch(e){}
+    location.reload();   /* 重新渲染后才拿得到刚填出来的差异分析行 */
+  }).catch(function(){
+    if(btn){ btn.disabled = false; btn.textContent = '{{ tr('提交审批') }}'; }
+    alert('{{ tr('保存失败') }}');
+  });
+}
+function stkSubmitCheck(){
+  var hasNegative = false;
+  document.querySelectorAll('#stk-table tbody tr[data-id]').forEach(function(r){
+    var q = r.querySelector('.in-qty');
+    if(q && q.value.trim() !== '' && parseFloat(q.value) < 0){
+      hasNegative = true; q.style.borderColor = '#e74c3c';
+    }
+  });
+  if(hasNegative){ alert('{{ tr('存在负数盘点数量，请先修正标红的输入框') }}'); return false; }
+  /* 未盘可以部分提交：后端会把未录行剔出本单，仍留在未盘清单里。
+     前端不再拦「还有 N 条未盘」——那是老口径，和后端不一致。 */
+  var bad = null, badMsg = '';
+  /* v1.0.56：选了具体差异原因=原因已明确，原因分析免填；
+     仅「其他」(other)或「未标注」(空) 时才必填原因分析。改善处理始终必填。 */
+  document.querySelectorAll('#submit-modal tbody tr').forEach(function(tr){
+    var sel = tr.querySelector('.sub-reason');
+    var cause = tr.querySelector('.sub-cause');
+    var action = tr.querySelector('.sub-action');
+    var reason = sel ? sel.value : '';
+    if(cause){
+      if(causeNeedReason(reason)){
+        if(!cause.value.trim()){ bad = bad || cause; badMsg = '{{ tr('选「其他/未标注」的原因必须填写原因分析') }}'; cause.style.borderColor='#e74c3c'; }
+        else cause.style.borderColor = '';
+      } else cause.style.borderColor = '';
+    }
+    if(action){
+      if(!action.value.trim()){ bad = bad || action; badMsg = badMsg || '{{ tr('每条差异都要填写改善处理') }}'; action.style.borderColor='#e74c3c'; }
+      else action.style.borderColor = '';
+    }
+  });
+  if(bad){ alert(badMsg); bad.focus(); return false; }
+  var go = confirm('{{ tr('提交后差异将锁定并进入审批，确认提交？') }}');
+  /* v1.0.72：确认后才记标记。后端校验不通过重定向回来时自动重开弹窗，
+     弹窗内容已在服务端保存，用户不必回主清单逐条重填。 */
+  if(go){ try{ sessionStorage.setItem('stkSubmitReady', '{{ st.id }}'); }catch(e){} }
+  return go;
+}
+/* v1.0.56：具体原因码免填原因分析；其他/未标注要填 */
+function causeNeedReason(reason){ return !reason || reason === 'other'; }
+function syncCauseNeed(sel){
+  var id = sel.getAttribute('data-for');
+  var cause = document.querySelector('#submit-modal .sub-cause[data-for="' + id + '"]');
+  if(!cause) return;
+  var need = causeNeedReason(sel.value);
+  cause.placeholder = need ? '{{ tr('选其他/未标注，请说明具体原因') }}' : '{{ tr('已选具体差异原因，原因分析可留空') }}';
+  cause.style.opacity = need ? '1' : '.6';
+}
+function saveAll(){
+  var c = collectStkItems();
+  if(c.hasNegative){ alert('{{ tr('盘点数量不能为负数，请检查标红的输入框') }}'); return; }
+  if(!c.items.length){ alert('{{ tr('无可保存的明细') }}'); return; }
+  var msg = document.getElementById('save-msg');
+  postStkSave(c.items).then(function(d){
+    if(d.ok){ msg.textContent = '{{ tr('已保存') }} ' + d.saved + ' {{ tr('条') }}'; refreshDiff(); }
+    else { msg.textContent = d.msg || '{{ tr('保存失败') }}'; }
+  }).catch(function(){ msg.textContent = '{{ tr('保存失败') }}'; });
+}
+function refreshDiff(){
+  var rows = document.querySelectorAll('#stk-table tbody tr[data-id]');
+  rows.forEach(function(r){
+    var q = r.querySelector('.in-qty'), d = r.querySelector('.in-diff');
+    if(!q || !d) return;
+    var v = q.value.trim();
+    var book = parseFloat(r.querySelector('td:nth-child(4)').textContent) || 0;
+    if(v === ''){ d.textContent = '—'; r.setAttribute('data-diff', '0'); return; }
+    var diff = parseFloat(v) - book;
+    d.textContent = diff;
+    r.setAttribute('data-diff', Math.abs(diff) > 1e-9 ? '1' : '0');
+  });
+  refreshStkCounts();
+}
+function refreshStkCounts(){
+  var undo = 0, done = 0, diff = 0;
+  document.querySelectorAll('#stk-table tbody tr[data-id]').forEach(function(r){
+    var prior = r.getAttribute('data-prior') === '1';
+    var reopened = r.getAttribute('data-reopen') === '1';
+    var q = r.querySelector('.in-qty');
+    if(prior && !reopened) done++;
+    else if(q && q.value.trim() !== '') done++;
+    else undo++;
+    if(r.getAttribute('data-diff') === '1') diff++;
+  });
+  [['stk-undo-n', undo], ['stk-done-n', done], ['stk-diff-n', diff]].forEach(function(p){
+    var el = document.getElementById(p[0]);
+    if(el) el.textContent = String(p[1]);
+  });
+}
+document.querySelectorAll('.in-qty').forEach(function(q){
+  q.addEventListener('input', function(){ refreshDiff(); });
+  q.addEventListener('change', function(){
+    if(q.step === '1' && q.value !== ''){ q.value = Math.round(parseFloat(q.value)); refreshDiff(); }
+  });
+});
+/* 改派审批人（管理员） */
+const CAND1 = {{ cand1 | tojson }};
+const CAND2 = {{ cand2 | tojson }};
+const CUR_A1 = {{ st.approver1_id or 'null' }};
+const CUR_A2 = {{ st.approver2_id or 'null' }};
+const CUR_A1_NAME = {{ (ap1 or '') | tojson }};
+const CUR_A2_NAME = {{ (ap2 or '') | tojson }};
+function esc(s){ const d=document.createElement('div'); d.textContent=s==null?'':String(s); return d.innerHTML; }
+function openReassign(){
+  /* 当前已指派人若不在权限候选（如主管为普通角色），补入列表便于预选与改回 */
+  const cand1 = CAND1.slice();
+  if(CUR_A1 && !cand1.some(function(c){ return c.id === CUR_A1; })){
+    cand1.unshift({id: CUR_A1, display_name: CUR_A1_NAME || ('#'+CUR_A1), department: ''});
+  }
+  const cand2 = CAND2.slice();
+  if(CUR_A2 && !cand2.some(function(c){ return c.id === CUR_A2; })){
+    cand2.unshift({id: CUR_A2, display_name: CUR_A2_NAME || ('#'+CUR_A2), department: ''});
+  }
+  let html = '<div class="modal-mask" id="reassign-modal" style="display:flex" onclick="if(event.target===this)closeReassign()">'+
+    '<div class="modal"><div class="modal-head"><span>{{ tr('改派审批人') }}</span><button class="modal-x" onclick="closeReassign()">✕</button></div>'+
+    '<form class="modal-body" method="post" action="{{ url_for('stocktake_reassign', sid=st.id) }}">'+
+    '<label class="f-label">{{ tr('一级审批人（主管）') }}<select class="f-input" name="approver1_id">'+
+    '<option value="">{{ tr('不指派（同部门有权限者可审批）') }}</option>';
+  cand1.forEach(function(c){
+    html += '<option value="'+c.id+'"'+(CUR_A1===c.id?' selected':'')+'>'+esc(c.display_name)+'（'+(c.department||'—')+'）</option>';
+  });
+  html += '</select></label>'+
+    '<label class="f-label">{{ tr('二级审批人（经理）') }}<select class="f-input" name="approver2_id">'+
+    '<option value="">{{ tr('不指派（同部门有权限者可审批）') }}</option>';
+  cand2.forEach(function(c){
+    html += '<option value="'+c.id+'"'+(CUR_A2===c.id?' selected':'')+'>'+esc(c.display_name)+'（'+(c.department||'—')+'）</option>';
+  });
+  html += '</select></label>'+
+    '<div class="modal-foot"><button class="btn btn-primary" type="submit">{{ tr('确认改派') }}</button>'+
+    '<button class="btn" type="button" onclick="closeReassign()">{{ tr('btn_cancel') }}</button></div>'+
+    '</form></div></div>';
+  const old = document.getElementById('reassign-modal');
+  if(old) old.remove();
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+function closeReassign(){
+  const m = document.getElementById('reassign-modal');
+  if(m) m.remove();
+}
+
+// ===== v1.0.21：本期已盘 / 未盘 分页签 =====
+// 已盘行是「本期已经被别的单据盘过」的行，进单时快照成灰底只读；
+// 要改必须点「重盘」显式解锁，避免两边重复盘对不上。
+function stkRowGroup(tr){
+  const box = [tr];
+  const nxt = tr.nextElementSibling;
+  if(nxt && nxt.classList.contains('ana-row') && nxt.getAttribute('data-for') === tr.getAttribute('data-id')) box.push(nxt);
+  return box;
+}
+let stkCurTab = 'all';
+function applyStkTab(f){
+  stkCurTab = f;
+  document.querySelectorAll('#stk-table tbody tr[data-id]').forEach(function(tr){
+    const prior = tr.getAttribute('data-prior') === '1';
+    const reopened = tr.getAttribute('data-reopen') === '1';
+    const doneHere = tr.getAttribute('data-done') === '1';
+    let show = true;
+    if(f === 'undo') show = (!prior || reopened) && !doneHere;
+    if(f === 'done') show = (prior && !reopened) || doneHere;
+    if(f === 'diff') show = tr.getAttribute('data-diff') === '1';
+    stkRowGroup(tr).forEach(function(x){ x.style.display = show ? '' : 'none'; });
+  });
+}
+document.querySelectorAll('.stk-tab').forEach(function(btn){
+  btn.addEventListener('click', function(){
+    document.querySelectorAll('.stk-tab').forEach(function(b){ b.classList.remove('active'); });
+    btn.classList.add('active');
+    applyStkTab(btn.getAttribute('data-f'));
+  });
+});
+document.querySelectorAll('.stk-reopen').forEach(function(btn){
+  btn.addEventListener('click', function(){
+    const tr = btn.closest('tr');
+    if(!tr) return;
+    const ok = confirm('{{ tr('该行本期已盘过，确定重盘吗？（重盘后以本次实盘数为准）') }}');
+    if(!ok) return;
+    tr.setAttribute('data-reopen', '1');
+    tr.setAttribute('data-done', '0');
+    tr.setAttribute('data-diff', '0');
+    tr.style.background = '#fff7e6';
+    tr.style.opacity = '1';
+    const inp = tr.querySelector('.in-qty');
+    if(inp){ inp.removeAttribute('readonly'); inp.value = ''; inp.focus(); }
+    btn.style.display = 'none';
+    refreshStkCounts();
+    applyStkTab(stkCurTab);
+  });
+});
+// ===== v1.0.40：实盘录入回车跳到下一格 =====
+// 现场是一手键盘一手点实物：填完一个数按回车直接落到下一个物料的实盘框，
+// 不用再摸鼠标点下一行。最后一个框回车不再动作（不把焦点甩回页顶）。
+document.getElementById('stk-table').addEventListener('keydown', function(e){
+  if(e.key !== 'Enter' || e.isComposing) return;
+  const el = e.target;
+  if(!el || !el.classList || !el.classList.contains('in-qty')) return;
+  e.preventDefault();
+  const list = [].slice.call(document.querySelectorAll('#stk-table input.in-qty'))
+    .filter(function(x){ return !x.readOnly && x.offsetParent !== null; });
+  const i = list.indexOf(el);
+  const nxt = i >= 0 ? list[i + 1] : null;
+  if(nxt){
+    nxt.focus();
+    if(nxt.select) nxt.select();
+    if(nxt.scrollIntoView) nxt.scrollIntoView({block: 'nearest'});
+  }
+});
+// ===== v1.0.43：自动保存后重载，重载完直接接着打开提交确认框 =====
+(function(){
+  var ready = false;
+  try{ ready = sessionStorage.getItem('stkSubmitReady') === '{{ st.id }}'; }catch(e){}
+  if(!ready) return;
+  try{ sessionStorage.removeItem('stkSubmitReady'); }catch(e){}
+  if(document.getElementById('submit-modal')) openSubmit();
+})();
+</script>
+{% endblock %}

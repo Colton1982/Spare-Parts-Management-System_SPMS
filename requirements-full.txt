@@ -1,8 +1,8 @@
-# 全部数据库驱动（按需安装，SQLite 无需任何驱动）
-flask>=3.0
-ldap3>=2.9
-pillow>=10.0
-pymysql          # MySQL / MariaDB
-psycopg2-binary  # PostgreSQL
-pymssql          # SQL Server (MS SQL)
-oracledb         # Oracle
+# SPMS v1.2 - 全部源码运行依赖
+# 默认 SQLite 场景使用 requirements.txt；需要其它数据库时使用本文件。
+-r requirements.txt
+
+pymysql>=1.1,<2          # MySQL / MariaDB
+psycopg2-binary>=2.9,<3  # PostgreSQL
+pymssql>=2.2,<3          # SQL Server (MS SQL)
+oracledb>=2.0,<3         # Oracle

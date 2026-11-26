@@ -1,83 +1,46 @@
+{# SPMS 备件辅料仓管系统 | 作者：菜鸟大叔 (@rookie-uncle / @Colton1982) | 邮箱：510658927@qq.com | QQ：510658927 | Gitee：https://gitee.com/rookie-uncle | GitHub：https://github.com/Colton1982 | Copyright (c) 2026 rookie-uncle. All rights reserved. | Apache-2.0 #}
 {% extends "base.html" %}
-{% block title %}{{ tr('page_applications') }} - Spare Parts Management System{% endblock %}
-{% block page_title %}>{{ tr('page_applications') }}{% endblock %}
+{% block title %}{{ tr('page_applications') }} - Inventory Management System{% endblock %}
+{% block page_title %}{{ tr('page_applications') }}{% endblock %}
 {% block content %}
 
 <div class="card">
-  <div class="card-title">{{ tr('发起申请') }}{{ tr('（') }}{{ tr('出入库') }} / {{ tr('调库') }}{{ tr('）') }}</div>
-  {% if preset_name %}<div class="flash flash-info" style="margin-bottom:10px">{{ tr('已从备件查询带入备件') }}{{ tr('：') }}<b>{{ preset_name }}</b>{{ tr('（可修改）') }}</div>{% endif %}
-  <form class="inline-form" method="post" action="{{ url_for('application_create') }}" id="apply-form" onsubmit="return beforeApplySubmit()">
-    <input type="hidden" name="part_id" id="app-part-id" value="{{ preset_part or '' }}">
-    <span class="part-pick">
-      <button type="button" class="btn" onclick="PartPicker.show('app-part-id','app-part-name', onPartPick)">{{ tr('🔍 选择备件…') }}</button>
-      <span id="app-part-name" class="muted">{% if preset_part %}{{ tr('已选') }}{{ tr('：') }}{{ preset_name }}{% else %}{{ tr('未选择') }}{% endif %}</span>
-    </span>
-    <select class="f-input" name="app_type" id="app-type" required onchange="onTypeChange()">
-      <option value="in" {{ 'selected' if preset_type=='in' }}>{{ tr('申请入库') }}</option>
-      <option value="out" {{ 'selected' if preset_type=='out' }}>{{ tr('申请出库') }}</option>
-      <option value="transfer" {{ 'selected' if preset_type=='transfer' }}>{{ tr('申请调库') }}</option>
-    </select>
-    <span id="qty-wrap">
-      <input class="f-input" type="number" name="quantity" id="app-qty" step="0.001" min="0.01" placeholder="{{ tr('数量') }}" required>
-    </span>
-    <span id="approver-wrap" style="display:none">
-      <select class="f-input" name="approver_id" id="app-approver">
-        <option value="">{{ tr('选择审批经理…') }}</option>
-        {% for m in managers %}<option value="{{ m.id }}">{{ m.display_name }}{{ tr('（') }}{{ m.department or tr('未分部门') }}{{ tr('）') }}</option>{% endfor %}
-      </select>
-    </span>
-    <span id="use-line-wrap" style="display:none">
-      <select class="f-input" name="use_line" id="app-line" onchange="onLineChange()">
-        <option value="">{{ tr('使用线别…') }}</option>
-        <option value="{{ tr('离线') }}">{{ tr('离线') }}</option>
-        {% for l in lines %}<option value="{{ l.name }}">{{ l.name }}</option>{% endfor %}
-      </select>
-    </span>
-    <span id="use-device-wrap" style="display:none">
-      <select class="f-input" name="use_device" id="app-device">
-        <option value="">{{ tr('使用设备…') }}</option>
-        {% for e in equipment %}<option value="{{ e.name }}" data-line="{{ e.line_name }}">{{ e.name }}</option>{% endfor %}
-      </select>
-    </span>
-    <input class="f-input" type="text" name="reason" placeholder="{{ tr('申请原因') }} / {{ tr('领出原因') }}{{ tr('（') }}{{ tr('必填') }}{{ tr('）') }}" required>
-    <button class="btn btn-primary" type="submit">{{ tr('提交申请') }}</button>
-    <div id="transfer-panel" class="loc-cascade" style="display:none;width:100%;margin-top:10px">
-      <div class="muted small" style="width:100%">{{ tr('调库 = 把') }}<b>{{ tr('指定库存库位') }}</b>{{ tr('的料调整到目标位置') }}{{ tr('（') }}{{ tr('备件占用多个库位时') }}{{ tr('，') }}{{ tr('请先选移') }}<b>{{ tr('哪个库位') }}</b>{{ tr('的料') }}{{ tr('）') }}{{ tr('。') }}{{ tr('目标位置可选') }}{{ tr('「') }}{{ tr('待定') }}{{ tr('」；被其他备件占用位置不可调入，需先将占用备件调走') }}{{ tr('。') }}</div>
-      <span class="inline-form" style="width:100%">
-        <label class="muted small" style="display:flex;align-items:center;gap:6px">{{ tr('源库位') }}<select class="f-input" name="from_location_id" id="tf-from" style="min-width:300px" onchange="tfFromChange()">
-            <option value="">{{ tr('请先选择备件…') }}</option>
-          </select>
-        </label>
-        <span class="muted small" id="tf-from-msg"></span>
-      </span>
-      <select class="f-input" id="tf-wh" onchange="tfWhChange()"><option value="">{{ tr('仓库号…') }}</option></select>
-      <select class="f-input" id="tf-rack" onchange="tfRackChange()"><option value="">{{ tr('货架号…') }}</option></select>
-      <select class="f-input" id="tf-shelf" onchange="tfShelfChange()"><option value="">{{ tr('货位号…') }}</option></select>
-      <select class="f-input" id="tf-bin" onchange="tfPick()"><option value="">{{ tr('格位号…') }}</option></select>
-      <span class="muted small" style="display:flex;align-items:center;gap:6px">
-        <label style="display:flex;align-items:center;gap:4px"><input type="radio" name="tf-mode" value="pending" onchange="tfModeChange()">{{ tr('调到待定') }}</label>
-        <label style="display:flex;align-items:center;gap:4px"><input type="radio" name="tf-mode" value="loc" checked onchange="tfModeChange()">{{ tr('调到位置') }}</label>
-      </span>
-      <input type="hidden" name="to_location_id" id="tf-loc-id" value="">
-      <div id="tf-msg" class="muted small" style="width:100%"></div>
-    </div>
-  </form>
-  <div class="muted small">{{ tr('备件选择') }}{{ tr('：') }}{{ tr('点击') }}{{ tr('「') }}{{ tr('选择备件') }}{{ tr('」') }}{{ tr('弹出搜索框') }}{{ tr('，') }}{{ tr('支持按') }} {{ tr('料号') }}/{{ tr('名称') }}/{{ tr('规格') }} {{ tr('关键词搜索') }}{{ tr('（备件较多时无需翻长下拉列表）') }}{{ tr('。') }}</div>
-  <div class="muted small">{{ tr('流程说明：') }}<b>{{ tr('普通出库') }}/{{ tr('入库') }}/{{ tr('调库') }}</b> {{ tr('→') }} {{ tr('仓库人员直接处理') }}{{ tr('；') }}<b>{{ tr('贵重备件出库') }}</b> {{ tr('→') }} {{ tr('普通用户自动提交给') }}<b>{{ tr('本部门经理') }}</b>{{ tr('审批') }}{{ tr('，') }}{{ tr('仓库') }}/{{ tr('经理') }}/{{ tr('高级管理人员可') }}<b>{{ tr('自选审批经理') }}</b>{{ tr('，') }}{{ tr('审批通过后仓库人员再出库') }}{{ tr('；') }}<b>{{ tr('已完成') }}/{{ tr('已批准的申请') }}</b>{{ tr('可申请撤销') }}{{ tr('由仓管员审批后回滚') }}{{ tr('。') }}</div>
+  <div class="card-title">{{ tr('填写申请单') }}</div>
+  <div class="muted small ui-hint" style="margin:-6px 0 12px">{{ tr('每个物件一行，按行选择类型，提交时按类型自动拆成多张申请单') }}</div>
+  <div class="inline-form" style="margin-bottom:10px">
+    <button type="button" class="btn" onclick="PartPickerMulti.show(addParts)">🔍 {{ tr('选择物料') }}</button>
+    <input class="f-input" type="text" id="draft-reason" placeholder="{{ tr('统一原因') }}{{ mk('（') }}{{ tr('可选') }}{{ mk('，') }}{{ tr('填入所有行') }}{{ mk('）') }}" style="min-width:220px">
+    <button type="button" class="btn" onclick="fillReasonAll()">↓ {{ tr('填入所有行') }}</button>
+    <button type="button" class="btn btn-primary" id="btn-submit-all" data-submit-btn="1" onclick="submitAll()">{{ tr('全部提交') }}</button>
+    <button type="button" class="btn" onclick="clearDraft()">{{ tr('清空明细') }}</button>
+  </div>
+  <div id="draft-msg" class="muted small ui-hint" style="margin-bottom:6px">{{ tr('提示：在') }}「{{ tr('信息查询') }}」{{ tr('页点') }}「{{ tr('＋ 选择') }}」{{ tr('勾选的物件会自动出现在下方') }}{{ mk('。') }}{{ tr('出库领用需填线别与设备') }}{{ mk('；') }}{{ tr('调库需选源库位与目标位置') }}{{ mk('；') }}{{ tr('贵重物件出库自动走审批') }}{{ mk('。') }}{{ tr('同一库位有多个入库批次时会分行显示，数量为该批次库存并标注批次号。') }}</div>
+  <div class="table-wrap">
+    <table class="table" id="draft-table">
+      <thead><tr>
+        <th style="width:88px">{{ tr('th_type') }}</th><th>{{ tr('th_part') }}</th><th style="width:90px">{{ tr('可用库存') }}</th>
+        <th style="width:100px">{{ tr('th_quantity') }}</th><th style="width:170px">{{ tr('申请原因') }}</th><th id="th-extra">{{ tr('明细信息') }}</th><th style="width:60px">{{ tr('th_ops') }}</th>
+      </tr></thead>
+      <tbody id="draft-body"><tr><td colspan="7" class="muted center">{{ tr('还没有明细行') }}{{ mk('。') }}{{ tr('点击「选择物料」或从信息查询页勾选带入') }}{{ mk('。') }}</td></tr></tbody>
+    </table>
+  </div>
 </div>
 
 <div class="card">
-  <div class="card-title">{{ tr('我的申请单列表') }}<span class="muted">{{ tr('（') }}{{ tr('仅显示本用户发起的记录') }}{{ tr('）') }}</span>
-    <a class="btn btn-xs" style="float:right" href="{{ url_for('applications_export', date_from=date_from, date_to=date_to, f_type=f_type, f_status=f_status) }}">📥 {{ tr('导出 Excel') }}</a>
+  <div class="card-title">{{ tr('我的申请单列表') }}
+    <a class="btn btn-xs" style="float:right" href="{{ url_for('applications_export', date_from=date_from, date_to=date_to, time_from=time_from, time_to=time_to, f_type=f_type, f_status=f_status) }}">📥 {{ tr('导出 Excel') }}</a>
   </div>
+  <div class="muted small ui-hint" style="margin:-6px 0 12px">{{ tr('仅显示本用户发起的记录') }}</div>
   <form class="inline-form" method="get" action="{{ url_for('applications_page') }}" style="margin-bottom:10px">
-    <label class="muted small">{{ tr('起始日期') }}<input class="f-input" type="text" name="date_from" value="{{ date_from }}" placeholder="{{ tr('如 2026/10/08') }}" onchange="this.value=this.value.replace(/[\/]/g,'-')"></label>
-    <label class="muted small">{{ tr('截止日期') }}<input class="f-input" type="text" name="date_to" value="{{ date_to }}" placeholder="{{ tr('如 2026/10/08') }}" onchange="this.value=this.value.replace(/[\/]/g,'-')"></label>
+    {# v1.0.59：日期与时间一次选完，分钟固定 00；隐藏域继续沿用原参数名，查询/导出零改动 #}
+    <label class="muted small">{{ tr('起始日期') }}<input class="f-input dt-input dt-auto dtp-input" type="text" data-dtp="1" readonly data-dt-filter="1" data-date="date_from" data-time="time_from" value="{{ dtv_d(date_from) }} {{ dtv_t(date_from, time_from) }}" placeholder="{{ tr('选择日期时间') }}" title="{{ tr('时间') }}" aria-label="{{ tr('时间') }}"><input type="hidden" name="date_from" value="{{ dtv_d(date_from) }}"><input type="hidden" name="time_from" value="{{ dtv_t(date_from, time_from) }}"></label>
+    <label class="muted small">{{ tr('截止日期') }}<input class="f-input dt-input dt-auto dtp-input" type="text" data-dtp="1" readonly data-dt-filter="1" data-date="date_to" data-time="time_to" value="{{ dtv_d(date_to) }} {{ dtv_t(date_to, time_to) }}" placeholder="{{ tr('选择日期时间') }}" title="{{ tr('时间') }}" aria-label="{{ tr('时间') }}"><input type="hidden" name="date_to" value="{{ dtv_d(date_to) }}"><input type="hidden" name="time_to" value="{{ dtv_t(date_to, time_to) }}"></label>
     <select class="f-input" name="f_type">
       <option value="">{{ tr('全部类别') }}</option>
       <option value="in" {{ 'selected' if f_type=='in' }}>{{ tr('type_in') }}</option>
       <option value="out" {{ 'selected' if f_type=='out' }}>{{ tr('type_out') }}</option>
       <option value="transfer" {{ 'selected' if f_type=='transfer' }}>{{ tr('type_transfer') }}</option>
+      <option value="borrow" {{ 'selected' if f_type=='borrow' }}>{{ tr('借用') }}</option>
     </select>
     <select class="f-input" name="f_status">
       <option value="">{{ tr('全部状态') }}</option>
@@ -91,72 +54,151 @@
     <button class="btn btn-primary" type="submit">{{ tr('btn_search') }}</button>
     <a class="btn" href="{{ url_for('applications_page') }}">{{ tr('btn_reset') }}</a>
   </form>
-  <div class="table-wrap">
+  <div class="table-wrap table-sticky" style="overflow:auto;max-height:clamp(360px, calc(100vh - 320px), 900px)">
     <table class="table">
       <thead><tr>
-        <th>{{ tr('th_no') }}</th><th>{{ tr('th_time') }}</th><th>{{ tr('th_part') }}</th><th>{{ tr('th_type') }}</th><th>{{ tr('th_quantity') }}</th>
-        <th>{{ tr('位置') }}{{ tr('（') }}{{ tr('源') }} {{ tr('→') }} {{ tr('目标') }}{{ tr('）') }}</th><th>{{ tr('th_status') }}</th><th>{{ tr('审批/处理意见') }}</th><th>{{ tr('th_ops') }}</th>
+        <th>{{ tr('th_part') }}</th><th style="width:100px">{{ tr('th_quantity') }}</th><th>{{ tr('位置') }}{{ mk('（') }}{{ tr('源') }} → {{ tr('目标') }}{{ mk('）') }}</th>
+        <th style="width:150px">{{ tr('申请原因') }}</th><th style="width:110px">{{ tr('th_status') }}</th><th>{{ tr('审批/处理意见') }}</th><th style="width:130px">{{ tr('th_ops') }}</th>
       </tr></thead>
-      <tbody>
-        {% for a in apps %}
+      {% for d in docs %}
+      <tbody class="doc-group">
+        <tr class="doc-head">
+          <td colspan="7" style="background:var(--bg-tertiary,#f4f5f7)">
+            <b class="mono"><a href="javascript:void(0)" onclick="viewDocDetail('{{ d.doc_no }}')" title="{{ tr('查看详情') }}">{{ d.doc_no }}</a></b>
+            {% if d.app_type=='in' %}<span class="badge badge-ok">{{ tr('type_in') }}</span>
+            {% elif d.app_type=='transfer' %}<span class="badge badge-info">{{ tr('type_transfer') }}</span>
+            {% elif d.app_type=='borrow' %}<span class="badge badge-warn">{{ tr('借·换·检·修') }}</span>
+            {% else %}<span class="badge badge-danger">{{ tr('type_out') }}</span>{% endif %}
+            {# v1.0.53：单号行把子类型一并显示（原先只有部分明细行有，导致「个别显示」） #}
+            {% set r0 = d.rows[0] %}
+            {% if d.app_type=='out' %}
+              {% if r0.out_type=='general' %}<span class="badge badge-info">{{ tr('领用') }}</span>
+              {% elif r0.out_type=='return' %}<span class="badge badge-info">{{ tr('outkind.return') }}</span>
+              {% elif r0.out_type=='exchange' %}<span class="badge badge-info">{{ tr('outkind.exchange') }}</span>
+              {% elif r0.out_type=='internal' %}<span class="badge badge-info">{{ tr('outkind.internal') }}</span>
+              {% elif r0.out_type=='giveback' %}<span class="badge badge-info">{{ tr('outkind.giveback') }}</span>
+              {% elif r0.out_type=='maintenance' %}<span class="badge badge-info">{{ tr('outkind.maintenance') }}</span>
+              {% elif r0.out_type=='verify' %}<span class="badge badge-info">{{ tr('outkind.verify') }}</span>
+              {% elif r0.out_type=='scrap' %}<span class="badge badge-info">{{ tr('报废') }}</span>
+              {% elif r0.out_type=='misc' %}<span class="badge badge-info">{{ tr('其它') }}</span>{% endif %}
+            {% elif d.app_type=='in' %}
+              {% if r0.out_type=='repair' %}<span class="badge badge-info">{{ tr('返修') }}</span>
+              {% elif r0.out_type=='transfer_in' %}<span class="badge badge-info">{{ tr('转入') }}</span>
+              {% elif r0.out_type=='other' %}<span class="badge badge-info">{{ tr('借入') }}</span>
+              {% elif r0.out_type=='line_return' %}<span class="badge badge-info">{{ tr('产线退回') }}</span>
+              {% elif r0.out_type=='misc' %}<span class="badge badge-info">{{ tr('其它') }}</span>
+              {% else %}<span class="badge badge-info">{{ tr('采购') }}</span>{% endif %}
+            {% elif d.app_type=='borrow' %}
+              {% if r0.sub_type=='exchange' %}<span class="badge badge-info">{{ tr('换货') }}</span>
+              {% elif r0.sub_type=='maintenance' %}<span class="badge badge-info">{{ tr('维修') }}</span>
+              {% elif r0.sub_type=='verify' %}<span class="badge badge-info">{{ tr('检(校验/测试)') }}</span>
+              {% else %}<span class="badge badge-info">{{ tr('借(借用)') }}</span>{% endif %}
+            {% endif %}
+            <span class="muted small">{{ tn('application_doc.rows', d.n_rows) }} · {{ d.created_at }}</span>
+            <span class="muted small" style="margin-left:8px">{{ d.status_summary }}</span>
+            {% if d.doc_mode in (2,3) %}
+            <span class="badge badge-info" style="margin-left:6px">{{ tr('系统审批') if d.doc_mode==2 else tr('系统+纸档审批') }}</span>
+            {% if d.doc_mode==3 %}
+            <a class="btn btn-xs" style="margin-left:4px" href="{{ url_for('scrap_pdf', doc_no=d.doc_no) }}">🖨 {{ tr('打印审批单') }}</a>
+            <button class="btn btn-xs" id="attbtn-{{ loop.index }}" data-doc="{{ d.doc_no }}" data-submitted="{{ '1' if d.doc_submitted else '0' }}" style="margin-left:4px" onclick="openScrapAttach('{{ d.doc_no }}', {{ '1' if d.doc_submitted else '0' }})" {% if d.doc_submitted %}title="{{ tr('已提交审批，不能再上传附件') }}"{% endif %}>{{ tr('签字附件') }} ({{ d.attach_count }})</button>
+            <span id="attsub-{{ loop.index }}">{% if not d.doc_submitted %}
+              {% if d.attach_count==0 %}<span class="badge badge-warn" style="margin-left:4px">{{ tr('未传附件不可审批') }}</span>
+              {% else %}<button class="btn btn-xs btn-primary" style="margin-left:4px" onclick="submitScrapDoc('{{ d.doc_no }}', this)">{{ tr('提交审批') }}</button>{% endif %}
+            {% else %}
+              <span class="badge badge-ok" style="margin-left:4px">{{ tr('已提交审批') }}</span>
+            {% endif %}</span>
+            {% endif %}
+            {% endif %}
+            <span style="float:right">
+              {% if d.all_rejected %}
+              <button class="btn btn-xs btn-primary" onclick="openReopen('{{ d.doc_no }}')">{{ tr('重新修改并提交') }}</button>
+              <button class="btn btn-xs btn-warn" onclick="delRejected('{{ d.doc_no }}')">{{ tr('删除废单') }}</button>
+              {% elif d.all_pending %}
+              <button class="btn btn-xs btn-warn" onclick="openCancel('{{ d.doc_no }}')">{{ tr('撤销') }}</button>
+              {% elif d.all_undoable %}
+              <button class="btn btn-xs btn-warn" onclick="openCancelReq('{{ d.doc_no }}')">{{ tr('申请撤销') }}</button>
+              {% elif d.has_cancel_req %}
+              <span class="muted small">{{ tr('撤销请求待仓管审批') }}</span>
+              {% endif %}
+            </span>
+          </td>
+        </tr>
+        {% for a in d.rows %}
         <tr>
-          <td class="mono">{{ a.app_no }}</td>
-          <td class="mono">{{ a.created_at }}</td>
           <td>{{ a.part_code }}<br><span class="muted">{{ a.name }}</span>
             {% if a.is_valuable %}<span class="badge badge-val">{{ tr('status_valuable') }}</span>{% endif %}
-            {% if a.app_type=='out' and a.is_valuable and a.approver_name %}<br><span class="muted small">{{ tr('审批') }}{{ tr('：') }}{{ a.approver_name }}</span>{% endif %}
-            {% if a.app_type=='out' and a.line_name %}<br><span class="muted small">{{ tr('线别') }}{{ tr('：') }}{{ a.line_name }} {{ tr('｜') }} {{ tr('设备') }}{{ tr('：') }}{{ a.device_name or '—' }}</span>{% endif %}</td>
-          <td>
-            {% if a.app_type=='in' %}<span class="badge badge-ok">{{ tr('type_in') }}</span>
-            {% elif a.app_type=='transfer' %}<span class="badge badge-info">{{ tr('type_transfer') }}</span>
-            {% else %}<span class="badge badge-danger">{{ tr('type_out') }}</span>{% endif %}
-          </td>
+            {% if a.app_type=='out' %}
+              {% if a.out_type=='return' %}<span class="badge badge-warn">{{ tr('outkind.return') }}</span>
+              {% elif a.out_type=='exchange' %}<span class="badge badge-info">{{ tr('outkind.exchange') }}</span>
+              {% elif a.out_type=='internal' %}<span class="badge badge-info">{{ tr('outkind.internal') }}</span>
+              {% elif a.out_type=='giveback' %}<span class="badge badge-info">{{ tr('outkind.giveback') }}</span>
+              {% elif a.out_type=='maintenance' %}<span class="badge badge-info">{{ tr('outkind.maintenance') }}</span>
+              {% elif a.out_type=='verify' %}<span class="badge badge-info">{{ tr('outkind.verify') }}</span>{% endif %}
+            {% elif a.app_type=='in' %}
+              {# 历史入库申请 out_type 为空 = 采购（默认值），与流水/导出口径同源 #}
+              {% if a.out_type=='repair' %}<span class="badge badge-info">{{ tr('返修') }}</span>
+              {% elif a.out_type=='transfer_in' %}<span class="badge badge-info">{{ tr('转入') }}</span>
+              {% elif a.out_type=='other' %}<span class="badge badge-info">{{ tr('借入') }}</span>
+              {% elif a.out_type=='line_return' %}<span class="badge badge-info">{{ tr('产线退回') }}</span>
+              {% elif a.out_type=='misc' %}<span class="badge badge-info">{{ tr('其它') }}</span>
+              {% else %}<span class="badge badge-info">{{ tr('采购') }}</span>{% endif %}
+            {% endif %}
+            {% if a.app_type=='out' and a.line_name %}<br><span class="muted small">{{ tr('线别') }}{{ mk('：') }}{{ a.line_name }} {{ mk('｜') }} {{ tr('设备') }}{{ mk('：') }}{{ a.device_name or '—' }}</span>{% endif %}
+            {% if a.app_type=='out' and a.out_type in ('return','exchange','internal','giveback','maintenance','verify') %}<br><span class="muted small">{% if a.out_type in ('maintenance','verify') %}{{ tr('出库人') }}{{ mk('：') }}{{ a.out_person or '—' }}{{ mk('，') }}{{ tr('目的公司/地址') }}{{ mk('：') }}{{ a.destination or '—' }}{% else %}{{ tr('目的地或目的公司') }}{{ mk('：') }}{{ a.destination or '—' }}{% endif %}{{ mk('，') }}{{ tr('接收人') }}{{ mk('：') }}{{ a.receiver or '—' }}{% if a.out_type=='exchange' and a.expected_return %}{{ mk('，') }}{{ tr('预计返回日期') }}{{ mk('：') }}{{ a.expected_return[:10] }}{% elif a.out_type in ('maintenance','verify') and a.expected_return %}{{ mk('，') }}{{ tr('预计返回时间') }}{{ mk('：') }}{{ a.expected_return[:16] }}{% endif %}</span>{% endif %}
+            {% if a.app_type=='out' and a.is_valuable and a.approver_name %}<br><span class="muted small">{{ tr('审批') }}{{ mk('：') }}{{ a.approver_name }}</span>{% endif %}
+            {% if a.app_type=='borrow' and a.expected_return %}<br><span class="muted small">{{ tr('预计归还日') }}{{ mk('：') }}{{ a.expected_return[:10] }}</span>{% endif %}</td>
           <td class="num">{{ a.quantity }} {{ a.unit }}</td>
           <td class="mono small">
             {% if a.app_type=='transfer' %}
-              <span class="muted">{{ tr(a.from_loc_text or tr('待定')) }}</span> {{ tr('→') }} <b>{{ tr(a.to_loc_text or tr('待定')) }}</b>
+              <span class="muted">{{ a.from_loc_text or tr('待定') }}</span> → <b>{{ a.to_loc_text or tr('待定') }}</b>
             {% else %}
               {% if a.all_locs_text %}{{ a.all_locs_text }}{% else %}{{ a.location_text or '-' }}{% endif %}
             {% endif %}
           </td>
+          <td class="small">{{ a.reason or '-' }}</td>
           <td>
-            {% if a.status=='pending' %}<span class="badge badge-info">{{ tr('status_pending') }}</span>
+            {% if a.status=='pending' or a.status=='pending2' %}<span class="badge badge-info">{{ tr('status_pending') }}</span>
             {% elif a.status=='approved' %}<span class="badge badge-info">{{ tr('status_approved') }}</span>
             {% elif a.status=='rejected' %}<span class="badge badge-warn">{{ tr('status_rejected') }}</span>
             {% elif a.status=='cancel_req' %}<span class="badge badge-warn">{{ tr('status_cancel_req') }}</span>
             {% elif a.status=='canceled' %}<span class="badge badge-muted">{{ tr('status_canceled') }}</span>
             {% else %}<span class="badge badge-ok">{{ tr('status_completed') }}</span>{% endif %}
           </td>
-          <td class="muted">{{ a.approval_note or a.operator_note or '-' }}</td>
-          <td class="ops">
+          <td class="muted">{% if a.approval_note %}{% if a.approver_name %}{{ a.approver_name }}{{ mk('：') }}{% endif %}{{ a.approval_note }}{% elif a.operator_note %}{{ a.operator_note }}{% else %}-{% endif %}</td>
+          <td>
             {% if a.status=='pending' %}
-              <button class="btn btn-xs btn-warn" onclick="openCancel({{ a.id }}, '{{ a.app_no }}')">{{ tr('撤销') }}</button>
-            {% elif a.status in ('completed','approved') %}
-              <button class="btn btn-xs btn-warn" onclick="openCancelReq({{ a.id }}, '{{ a.app_no }}')">{{ tr('申请撤销') }}</button>
-            {% endif %}
+            <button class="btn btn-xs btn-warn" onclick="openCancelOne({{ a.id }}, '{{ a.part_code|e }}')">{{ tr('撤销本条') }}</button>
+            {% elif a.status=='approved' %}
+            <button class="btn btn-xs btn-warn" onclick="openCancelReqOne({{ a.id }}, '{{ a.part_code|e }}')">{{ tr('申请撤销本条') }}</button>
+            {% elif a.status=='cancel_req' %}
+            <span class="muted small">{{ tr('撤销请求待仓管审批') }}</span>
+            {% elif a.status=='completed' %}
+            <span class="muted small">-</span>
+            {% else %}<span class="muted small">—</span>{% endif %}
           </td>
         </tr>
-        {% else %}<tr><td colspan="9" class="muted center">{{ tr('暂无申请单') }}</td></tr>{% endfor %}
+        {% endfor %}
       </tbody>
+      {% else %}<tbody><tr><td colspan="7" class="muted center">{{ tr('暂无申请单') }}</td></tr></tbody>{% endfor %}
     </table>
   </div>
   <div class="pager" style="margin-top:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-    <select class="f-input" style="max-width:130px" onchange="location.href='{{ url_for('applications_page') }}?date_from={{ date_from }}&date_to={{ date_to }}&f_type={{ f_type }}&f_status={{ f_status }}&per_page='+this.value">
-      {% for v in [5,10,20,100] %}<option value="{{ v }}" {{ 'selected' if app_per_page==(v|string) }}>{{ tr('每页') }} {{ v }} {{ tr('条') }}</option>{% endfor %}
+    <select class="f-input" style="max-width:130px" onchange="location.href='{{ url_for('applications_page') }}?date_from={{ date_from }}&time_from={{ time_from }}&date_to={{ date_to }}&time_to={{ time_to }}&f_type={{ f_type }}&f_status={{ f_status }}&per_page='+this.value">
+      {% for v in [5,10,20,100] %}<option value="{{ v }}" {{ 'selected' if app_per_page==(v|string) }}>{{ tn('ui.per_page', v) }}</option>{% endfor %}
       <option value="all" {{ 'selected' if app_per_page=='all' }}>{{ tr('全部') }}</option>
     </select>
-    <span class="muted small">{{ tr('共 {0} 条 · 第 {1}/{2} 页').format(app_total, app_page, app_pages) }}</span>
-    {% if app_page > 1 %}<a class="btn btn-xs" href="{{ url_for('applications_page', page=app_page-1, date_from=date_from, date_to=date_to, f_type=f_type, f_status=f_status, per_page=app_per_page) }}">{{ tr('上一页') }}</a>{% endif %}
-    {% if app_page < app_pages %}<a class="btn btn-xs" href="{{ url_for('applications_page', page=app_page+1, date_from=date_from, date_to=date_to, f_type=f_type, f_status=f_status, per_page=app_per_page) }}">{{ tr('下一页') }}</a>{% endif %}
+    <span class="muted small">{{ tr('共 {0} 张申请单 · 第 {1}/{2} 页').format(app_total, app_page, app_pages) }}</span>
+    {% if app_page > 1 %}<a class="btn btn-xs" href="{{ url_for('applications_page', page=app_page-1, date_from=date_from, date_to=date_to, time_from=time_from, time_to=time_to, f_type=f_type, f_status=f_status, per_page=app_per_page) }}">{{ tr('上一页') }}</a>{% endif %}
+    {% if app_page < app_pages %}<a class="btn btn-xs" href="{{ url_for('applications_page', page=app_page+1, date_from=date_from, date_to=date_to, time_from=time_from, time_to=time_to, f_type=f_type, f_status=f_status, per_page=app_per_page) }}">{{ tr('下一页') }}</a>{% endif %}
   </div>
 </div>
 
-<!-- 撤销（待处理单直接撤销）弹窗 -->
+<!-- 整单撤销（全部待处理）弹窗 -->
 <div class="modal-mask" id="cancel-modal" style="display:none" onclick="if(event.target===this)closeModal('cancel-modal')">
   <div class="modal">
     <div class="modal-head"><span>{{ tr('撤销申请单') }}</span><button class="modal-x" onclick="closeModal('cancel-modal')">✕</button></div>
     <div class="modal-body">
-      <p id="cancel-info">{{ tr('确定要撤销该申请单吗') }}？{{ tr('撤销后不可恢复') }}{{ tr('。') }}</p>
+      <p id="cancel-info"></p>
       <form method="post" id="cancel-form">
         <label class="f-label">{{ tr('撤销原因（可空）') }}<textarea class="f-input" name="note" rows="2"></textarea></label>
         <div class="modal-foot"><button class="btn btn-danger" type="submit">{{ tr('确认撤销') }}</button>
@@ -166,12 +208,13 @@
   </div>
 </div>
 
-<!-- 申请撤销（已完成/已批准单）弹窗 -->
+<!-- 整单申请撤销（已完成/已批准）弹窗 -->
 <div class="modal-mask" id="cancel-req-modal" style="display:none" onclick="if(event.target===this)closeModal('cancel-req-modal')">
   <div class="modal">
-    <div class="modal-head"><span>{{ tr('申请撤销') }}{{ tr('（') }}{{ tr('需仓管员审批') }}{{ tr('）') }}</span><button class="modal-x" onclick="closeModal('cancel-req-modal')">✕</button></div>
+    <div class="modal-head"><span>{{ tr('申请撤销') }}{{ mk('（') }}{{ tr('需仓管员审批') }}{{ mk('）') }}</span><button class="modal-x" onclick="closeModal('cancel-req-modal')">✕</button></div>
     <div class="modal-body">
-      <p class="muted small" style="margin-bottom:8px">{{ tr('提交撤销请求后，由仓管员审批；审批通过后自动回滚库存') }}/{{ tr('位置') }}{{ tr('申请单置为已撤销') }}{{ tr('。') }}</p>
+      <p id="cancel-req-info" style="margin-bottom:6px"></p>
+      <p class="muted small ui-hint" style="margin-bottom:8px">{{ tr('提交撤销请求后，由仓管员审批；审批通过后自动回滚库存') }}/{{ tr('位置') }}{{ mk('。') }}</p>
       <form method="post" id="cancel-req-form">
         <label class="f-label">{{ tr('撤销原因') }}<textarea class="f-input" name="note" rows="2" placeholder="{{ tr('必填') }}"></textarea></label>
         <div class="modal-foot"><button class="btn btn-warn" type="submit">{{ tr('提交撤销请求') }}</button>
@@ -180,252 +223,987 @@
     </div>
   </div>
 </div>
+
+<!-- v1.0.49 签字附件弹窗：同一单号共用一份纸档，可传多张、逐张删除 -->
+<div class="modal-mask" id="attach-modal" style="display:none" onclick="if(event.target===this)closeModal('attach-modal')">
+  <div class="modal">
+    <div class="modal-head"><span>{{ tr('签字附件') }} <span id="attach-doc-no" class="mono"></span></span><button class="modal-x" onclick="closeModal('attach-modal')">✕</button></div>
+    <div class="modal-body">
+      <p class="muted small ui-hint" style="margin-bottom:8px">{{ tr('打印签字后的审批单，拍照或扫描上传；同一申请单只需一份纸档，可上传多张，逐张可删除') }}</p>
+      <label class="f-label">{{ tr('选择图片') }}{{ mk('（') }}{{ tr('可多选') }}{{ mk('）') }}
+        <input class="f-input" type="file" id="attach-file" multiple accept="image/*">
+      </label>
+      <div><button class="btn btn-primary" id="attach-upload-btn" type="button" onclick="uploadScrapAttach()">{{ tr('上传附件') }}</button></div>
+      <div id="attach-list" style="margin-top:10px;max-height:320px;overflow:auto"></div>
+      <div class="modal-foot"><button class="btn" type="button" onclick="closeModal('attach-modal')">{{ tr('btn_cancel') }}</button></div>
+      <div id="attach-msg" class="muted small" style="margin-top:6px"></div>
+    </div>
+  </div>
+</div>
+
+<!-- v1.0.52 单据详情弹窗（审批历史/申请列表点单号查看） -->
+<div class="modal-mask" id="doc-detail-modal" style="display:none" onclick="if(event.target===this)closeModal('doc-detail-modal')">
+  <div class="modal" style="max-width:760px">
+    <div class="modal-head"><span>{{ tr('单据详情') }} <span id="dd-docno" class="mono"></span></span><button class="modal-x" onclick="closeModal('doc-detail-modal')">✕</button></div>
+    <div class="modal-body"><div id="dd-body" class="muted small">{{ tr('加载中') }}…</div></div>
+  </div>
+</div>
+
+<!-- v1.0.55 驳回单重新修改并提交弹窗：只改数量（增减均可）；删除物料走主列表撤销；附件走主列表签字附件按钮 -->
+<div class="modal-mask" id="reopen-modal" style="display:none" onclick="if(event.target===this)closeModal('reopen-modal')">
+  <div class="modal" style="max-width:760px">
+    <div class="modal-head"><span>{{ tr('重新修改并提交') }} <span id="ro-docno" class="mono"></span></span><button class="modal-x" onclick="closeModal('reopen-modal')">✕</button></div>
+    <div class="modal-body">
+      <p class="muted small ui-hint">{{ tr('可修改数量（增减均可）、如需删除某些物料，保存修订后，在主列表中进行撤消') }}</p>
+      <div id="ro-items" style="max-height:320px;overflow:auto"></div>
+      <div class="modal-foot">
+        <button class="btn" type="button" onclick="closeModal('reopen-modal')">{{ tr('btn_cancel') }}</button>
+        <button class="btn btn-primary" type="button" onclick="submitReopen()">{{ tr('保存修订') }}</button>
+      </div>
+      <div id="ro-msg" class="muted small" style="margin-top:6px"></div>
+    </div>
+  </div>
+</div>
 {% endblock %}
 {% block scripts %}
 <script>
 const LOCS = {{ locations | tojson }};
+const CAN_REASSESS = {{ can_reassess | tojson }};   // 待报废转待维修复判权限
+let EMPTY_LOCS = [];   // 调库目标候选：当前没有任何库存的空库位（/api/locations/empty）
+function loadEmptyLocs(){
+  fetch('/api/locations/empty').then(r => r.json()).then(d => {
+    EMPTY_LOCS = d.locations || [];
+    render();
+  }).catch(() => {});
+}
+const LINES = {{ lines | tojson }};
+const EQUIPMENT = {{ equipment | tojson }};
 const CUR_ROLE = '{{ cur_role }}';
-let CUR_PART = null;
+const DEFAULT_TYPE = '{{ request.args.get("app_type", "out") }}';
+// v1.0.18：借用人 / 出库人不再由前端填写，服务端一律取当前登录用户
+const REPAIR_CATS = {{ repair_categories | tojson }};  // v1.0.19：维修品类型二级字典 [{group,items}]
 function closeModal(id){ document.getElementById(id).style.display='none'; }
+function esc(s){ const d=document.createElement('div'); d.textContent=s==null?'':String(s); return d.innerHTML; }
+function fmtQty(v){ return Number(v||0).toLocaleString(window.LOCALE || 'zh-CN'); }
+// v1.0.58：「全部提交」必须覆盖全部四种类型（旧版漏了 borrow），校验失败按行标红，
+// 提交中锁按钮防重复点击；部分成功时保留失败行和结果说明，不再 1.5 秒后无差别刷新页面。
+const SUBMIT_TYPES = ['out', 'in', 'transfer', 'borrow'];
+let SUBMIT_BUSY = false;
+let ROW_ERRORS = {};
+function typeName(t){
+  return t === 'out' ? TR('出库') : (t === 'in' ? TR('入库') :
+         (t === 'transfer' ? TR('调库') : TR('借·换·检·修')));
+}
+function setSubmitBusy(on){
+  SUBMIT_BUSY = !!on;
+  document.querySelectorAll('[data-submit-btn]').forEach(function(b){ b.disabled = !!on; });
+}
+function withSubmitBusy(p){
+  setSubmitBusy(true);
+  return p.then(function(v){ setSubmitBusy(false); return v; },
+                function(e){ setSubmitBusy(false); throw e; });
+}
+// v1.0.20：维修品类型改可搜索下拉（static/js/repairpick.js，全局单面板按需渲染）。
+// 旧实现每行拼一份全量 <optgroup>，几千词条时重绘一次要 1~3 秒，输入框会失焦。
 
-function onPartPick(p){
-  CUR_PART = p;
-  document.getElementById('app-part-id').value = p.id;
-  const qty = document.getElementById('app-qty');
-  if(p.qty_decimal){
-    qty.step = '0.001'; qty.min = '0.01'; qty.placeholder = '{{ tr('数量') }}{{ tr('（') }}{{ tr('可小数') }}{{ tr('）') }}';
-  } else {
-    qty.step = '1'; qty.min = '1'; qty.placeholder = '{{ tr('数量（') }}{{ tr('整数') }}{{ tr('）') }}';
-  }
-  // {{ tr('调库') }}：加载该备件的全部库存行（含待定行）供选择源库位
-  const tfFrom = document.getElementById('tf-from');
-  if(tfFrom){
-    tfFrom.innerHTML = '<option value="">{{ tr('加载中') }}…</option>';
-    fetch('/api/parts/'+p.id).then(r=>r.json()).then(d=>{
-      const lines = (d.locations||[]).filter(l=>Number(l.quantity)>0);
-      if(!lines.length){
-        tfFrom.innerHTML = '<option value="">{{ tr('该备件无任何库存库位') }}</option>';
-        document.getElementById('tf-from-msg').textContent='';
-      } else {
-        tfFrom.innerHTML = '<option value="">{{ tr('选择源库位') }}…</option>' + lines.map(l=>{
-          const pend = !Number(l.location_id);
-          const label = pend
-            ? '{{ tr('待定') }}{{ tr('（') }}{{ tr('数量') }} '+fmtQty(l.quantity)+'{{ tr('）') }}'
-            : esc(l.location)+TR('{{ tr('（') }}数量 ')+fmtQty(l.quantity)+'{{ tr('）') }}'+(pend ? TR('【待定】') : '');
-          return '<option value="loc_'+(l.location_id==null?'NULL':l.location_id)+'">'+label+'</option>';
-        }).join('');
-        document.getElementById('tf-from-msg').textContent=TR('共 ')+lines.length+TR(' 个库存库位');
-      }
-      tfFromChange();
-    }).catch(()=>{ tfFrom.innerHTML = '<option value="">{{ tr('加载失败') }}{{ tr('，') }}{{ tr('请重选备件') }}</option>'; });
-  }
-  onTypeChange();
-}
-function fmtQty(v){ return Number(v||0).toLocaleString('zh-CN'); }
-function tfFromChange(){
-  const msg = document.getElementById('tf-from-msg');
-  const from = document.getElementById('tf-from');
-  if(!from || !from.value){ if(msg) msg.textContent=''; return; }
-  if(from.value === 'loc_NULL'){
-    if(msg) msg.innerHTML = '<span style="color:var(--warn,#d97706)">{{ tr('所选为') }}{{ tr('「') }}{{ tr('待定') }}{{ tr('」') }}{{ tr('库位') }}{{ tr('，') }}{{ tr('仅可调到具体位置') }}</span>';
-  } else {
-    if(msg) msg.textContent='';
-  }
-  tfModeChange();
-}
-function onTypeChange(){
-  const v = document.getElementById('app-type').value;
-  document.getElementById('transfer-panel').style.display = (v==='transfer') ? 'flex' : 'none';
-  document.getElementById('qty-wrap').style.display = (v==='transfer') ? 'none' : '';
-  // 出库申请：显示 使用线别/使用设备（从产线与设备配置中选择）
-  const showUse = (v==='out');
-  document.getElementById('use-line-wrap').style.display = showUse ? '' : 'none';
-  document.getElementById('use-device-wrap').style.display = showUse ? '' : 'none';
-  const useLine = document.getElementById('app-line');
-  const useDev = document.getElementById('app-device');
-  if(showUse){
-    useLine.setAttribute('required','required');
-    useDev.setAttribute('required','required');
-    onLineChange();
-  } else {
-    useLine.removeAttribute('required');
-    useDev.removeAttribute('required');
-  }
-  const isValuableOut = (v==='out') && CUR_PART && CUR_PART.is_valuable;
-  // 仓库/经理/高级管理人员 申请贵重出库时：显示自选审批经理；普通用户自动按部门经理，不显示
-  const needSelect = isValuableOut && CUR_ROLE !== 'user';
-  document.getElementById('approver-wrap').style.display = needSelect ? '' : 'none';
-  if(needSelect) document.getElementById('app-approver').setAttribute('required','required');
-  else document.getElementById('app-approver').removeAttribute('required');
-  if(v==='transfer'){
-    document.getElementById('apply-form').querySelector('[name=quantity]').removeAttribute('required');
-    tfReset();
-  } else {
-    document.getElementById('apply-form').querySelector('[name=quantity]').setAttribute('required','required');
-  }
-}
-function onLineChange(){
-  // 线别联动：选了产线→设备框只显示该产线的设备；未选产线→只显示未分配产线的设备
-  const ln = document.getElementById('app-line').value;
-  const dev = document.getElementById('app-device');
-  if(dev){ dev.value=''; [...dev.options].forEach(o=>{
-    const dl = (o.getAttribute('data-line')||'').trim();
-    const offline = (!ln || ln === TR('离线'));
-    o.style.display = (offline ? !dl : dl===ln) ? '' : 'none';
-  }); }
-}
-function beforeApplySubmit(){
-  // 兜底：确保选中备件已写入隐藏字段（部分入口可能只设置了 CUR_PART）
-  if(!document.getElementById('app-part-id').value && CUR_PART){
-    document.getElementById('app-part-id').value = CUR_PART.id;
-  }
-  if(!document.getElementById('app-part-id').value){
-    alert(TR('请先选择备件')); return false;
-  }
-  const t = document.getElementById('app-type').value;
-  if(t === 'out'){
-    if(!document.getElementById('app-line').value){
-      alert('{{ tr('请选择使用线别') }}{{ tr('（') }}{{ tr('出库领用必填') }}{{ tr('）') }}'); return false;
-    }
-    if(!document.getElementById('app-device').value){
-      alert(TR('请选择使用设备') + TR('{{ tr('（') }}出库领用必填{{ tr('）') }}')); return false;
-    }
-  }
-  if(t !== 'transfer'){
-    // 贵重出库需已选审批经理（普通用户由后端自动匹配，无需前端选择）
-    if(CUR_ROLE !== 'user' && document.getElementById('approver-wrap').style.display !== 'none'){
-      if(!document.getElementById('app-approver').value){
-        alert(TR('贵重备件出库请选择审批经理')); return false;
-      }
-    }
-    return true;
-  }
-  const from = document.getElementById('tf-from');
-  if(!from.value){
-    alert(TR('请选择调库的源库位{{ tr('（') }}') + TR('移哪个位置的料') + TR('{{ tr('）') }}')); return false;
-  }
-  const mode = document.querySelector('input[name=tf-mode]:checked').value;
-  const locId = document.getElementById('tf-loc-id').value;
-  if(mode === 'loc' && !locId){
-    alert(TR('请选择有效的空位目标位置{{ tr('（') }}被占用的位置不可调入{{ tr('）') }}{{ tr('，') }}') + TR('或选择') + '{{ tr('「') }}' + TR('调到待定') + '{{ tr('」') }}');
-    return false;
-  }
-  if(mode === 'pending' && from.value === 'loc_NULL'){
-    alert('{{ tr('该源库位已是') }}{{ tr('「') }}{{ tr('待定') }}{{ tr('」') }}{{ tr('状态') }}{{ tr('，') }}{{ tr('请选择目标位置') }}'); return false;
-  }
-  return true;
-}
-function tfModeChange(){
-  const m = document.querySelector('input[name=tf-mode]:checked').value;
-  const sel = document.getElementById('tf-loc-id');
-  if(m==='pending'){ sel.value=''; document.getElementById('tf-msg').textContent=TR('将调到') + '{{ tr('「') }}' + TR('待定') + '{{ tr('」') }}' + TR('状态{{ tr('（') }}') + TR('不占用任何货位') + TR('{{ tr('）') }}{{ tr('。') }}'); }
-  else { tfPick(); }
-}
-function fillSel(sel, opts, placeholder){
-  sel.innerHTML = '<option value="">'+placeholder+'</option>' + opts.map(o=>'<option value="'+esc(o)+'">'+esc(o)+'</option>').join('');
-}
-function tfWhChange(){
-  const wh = document.getElementById('tf-wh').value;
-  const racks = [...new Set(LOCS.filter(l=>l.warehouse===wh).map(l=>l.rack))].sort();
-  fillSel(document.getElementById('tf-rack'), racks, TR('货架号…'));
-  fillSel(document.getElementById('tf-shelf'), [], TR('货位号…'));
-  fillSel(document.getElementById('tf-bin'), [], TR('格位号…'));
-  document.getElementById('tf-bin').disabled = true;
-  tfPick();
-}
-function tfRackChange(){
-  const wh = document.getElementById('tf-wh').value, rack = document.getElementById('tf-rack').value;
-  const shelves = [...new Set(LOCS.filter(l=>l.warehouse===wh && l.rack===rack).map(l=>l.shelf))].sort();
-  fillSel(document.getElementById('tf-shelf'), shelves, TR('货位号…'));
-  fillSel(document.getElementById('tf-bin'), [], TR('格位号…'));
-  document.getElementById('tf-bin').disabled = true;
-  tfPick();
-}
-function tfShelfChange(){
-  const wh = document.getElementById('tf-wh').value, rack = document.getElementById('tf-rack').value, shelf = document.getElementById('tf-shelf').value;
-  const bin = document.getElementById('tf-bin');
-  const bs = binSelections(wh, rack, shelf);
-  bin.innerHTML = '<option value="">{{ tr('格位号…') }}</option>' + bs.map(o=>'<option value="'+o.v+'">'+esc(o.label)+'</option>').join('');
-  bin.disabled = !(wh && rack && shelf);
-  tfPick();
-}
-function binSelections(wh, rack, shelf){
-  // 该货位下的所有格位（含空=整货位），空闲（未占用）在前
-  const list = LOCS.filter(l => (!wh || l.warehouse===wh) && (!rack || l.rack===rack) && (!shelf || l.shelf===shelf));
-  const seen = {};
-  list.forEach(l=>{ const k = l.bin || '__WHOLE__'; if(!seen[k]) seen[k]=[]; seen[k].push(l); });
-  const keys = Object.keys(seen).sort((a,b)=>(a==='__WHOLE__'?-1:0)-(b==='__WHOLE__'?-1:0) || a.localeCompare(b));
-  const out = [];
-  keys.forEach(k=>{
-    const ls = seen[k];
-    const occ = ls.find(l=>l.part_id);
-    const label = (k==='__WHOLE__' ? TR('整货位') : k) + (occ ? TR('{{ tr('（') }}占用:')+occ.part_code+TR('{{ tr('）') }}') : TR('{{ tr('（') }}空位{{ tr('）') }}'));
-    out.push({v: String(ls[0].id), label: label, occ: !!occ, id: ls[0].id});
+// ============ 线体 / 设备联动（与出入库页共用同一套规则） ============
+// 「离线」= 没有配产线的设备：选离线只列无线体设备；选具体线体只列该线体下的设备；没选线体不给设备
+const OFFLINE = '__OFF__';                       // 离线（设备不属任何产线）的固定内码，不随界面语言变
+const OFFLINE_LABEL = {{ tr('离线') | tojson }};
+function lineOptions(cur, ph){
+  const first = ph || TR('使用线别…');
+  const out = ['<option value="">' + first + '</option>',
+    '<option value="' + OFFLINE + '"' + (cur === OFFLINE ? ' selected' : '') + '>' + esc(OFFLINE_LABEL) + '</option>'];
+  LINES.forEach(l => {
+    out.push('<option value="' + esc(l.name) + '"' + (cur === l.name ? ' selected' : '') + '>' + esc(l.name) + '</option>');
   });
-  // 空闲在前
-  out.sort((a,b)=> (a.occ?1:0)-(b.occ?1:0));
-  return out;
+  return out.join('');
 }
-function tfPick(){
-  const m = document.querySelector('input[name=tf-mode]:checked').value;
-  const sel = document.getElementById('tf-loc-id');
-  const msg = document.getElementById('tf-msg');
-  if(m==='pending'){ sel.value=''; msg.style.color='var(--muted)'; msg.textContent=TR('将调到{{ tr('「') }}待定{{ tr('」') }}状态{{ tr('（') }}不占用任何货位{{ tr('）') }}{{ tr('。') }}'); return; }
-  const bin = document.getElementById('tf-bin');
-  if(!bin.value){ sel.value=''; msg.style.color='var(--muted)'; msg.textContent=TR('请完整选择 仓库-货架-货位-格位'); return; }
-  const loc = LOCS.find(l=>String(l.id)===bin.value);
-  sel.value = loc.id;
-  const label = loc.warehouse+'-'+loc.rack+'-'+loc.shelf+(loc.bin?'-'+loc.bin:'');
-  if(loc.part_id){
-    // 占用（含本备件当前占位）不可调入：清除 id，禁止提交
-    sel.value='';
-    msg.style.color='var(--red)';
-    msg.textContent = TR('该位置已被备件 [')+loc.part_code+TR('] 占用{{ tr('，') }}不可调入{{ tr('（') }}需先将其调走{{ tr('）') }}');
+function devOptions(line, cur, ph){
+  const first = ph || TR('使用设备…');
+  const out = ['<option value="">' + first + '</option>'];
+  if(!line) return out.join('');
+  const list = EQUIPMENT.filter(e => line === OFFLINE ? !e.line_name : e.line_name === line);
+  list.forEach(e => {
+    out.push('<option value="' + esc(e.name) + '"' + (cur === e.name ? ' selected' : '') + '>' + esc(e.name) + '</option>');
+  });
+  if(!list.length) out.push('<option value="" disabled>' + TR('该线体下暂无设备') + '</option>');
+  return out.join('');
+}
+function devFitsLine(devName, line){
+  const d = EQUIPMENT.find(e => e.name === devName);
+  if(!d) return false;
+  return line === OFFLINE ? !d.line_name : d.line_name === line;
+}
+
+// ============ 草稿明细（每行可指定类型，提交时按类型拆单） ============
+// 草稿明细持久化：切到别的页面再回来不会丢（sessionStorage 随标签页关闭自动清空）
+// 按登录用户隔离：以前是固定 key，同一浏览器换个账号登录会直接看到上一个人
+// 没提交完的单据（内容一样、还能替他提交），现在 key 带用户 ID，各人草稿互不可见。
+// v1.0.27：入库申请可声明配件三态（与批量出入库页、仓管执行弹窗同源）
+const COND_LIST = ['good', 'defective', 'repair'];
+const COND_NAMES = {{ condition_names | tojson }};
+// v1.0.34：库位属性 ↔ 配件状态约束矩阵 + 库位工具函数，与批量出入库页（inout.html）同源。
+// 调库目标库位按源行配件状态过滤时需要这三个函数。
+const COND_MATRIX = {{ cond_matrix | tojson }};
+function condLocOk(attr, cond){
+  attr = attr || 'good';
+  var allow = COND_MATRIX[attr] || ['good','repair'];
+  return allow.indexOf(cond) >= 0;
+}
+// v1.0.42：可用库存按所选类型取数（与 inout.html / 后端四分类同源）。
+// 出库报废→待报废数；借·换·检·修→维修(待修)显示待维修数；入库→不显示。
+function appAvail(r){
+  if(r.type === 'in') return null;
+  var kind = 'good';
+  if(r.type === 'out' && r.out_type === 'scrap') kind = 'scrap';
+  else if(r.type === 'borrow' && (r.sub_type || 'borrow') === 'maintenance') kind = 'maintenance';
+  return CondRules.stockOf(r.locs, kind);
+}
+// v1.0.38：分组标题统一「类型（属性）」，与批量出入库页同源：
+// 现有库位（良品）/ 空位（待维修）/ 共用库位（待报废）
+function attrName(attr){
+  attr = attr || 'good';
+  if(attr === 'pending_repair') return TR('待维修');
+  if(attr === 'pending_scrap')  return TR('待报废');
+  return TR('良品');
+}
+// v1.0.38：分组标题里的括号跟着语言走——中文全角，其它语言半角，
+// 否则英文界面会出现「Existing locations（Good）」这种中英混排痕迹。
+function locParen(s){
+  return String(window.LOCALE || 'zh').indexOf('zh') === 0 ? ('（' + s + '）') : (' (' + s + ')');
+}
+function locGroupLabel(kind, attr){
+  var a = attrName(attr);
+  if(kind === 'free') return TR('空位') + locParen(a);
+  if(kind === 'shared') return TR('共用库位') + locParen(a);
+  return TR('现有库位') + locParen(a);
+}
+function locName(l){
+  return [l.warehouse, l.rack, l.shelf, l.bin].filter(x => x && String(x).trim()).join('-');
+}
+// A 方案：待报废区 → 待维修区（复判可修），按库位属性判定，与后端 _is_scrap_to_repair 同源。
+// 申请单页不隐藏候选：申请人可无复判权限，执行时由有权限的仓管按同一规则卡。
+function appScrapToRepair(r, srcLocId, toLocId){
+  if(!srcLocId || !toLocId || String(srcLocId) === 'NULL') return false;
+  const hit = (r.locs || []).find(l => String(l.location_id) === String(srcLocId));
+  let sa = hit ? (hit.attribute || 'good') : '';
+  if(!sa){ const f = LOCS.find(l => String(l.id) === String(srcLocId)); sa = f ? (f.attribute || 'good') : ''; }
+  if(sa !== 'pending_scrap') return false;
+  const tgt = (r.locs || []).find(l => String(l.location_id) === String(toLocId));
+  if(tgt) return (tgt.attribute || 'good') === 'pending_repair';
+  const f2 = LOCS.find(l => String(l.id) === String(toLocId));
+  return !!f2 && (f2.attribute || 'good') === 'pending_repair';
+}
+function groupLocsByAttr(items, sel, order, kind){
+  order = order || ['good', 'pending_repair', 'pending_scrap'];
+  const by = {};
+  items.forEach(l => { const a = l.attr || 'good'; (by[a] = by[a] || []).push(l); });
+  let html = '';
+  order.forEach(a => {
+    const arr = by[a];
+    if(!arr || !arr.length) return;
+    arr.sort((x, y) => String(x.name).localeCompare(String(y.name)));
+    html += '<optgroup label="' + esc(locGroupLabel(kind, a)) + '">' + arr.map(l =>
+      '<option value="' + esc(l.id) + '"' + (String(sel) === String(l.id) ? ' selected' : '') + '>' +
+      esc(l.name) + (l.extra || '') + '</option>').join('') + '</optgroup>';
+  });
+  return html;
+}
+const CUR_UID = {{ cur_user.id if cur_user else 0 }};
+const PICK_KEY = 'smt_pick_u' + CUR_UID;
+const DRAFT_KEY = 'smt_draft_u' + CUR_UID;
+// 升级后清掉旧版共享 key：归属无法判定，宁可丢一次草稿也不把别人的单据展示出来
+(function dropLegacyDrafts(){
+  ['smt_draft', 'smt_pick'].forEach(function(k){
+    try{ sessionStorage.removeItem(k); }catch(e){}
+  });
+})();
+function draftLoad(){
+  try{ const a = JSON.parse(sessionStorage.getItem(DRAFT_KEY)); return Array.isArray(a) ? a : []; }
+  catch(e){ return []; }
+}
+function draftSave(){ try{ sessionStorage.setItem(DRAFT_KEY, JSON.stringify(DRAFT)); }catch(e){} }
+let DRAFT = draftLoad();   // {pid, code, name, unit, dec, stock, valuable, type, qty, reason, from_key, to_loc, use_line, use_device, locs}
+// 兼容旧草稿：「离线」原来存的是当时的界面文字，统一换成内码；只填设备没填线体的按设备所属线体补上
+DRAFT.forEach(r => {
+  if(r.use_line && r.use_line !== OFFLINE && !LINES.some(l => l.name === r.use_line)){
+    const d0 = EQUIPMENT.find(e => e.name === r.use_device);
+    if(!r.use_device || (d0 && !d0.line_name)) r.use_line = OFFLINE;
+  }
+  if(r.use_device && !r.use_line){
+    const d = EQUIPMENT.find(e => e.name === r.use_device);
+    if(d) r.use_line = d.line_name || OFFLINE;
+  }
+  // v1.0.13 子类型：老草稿缺字段时补默认值（出库一般 / 入库采购）
+  if(!r.out_type) r.out_type = 'general';
+  if(!r.in_type) r.in_type = 'purchase';
+  // v1.0.27：老草稿缺配件状态时按良品处理
+  if(!r.condition) r.condition = 'good';
+});
+
+function draftIndex(pid){ return DRAFT.findIndex(r => r.pid === pid); }
+
+function addParts(parts){
+  let added = 0;
+  const jobs = parts.map(p => fetch('/api/parts/' + p.id).then(r => r.json()).then(d => {
+    if(draftIndex(p.id) < 0){
+      DRAFT.push({pid: p.id, code: d.part_code, name: d.name, unit: d.unit || '',
+        dec: d.qty_decimal || 0, stock: d.total_stock || 0, valuable: d.is_valuable || 0,
+        type: DEFAULT_TYPE, qty: '', reason: '', from_key: '', to_loc: '', use_line: '', use_device: '',
+        expected_return: '',
+        out_type: 'general', in_type: 'purchase', sub_type: 'borrow', condition: 'good',
+        repair_type: '', destination: '', receiver: '', contact: '',
+        locs: (d.locations || []).filter(l => Number(l.quantity) > 0)});
+      added++;
+    }
+  }).catch(() => {}));
+  Promise.all(jobs).then(() => {
+    // 从购物车带入的件：加入后即从购物车移除（避免重复带入）
+    const cart = JSON.parse(sessionStorage.getItem(PICK_KEY) || '[]');
+    if(cart.length){
+      const rest = cart.filter(id => draftIndex(id) < 0);
+      sessionStorage.setItem(PICK_KEY, JSON.stringify(rest));
+    }
+    draftSave();
+    render();
+    if(added) msg(TR('已添加') + ' ' + added + ' ' + TR('行明细'));
+  });
+}
+
+function rowHtml(r, i){
+  const typeSel = '<select class="f-input" style="max-width:82px" onchange="setRow(' + i + ',\'type\',this.value)">' +
+    ['out', 'in', 'transfer', 'borrow'].map(t => {
+      const lab = t === 'out' ? TR('出库') : (t === 'in' ? TR('入库') : (t === 'transfer' ? TR('调库') : TR('借·换·检·修')));
+      return '<option value="' + t + '"' + (r.type === t ? ' selected' : '') + '>' + lab + '</option>';
+    }).join('') + '</select>';
+  const part = '<b class="mono">' + esc(r.code) + '</b><br><span class="muted">' + esc(r.name) + '</span>' +
+    (r.valuable ? ' <span class="badge badge-val">{{ tr('status_valuable') }}</span>' : '');
+  // v1.0.78：整库位调库数量自动填合并值且锁框；批次可调小。
+  const _srcInfo0 = r.type === 'transfer' ? transferSourceInfo(r.locs, r.from_key) : null;
+  const _lockQty = !!(r.type === 'transfer' && String(r.from_key || '').indexOf('locall_') === 0);
+  const qty = '<input class="f-input" type="number" data-qty="1" id="app-qty-' + i + '" step="' + (r.dec ? '0.001' : '1') + '" min="' + (r.dec ? '0.001' : '1') + '"' +
+    (_srcInfo0 && !_lockQty ? ' max="' + esc(_srcInfo0.qty) + '"' : '') +
+    (_lockQty ? ' readonly title="' + TR('整库位调库数量为该库位合计，不可修改') + '" style="max-width:90px;background:#f1f5f9;color:#475569"' : ' style="max-width:90px"') +
+    ' value="' + esc(r.qty) + '" onchange="setRow(' + i + ',\'qty\',this.value)">';
+  // v1.0.16：按方向取子类型，出库四项（领用/退货/内部转移/返还） / 入库四项（默认采购）
+  const ot = r.type === 'out' ? (r.out_type || 'general') : '';
+  const it = r.type === 'in' ? (r.in_type || 'purchase') : '';
+  // 申请原因：每行自己填（出库必填；返还=备注可空），不再是一个整单共用的大格子
+  const _fkRe = String(r.from_key || '');
+  const _srcRe = (r.locs || []).find(l => 'inv_' + l.inv_id === _fkRe);
+  const _srcLocRe = _srcRe ? _srcRe.location_id
+    : ((_fkRe.indexOf('locall_') === 0 || _fkRe.indexOf('loc_') === 0)
+       ? _fkRe.slice(_fkRe.indexOf('locall_') === 0 ? 7 : 4) : '');
+  const _reassess = r.type === 'transfer' && appScrapToRepair(r, _srcLocRe, r.to_loc);
+  const _reasonOptional = (r.type === 'out' && ot === 'giveback');
+  const _reasonLabel = r.type === 'out'
+    ? (ot === 'return' ? TR('退货原因') : (ot === 'exchange' ? TR('换货原因') : (ot === 'internal' ? TR('转移原因') : (ot === 'giveback' ? TR('备注') : (ot === 'maintenance' ? TR('维修原因') : (ot === 'verify' ? TR('校验/测试原因') : (ot === 'scrap' ? TR('报废原因') : TR('申请原因'))))))))
+    : TR('备注');
+  const reason = '<input class="f-input" type="text" style="min-width:150px' +
+    (_reassess ? ';border-color:#cf1322;background:#fff1f0' : '') + '" placeholder="' +
+    (_reassess ? (TR('复判原因') + TR('（') + TR('必填') + TR('）'))
+     : (_reasonLabel + TR('（') + TR(_reasonOptional || r.type !== 'out' ? '可空' : '必填') + TR('）'))) +
+    '" value="' + esc(r.reason || '') + '" onchange="setRow(' + i + ',\'reason\',this.value)">' +
+    (_reassess && !CAN_REASSESS ? '<div class="muted small">' + TR('待报废转待维修需复判审批权限，将由有权限的仓管执行') + '</div>' : '');
+  let extra = '';
+  if(r.type === 'out'){
+    // 出库子类型：领用（原业务）/ 退货 / 内部转移 / 返还。换货/维修/校验·测试已并入「借·换·检·修」入口
+    // v1.0.27：与批量出入库页共用同一套规则层（CondRules），含不良品才出现返修/报废，
+    // 报废只在待报废库位，全不良隐藏领用/内部转移；受限库位置灰口径沿用 v1.0.24。
+    const _kindLabels = {general:TR('领用'), return:TR('退货'), internal:TR('内部转移'),
+                         giveback:TR('返还'), scrap:TR('报废'), misc:TR('其它')};
+    const _appAttr = CondRules.inferAttr(r.locs, null);
+    const _kindOpts = CondRules.outKindOptions(CondRules.summary(r), _appAttr, _kindLabels);
+    if(!_kindOpts.length) _kindOpts.push({key:'general', label:_kindLabels.general, disabled:false});
+    const kindSel = '<select class="f-input" style="max-width:92px" onchange="setRow(' + i + ',\'out_type\',this.value)">' +
+      _kindOpts.map(o =>
+        '<option value="' + o.key + '"' + (ot === o.key ? ' selected' : '') +
+        (o.disabled ? ' disabled' : '') + '>' + esc(o.label) + '</option>').join('') + '</select> ';
+    if(ot === 'scrap' || ot === 'misc'){
+      // v1.0.27：报废免三字段，也不显示线别/设备
+      // v1.0.39：「其它」同档——申请出库时类型下拉后面不再挂任何选填框
+      extra = kindSel;
+    } else if(ot !== 'general'){
+      // 特殊出库：目的地/接收人/联系方式。v1.0.18：出库人由服务端默认取当前登录用户，页面不再出现录入框
+      const TRACK5 = (ot === 'maintenance' || ot === 'verify');
+      const destPh = TRACK5 ? TR('目的公司/地址') : TR('目的地或目的公司');
+      const erField = ot === 'exchange'
+        ? ' <input class="f-input dt-auto dtp-input" type="text" data-dtp="1" readonly placeholder="' + TR('预计回库时间') + '" style="max-width:190px" title="' + TR('预计回库时间') + '" value="' + esc(spmsDtDisplay(r.expected_return)) + '" onchange="setRow(' + i + ',\'expected_return\',spmsNormDateTime(this.value));this.blur()">'
+        : (TRACK5
+          ? ' <input class="f-input dt-auto dtp-input" type="text" data-dtp="1" readonly placeholder="' + TR('预计回库时间') + '" style="max-width:190px" title="' + TR('预计回库时间') + '" value="' + esc(spmsDtDisplay(r.expected_return)) + '" onchange="setRow(' + i + ',\'expected_return\',spmsNormDateTime(this.value));this.blur()">'
+          : '');
+      const tip = TR('按「审批设置」里的档位走审批；提交后由仓库办理出库');
+      extra = kindSel +
+        '<input class="f-input" type="text" style="max-width:150px" placeholder="' + destPh + '" value="' + esc(r.destination || '') + '" onchange="setRow(' + i + ',\'destination\',this.value)"> ' +
+        '<input class="f-input" type="text" style="max-width:90px" placeholder="' + TR('接收人') + '" value="' + esc(r.receiver || '') + '" onchange="setRow(' + i + ',\'receiver\',this.value)"> ' +
+        '<input class="f-input" type="text" style="max-width:110px" placeholder="' + TR('联系方式') + '" value="' + esc(r.contact || '') + '" onchange="setRow(' + i + ',\'contact\',this.value)">' + erField +
+        ' <span class="muted small" style="cursor:help" title="' + tip + '">ⓘ</span>';
+    } else {
+      extra = kindSel +
+        '<select class="f-input" style="max-width:130px" onchange="setRow(' + i + ',\'use_line\',this.value)">' + lineOptions(r.use_line) + '</select> ' +
+        '<select class="f-input" style="max-width:150px" onchange="setRow(' + i + ',\'use_device\',this.value)">' + devOptions(r.use_line, r.use_device) + '</select>';
+    }
+    // v1.0.28：返还子模式即时提示可返还批次库位，与批量出入库页同源
+    if(ot === 'giveback'){
+      extra += '<div class="muted small gb-hint" data-pid="' + esc(r.pid) + '">' +
+        TR('优先返还借入批次；') +
+        '<span class="gb-list"></span></div>';
+    }
+  } else if(r.type === 'transfer'){
+    // v1.0.70：批次行级调库——下拉每项带 inventory 行 id（loc_id + 批次 + 状态唯一），
+    // 不再只传库位；批次号始终显示，看着选的是哪批就真的搬哪批。
+    // v1.0.78：与批量页同源——库位分组 + 整库位选项
+    const fromOpts = transferSourceOptions(r.locs, r.from_key, fmtQty, TR('整库位'));
+    // 源行的配件状态决定目标库位范围（与服务端 _cond_attr_allowed 同源）
+    const _srcInfo = transferSourceInfo(r.locs, r.from_key);
+    const srcRow = _srcInfo && _srcInfo.row ? _srcInfo.row : null;
+    const srcCond = _srcInfo ? _srcInfo.cond : 'good';
+    const _sk = String(r.from_key || '');
+    const _srcLocRaw = _sk.indexOf('locall_') === 0 ? _sk.slice(7)
+      : (_sk.indexOf('loc_') === 0 ? _sk.slice(4) : (srcRow ? String(srcRow.location_id) : ''));
+    const srcLocId = _srcLocRaw && _srcLocRaw !== 'NULL' ? Number(_srcLocRaw) : null;
+    let toOpts = ['<option value="" disabled' + (r.to_loc ? '' : ' selected') + '>' + TR('目标库位') + '</option>'];
+    const shown = {};    // 已列出的目标 id：草稿恢复时避免把已列库位误标「已占用」
+    let mine = [];
+    if(srcCond === 'defective'){
+      // v1.0.34：不良品（含待定不良品）调库只能调到待维修库位——待维修是通用库位，
+      // 已被其它物料占用的也要列出来（所有物料的不良品可混放同一个待维修库位），
+      // 良品 / 待报废库位一律不展示。与批量出入库页同源。
+      const own = {};
+      r.locs.forEach(l => { if(l.location_id != null) own[l.location_id] = Number(l.quantity) || 0; });
+      const items = LOCS.filter(l => Number(l.id) && (l.attribute || 'good') === 'pending_repair'
+                                   && String(l.id) !== String(srcLocId))
+        .map(l => ({id: l.id, name: locName(l), attr: 'pending_repair',
+                    extra: own[l.id] ? ('（' + TR('库存') + ' ' + fmtQty(own[l.id]) + '）') : ''}));
+      const g = groupLocsByAttr(items, r.to_loc, ['pending_repair'], 'existing');
+      if(g) toOpts.push(g);
+      else toOpts.push('<option value="" disabled>' + TR('暂无待维修库位，请先创建待维修库位') + '</option>');
+      items.forEach(l => { shown[String(l.id)] = 1; });
+    } else {
+      // 目标位置：本物料已有库存的其它库位（同料合并，不算占用，按属性放行） / 待定 / 空库位
+      mine = r.locs.filter(l => l.location_id != null && String(l.location_id) !== String(srcLocId) && condLocOk(l.attribute, srcCond));
+      // v1.0.38：目标库位按「现有库位（属性）/ 空位（属性）」分组，与批量页同源
+      mine.forEach(l => { shown[String(l.location_id)] = 1; });
+      // v1.0.73：目标只要库位，不要批次——同库位多批次合并成一项，库存合计。
+      const _tItems = mergeLocsByLocation(mine, false).map(l => ({id: l.location_id, name: l.location, attr: l.attribute || 'good',
+        extra: '（' + TR('库存') + ' ' + fmtQty(l.quantity) + '）'}));
+      const _g1 = groupLocsByAttr(_tItems, r.to_loc, ['pending_repair', 'pending_scrap', 'good'], 'existing');
+      if(_g1) toOpts.push(_g1);
+      const _freeItems = EMPTY_LOCS.filter(l => condLocOk(l.attribute, srcCond)).map(l => {
+        // v1.0.34：空库位按属性放行（/api/locations/empty 已下发 attribute）
+        shown[String(l.id)] = 1;
+        return {id: l.id, name: l.full_name, attr: l.attribute || 'good'};
+      });
+      const _g2 = groupLocsByAttr(_freeItems, r.to_loc, ['pending_repair', 'pending_scrap', 'good'], 'free');
+      if(_g2) toOpts.push(_g2);
+    }
+    if(r.to_loc && !shown[String(r.to_loc)]){
+      const cur = LOCS.find(l => String(l.id) === String(r.to_loc));
+      toOpts.push('<option value="' + r.to_loc + '" selected>' + esc(cur ? cur.full_name : r.to_loc) + TR('（已占用）') + '</option>');
+    }
+    if(srcLocId == null && _sk){
+      toOpts = toOpts.filter(o => o.indexOf('value=""') < 0);
+      if(!toOpts.length) toOpts.push('<option value="" disabled>' + TR('暂无空库位，请先清理库位') + '</option>');
+    }
+    extra = '<select class="f-input" style="max-width:210px" onchange="setRow(' + i + ',\'from_key\',this.value)">' + fromOpts.join('') + '</select> → ' +
+      '<select class="f-input" style="max-width:200px" onchange="setRow(' + i + ',\'to_loc\',this.value)">' + toOpts.join('') + '</select>';
+  } else if(r.type === 'borrow'){
+    // 借·换·检·修 统一入口：子类型 借(借用) / 换货 / 维修 / 校验·测试
+    const subSel = '<select class="f-input" style="max-width:104px" onchange="setRow(' + i + ',\'sub_type\',this.value)">' +
+      [['borrow',TR('借(借用)')],['exchange',TR('换(换货)')],['maintenance',TR('修(维修)')],['verify',TR('检(校验/测试)')]].map(kv =>
+        '<option value="' + kv[0] + '"' + ((r.sub_type || 'borrow') === kv[0] ? ' selected' : '') + '>' + kv[1] + '</option>').join('') + '</select> ';
+    const st = r.sub_type || 'borrow';
+    if(st === 'borrow'){
+      // v1.0.53：去掉「借用人默认为当前登录用户」备注；预计归还精确到整点小时，选完即收起时间窗
+      extra = subSel +
+        '<input class="f-input dt-auto dtp-input" type="text" data-dtp="1" readonly placeholder="' + TR('预计回库时间') + '" style="max-width:185px" title="' + TR('预计回库时间') + '" value="' + esc(spmsDtDisplay(r.expected_return)) + '" onchange="setRow(' + i + ',\'expected_return\',spmsNormDateTime(this.value));this.blur()">';
+    } else {
+      // v1.0.18：换/检/修 出库人默认当前登录用户，页面不再出现录入框
+      // 其余字段：目的公司/地址、接收人、联系方式、预计返回时间；维修再加维修品类型
+      const TRACK5 = (st === 'maintenance' || st === 'verify');
+      const destPh = TRACK5 ? TR('目的公司/地址') : TR('目的地或目的公司');
+      const erField = st === 'exchange'
+        ? ' <input class="f-input dt-auto dtp-input" type="text" data-dtp="1" readonly placeholder="' + TR('预计回库时间') + '" style="max-width:185px" title="' + TR('预计回库时间') + '" value="' + esc(spmsDtDisplay(r.expected_return)) + '" onchange="setRow(' + i + ',\'expected_return\',spmsNormDateTime(this.value));this.blur()">'
+        : (TRACK5
+          ? ' <input class="f-input dt-auto dtp-input" type="text" data-dtp="1" readonly placeholder="' + TR('预计回库时间') + '" style="max-width:185px" title="' + TR('预计回库时间') + '" value="' + esc(spmsDtDisplay(r.expected_return)) + '" onchange="setRow(' + i + ',\'expected_return\',spmsNormDateTime(this.value));this.blur()">'
+          : '');
+      // v1.0.21：「维修品类型」不再在出库/申请时选，修好退回入库时就已标成维修件
+      const rtField = '';
+      const tip = TRACK5 ? TR('维修、校验/测试办理后扣减库存，还回后恢复，登记进借·换·检·修台账监控')
+                         : TR('按「审批设置」里的档位走审批；换货办理后扣减库存，还回后恢复，登记进借·换·检·修台账');
+      extra = subSel +
+        '<input class="f-input" type="text" style="max-width:150px" placeholder="' + destPh + '" value="' + esc(r.destination || '') + '" onchange="setRow(' + i + ',\'destination\',this.value)"> ' +
+        '<input class="f-input" type="text" style="max-width:90px" placeholder="' + TR('接收人') + '" value="' + esc(r.receiver || '') + '" onchange="setRow(' + i + ',\'receiver\',this.value)"> ' +
+        '<input class="f-input" type="text" style="max-width:110px" placeholder="' + TR('联系方式') + '" value="' + esc(r.contact || '') + '" onchange="setRow(' + i + ',\'contact\',this.value)">' + erField + rtField +
+        ' <span class="muted small" style="cursor:help" title="' + tip + '">ⓘ</span>';
+    }
+  } else if(r.type === 'in'){
+    // v1.0.13：入库子类型，默认采购
+    const inKindSel = '<select class="f-input" style="max-width:92px" onchange="setRow(' + i + ',\'in_type\',this.value)">' +
+      [['purchase',TR('采购')],['repair',TR('返修')],['transfer_in',TR('转入')],['other',TR('借入')],['line_return',TR('产线退回')],['misc',TR('其它')]].map(kv =>
+        '<option value="' + kv[0] + '"' + (it === kv[0] ? ' selected' : '') + '>' + kv[1] + '</option>').join('') + '</select> ';
+    // v1.0.27：入库行声明配件状态；申请单保存后，仓管执行弹窗据此预选并给出「待定(不良品)」
+    const condSel = '<select class="f-input" style="max-width:92px" title="' + TR('配件状态') + '" onchange="setRow(' + i + ',\'condition\',this.value)">' +
+      COND_LIST.map(c => '<option value="' + c + '"' + ((r.condition || 'good') === c ? ' selected' : '') + '>' + esc(COND_NAMES[c] || c) + '</option>').join('') + '</select> ';
+    extra = condSel + inKindSel + '<span class="muted small">' + TR('入库位置由仓库执行时安排') + '</span>';
   } else {
-    msg.style.color='var(--muted)';
-    msg.textContent = TR('目标位置{{ tr('：') }}')+label+TR('{{ tr('（') }}空位{{ tr('）') }}');
+    extra = '<span class="muted small">' + TR('入库位置由仓库执行时安排') + '</span>';
+  }
+  const _av = appAvail(r);
+  // v1.0.58：校验失败的行就地标红并写明原因，不用一个会消失的 alert 打发用户
+  const _err = ROW_ERRORS[i] || '';
+  const _errHtml = _err ? '<div class="row-err" style="color:var(--danger,#e24b4a);font-size:12px;line-height:1.35;margin-top:3px">' + esc(_err) + '</div>' : '';
+  // v1.0.53：行带稳定标识，改类型时只重绘本行，避免整表按类型重新分组导致该行「跳来跳去」
+  return '<tr data-ri="' + i + '"' + (_err ? ' class="row-invalid"' : '') +
+    (_err ? ' style="box-shadow:inset 3px 0 0 var(--danger,#e24b4a)"' : '') + '>' +
+    '<td>' + typeSel + '</td>' +
+    '<td>' + part + _errHtml + '</td>' +
+    '<td class="num"' + (_av === null ? ' title="' + TR('入库不占用现有库存，此处不显示可用数') + '"' : '') + '>' +
+      (_av === null ? '<span class="muted">—</span>' : fmtQty(_av) + ' ' + esc(r.unit)) + '</td>' +
+    '<td>' + qty + '</td>' +
+    '<td>' + reason + '</td>' +
+    '<td>' + extra + '</td>' +
+    '<td><button class="btn btn-xs btn-danger" onclick="delRow(' + i + ')">✕</button></td>' +
+    '</tr>';
+}
+
+function render(){
+  const tb = document.getElementById('draft-body');
+  if(!DRAFT.length){
+    tb.innerHTML = '<tr><td colspan="7" class="muted center">{{ tr('还没有明细行') }}{{ mk('。') }}{{ tr('点击「选择物料」或从信息查询页勾选带入') }}{{ mk('。') }}</td></tr>';
+    return;
+  }
+  // v1.0.27：草稿里残留的「已被隐藏/禁用」出库类型纠正掉，与服务端同源口径一致
+  DRAFT.forEach(r => {
+    if(r.type !== 'out' || !window.CondRules) return;
+    const _a = CondRules.inferAttr(r.locs, null);
+    const _opts = CondRules.outKindOptions(CondRules.summary(r), _a, {});
+    const _cur = r.out_type || 'general';
+    if(!_opts.some(o => o.key === _cur && !o.disabled)){
+      const _first = _opts.find(o => !o.disabled);
+      if(_first) r.out_type = _first.key;
+    }
+  });
+  const groups = ['out', 'in', 'transfer', 'borrow'].map(t => ({t: t, rows: DRAFT.map((r, i) => ({r, i})).filter(x => x.r.type === t)}))
+    .filter(g => g.rows.length);
+  let html = '';
+  groups.forEach(g => {
+    const lab = g.t === 'out' ? TR('出库申请单') : (g.t === 'in' ? TR('入库申请单') : (g.t === 'transfer' ? TR('调库申请单') : TR('借·换·检·修申请单')));
+    html += '<tr><td colspan="7" style="background:var(--bg-tertiary,#f4f5f7)">' +
+      '<b>' + lab + '（' + g.rows.length + ' ' + TR('行') + '）</b>' +
+      '<span style="float:right">' +
+      '<button class="btn btn-xs btn-primary" data-submit-btn="1" title="' + TR('仅提交这一组，全部提交请用顶部按钮') + '" onclick="submitDoc(\'' + g.t + '\')">' + TR('提交本单') + '</button> ' +
+      '<button class="btn btn-xs btn-warn" onclick="cancelGroup(\'' + g.t + '\')">' + TR('取消本单') + '</button>' +
+      '</span></td></tr>';
+    html += g.rows.map(x => rowHtml(x.r, x.i)).join('');
+  });
+  tb.innerHTML = html;
+  loadGivebackHints();
+}
+
+// v1.0.28：返还提示（mode=giveback 的批次顺序与服务端 _stock_out_auto 同源）
+function loadGivebackHints(){
+  document.querySelectorAll('#draft-body .gb-hint:not([data-loaded])').forEach(function(box){
+    box.setAttribute('data-loaded', '1');
+    const pid = box.getAttribute('data-pid');
+    if(!pid) return;
+    fetch('/api/part_batches?part_id=' + encodeURIComponent(pid) + '&mode=giveback')
+      .then(x => x.json()).then(d => {
+        const bs = (d.batches || []).slice(0, 8);
+        if(!bs.length) return;
+        const lines = bs.map(b => esc(b.batch_no) + ' @ ' + esc(b.location || '—') +
+          ' ×' + b.quantity + (b.unborrowed ? '（' + TR('未借入批次') + '）' : ''));
+        const out = box.querySelector('.gb-list');
+        if(out) out.innerHTML = '<br>' + lines.join('<br>');
+      }).catch(() => {});
+  });
+}
+
+// v1.0.53：只重绘指定的一行（按 data-ri 定位），不重建整表——
+// 改类型时该行保持原位、下拉不失焦，解决「选了类型这一条跳来跳去」。
+function refreshRow(i){
+  if(!DRAFT[i]) return;
+  const tr = document.querySelector('#draft-body tr[data-ri="' + i + '"]');
+  if(!tr){ render(); return; }  // 找不到就退回整表，保证一定能更新
+  const tmp = document.createElement('tbody');
+  tmp.innerHTML = rowHtml(DRAFT[i], i);
+  if(tmp.firstChild) tr.replaceWith(tmp.firstChild);
+  loadGivebackHints();
+}
+
+function setRow(i, k, v){
+  if(!DRAFT[i]) return;
+  DRAFT[i][k] = v;
+  // 换线体后，原来选的设备若不属于新线体就清掉（否则会提交到对不上的线体）
+  if(k === 'use_line' && DRAFT[i].use_device && !devFitsLine(DRAFT[i].use_device, v)) DRAFT[i].use_device = '';
+  // 切方向时子类型各归各位，避免把「退货」串到入库行
+  if(k === 'type'){ DRAFT[i].out_type = 'general'; DRAFT[i].in_type = 'purchase'; if(v === 'borrow') DRAFT[i].sub_type = 'borrow'; }
+  // v1.0.78：调库源变化时自动带出数量（整库位合计 / 批次数量）
+  if(k === 'from_key' && DRAFT[i].type === 'transfer'){
+    const _si = transferSourceInfo(DRAFT[i].locs, v);
+    if(_si) DRAFT[i].qty = _si.qty;
+  }
+  // v1.0.58：用户一改动这一行就清掉红字，否则修好了还挂着旧报错
+  const hadErr = !!ROW_ERRORS[i];
+  if(hadErr) delete ROW_ERRORS[i];
+  // v1.0.67：改「类型」会改变分组归属，分组标题与「提交本单」按钮必须跟着重绘。
+  // 旧版只重绘本行，用户把出库改成入库后点旧分组的提交，submitDoc('out') 找不到行，
+  // 就误报「该类型没有明细行」并且提交不了——必须整表重排。
+  if(k === 'type'){ draftSave(); render(); return; }
+  // 改子类型/线别只改变这一行的输入框：只重绘本行，整表不重排（该行不跳动/不失焦）
+  if(k === 'sub_type' || k === 'out_type' || k === 'in_type' || k === 'use_line' || k === 'from_key' || hadErr) refreshRow(i);
+  draftSave();
+}
+
+// 顶部「统一原因」→ 填入所有还没写原因的行（之后每行仍可单独改）
+function fillReasonAll(){
+  const v = document.getElementById('draft-reason').value.trim();
+  if(!v){ alert(TR('请先在左侧输入统一原因')); return; }
+  DRAFT.forEach(r => { if(!(r.reason || '').trim()) r.reason = v; });
+  draftSave();
+  render();
+}
+
+function delRow(i){
+  const pid = DRAFT[i].pid;
+  DRAFT.splice(i, 1);
+  ROW_ERRORS = {};   // 行号变了，旧的按行报错全部作废
+  draftSave();
+  // 同步从购物车移除
+  const cart = JSON.parse(sessionStorage.getItem(PICK_KEY) || '[]');
+  const rest = cart.filter(x => x !== pid);
+  sessionStorage.setItem(PICK_KEY, JSON.stringify(rest));
+  render();
+}
+
+function cancelGroup(t){
+  DRAFT = DRAFT.filter(r => r.type !== t);
+  ROW_ERRORS = {};
+  draftSave();
+  render();
+}
+
+function clearDraft(){
+  if(!DRAFT.length) return;
+  if(!confirm(TR('确定清空全部明细行吗？'))) return;
+  DRAFT = [];
+  ROW_ERRORS = {};
+  sessionStorage.setItem(PICK_KEY, '[]');
+  draftSave();
+  render();
+}
+
+function msg(t){ document.getElementById('draft-msg').innerHTML = '<b>' + t + '</b>'; }
+
+function validateRows(rows){
+  for(let x of rows){
+    const n = TR('明细') + ' [' + x.r.code + ']：';
+    const q = parseFloat(x.r.qty);
+    if(!q || q <= 0) return n + TR('请填写数量');
+    if(!x.r.dec && parseFloat(q) !== parseInt(q)) return n + TR('该物料数量必须为整数');
+    if(x.r.type === 'out'){
+      const ot = x.r.out_type || 'general';
+      if(ot !== 'giveback' && !(x.r.reason || '').trim()) return n + TR('请填写申请原因');
+      if(ot === 'general'){
+        if(!x.r.use_line) return n + TR('请选择使用线别');
+        if(!x.r.use_device) return n + TR('请选择使用设备');
+        const _avail = appAvail(x.r) || 0; if(q > _avail) return n + TR('数量超过可用库存') + '（' + fmtQty(_avail) + '）';
+      } else {
+        // v1.0.27：报废免三字段；v1.0.44：其它(misc)同样不渲染三字段，一并免校验；库存上限仍要卡
+        if(ot !== 'scrap' && ot !== 'misc'){
+          if(!(x.r.destination || '').trim()) return n + TR('请填写目的地或目的公司');
+          if(!(x.r.receiver || '').trim()) return n + TR('请填写接收人');
+          if(!(x.r.contact || '').trim()) return n + TR('请填写联系方式');
+        }
+        if(ot === 'exchange' && !(x.r.expected_return || '').trim()) return n + TR('请选择预计返回日期');
+        if((ot === 'maintenance' || ot === 'verify') && !(x.r.expected_return || '').trim()) return n + TR('请选择预计返回时间');
+        // v1.0.19：换货/维修/校验·测试办理时同样实扣库存，一并按可用库存卡数量
+        const _avail = appAvail(x.r) || 0; if(q > _avail) return n + TR('数量超过可用库存') + '（' + fmtQty(_avail) + '）';
+      }
+    }
+    if(x.r.type === 'transfer'){
+      if(!x.r.from_key) return n + TR('请选择源库位');
+      const _si = transferSourceInfo(x.r.locs, x.r.from_key);
+      if(_si && _si.whole && Math.abs(q - _si.qty) > 1e-9)
+        return n + TR('整库位调库数量为该库位合计，不可修改');
+      if(_si && !_si.whole && q > _si.qty + 1e-9)
+        return n + TR('该批次只有') + ' ' + fmtQty(_si.qty) + ' ' + esc(x.r.unit) + '，' + TR('不足调出') + ' ' + fmtQty(q);
+      const src = (x.r.locs || []).find(l => 'inv_' + l.inv_id === String(x.r.from_key || ''));
+      // 老草稿 loc_<id> 兼容：服务端仍认，前端只做基本提示
+      const _fk = String(x.r.from_key || '');
+      const srcLoc = src ? src.location_id
+        : ((_fk.indexOf('locall_') === 0 || _fk.indexOf('loc_') === 0)
+           ? _fk.slice(_fk.indexOf('locall_') === 0 ? 7 : 4) : null);
+      // 源已经是「待定」时，目标必须落在具体库位，否则等于原地不动
+      if(String(srcLoc) === 'NULL' && !x.r.to_loc) return n + TR('源库位已是待定，请选择目标位置');
+      if(x.r.to_loc && srcLoc != null && String(srcLoc) !== 'NULL' && String(x.r.to_loc) === String(srcLoc))
+        return n + TR('源库位与目标位置相同，无需调库');
+      if(src){
+        const _sq = Number(src.quantity) || 0;
+        if(q > _sq + 1e-9) return n + TR('该批次只有') + ' ' + fmtQty(_sq) + ' ' + esc(x.r.unit) + '，' + TR('不足调出') + ' ' + fmtQty(q);
+      }
+      if(appScrapToRepair(x.r, srcLoc, x.r.to_loc) && !(x.r.reason || '').trim())
+        return n + TR('待报废转待维修必须填写复判原因');
+    }
+    if(x.r.type === 'borrow'){
+      const bst = x.r.sub_type || 'borrow';
+      if(bst === 'borrow'){
+        // v1.0.18：借用人默认当前登录用户，不再要求页面填写
+        if(!x.r.expected_return) return n + TR('请选择预计归还日');
+        const _avail = appAvail(x.r) || 0; if(q > _avail) return n + TR('数量超过可用库存') + '（' + fmtQty(_avail) + '）';
+      } else {
+        if(!(x.r.destination || '').trim()) return n + TR('请填写目的地或目的公司');
+        if(!(x.r.receiver || '').trim()) return n + TR('请填写接收人');
+        if(!(x.r.contact || '').trim()) return n + TR('请填写联系方式');
+        if(bst === 'exchange' && !(x.r.expected_return || '').trim()) return n + TR('请选择预计返回日期');
+        if((bst === 'maintenance' || bst === 'verify') && !(x.r.expected_return || '').trim()) return n + TR('请选择预计返回时间');
+        const _avail = appAvail(x.r) || 0; if(q > _avail) return n + TR('数量超过可用库存') + '（' + fmtQty(_avail) + '）';
+      }
+    }
+  }
+  return '';
+}
+
+function postDoc(type, rows){
+  const items = rows.map(x => ({
+    part_id: x.r.pid, quantity: parseFloat(x.r.qty),
+    reason: (x.r.reason || '').trim(),
+    from_key: x.r.from_key || '', to_location_id: x.r.to_loc || '',
+    use_line: x.r.use_line === OFFLINE ? '' : (x.r.use_line || ''),
+    use_device: x.r.use_device || '',
+    offline: x.r.use_line === OFFLINE ? 1 : 0,
+    expected_return: x.r.expected_return || '',
+    // v1.0.16：按方向提交子类型；借·换·检·修 子类型随借出/换/检/修一并提交
+    sub_type: x.r.type === 'in' ? (x.r.in_type || 'purchase')
+              : (x.r.type === 'out' ? (x.r.out_type || 'general') : (x.r.sub_type || 'borrow')),
+    destination: (x.r.destination || '').trim(),
+    receiver: (x.r.receiver || '').trim(),
+    contact: (x.r.contact || '').trim(),
+    repair_type: (x.r.repair_type || '').trim(),
+    // v1.0.27：入库行声明的配件三态，随申请单保存供执行弹窗预选
+    condition: x.r.condition || 'good'
+    // v1.0.18：出库人 / 借用人由服务端默认取当前登录用户，前端不再提交人员字段
+  }));
+  return fetch('{{ url_for("application_create_doc") }}', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({app_type: type, reason: document.getElementById('draft-reason').value.trim(), items: items})
+  }).then(r => r.json());
+}
+
+// v1.0.58：逐行校验（旧版只返回第一条错误就 alert，用户不知道是哪一行）
+function validateAllRows(rows){
+  const errs = [];
+  rows.forEach(function(x){
+    const e = validateRows([x]);
+    if(e) errs.push({ri: x.i, code: x.r.code, text: e});
+  });
+  return errs;
+}
+function markRowErrors(errs){
+  ROW_ERRORS = {};
+  errs.forEach(function(e){ ROW_ERRORS[e.ri] = e.text; });
+  render();
+  const first = document.querySelector('#draft-body tr.row-invalid');
+  if(first && first.scrollIntoView) first.scrollIntoView({block:'center'});
+}
+
+function finishSubmit(okMsgs, failMsgs, doneRows, keepErrs){
+  // 成功行从草稿与购物车移除；按对象引用删，避免同料号多行被一起误删
+  DRAFT = DRAFT.filter(r => doneRows.indexOf(r) < 0);
+  // v1.0.59：按对象引用重建报错行，删掉成功行后行号会变，不能沿用旧下标
+  ROW_ERRORS = {};
+  (keepErrs || []).forEach(function(e){
+    const idx = DRAFT.indexOf(e.r);
+    if(idx >= 0) ROW_ERRORS[idx] = e.text;
+  });
+  const donePids = doneRows.map(r => r.pid);
+  const cart = JSON.parse(sessionStorage.getItem(PICK_KEY) || '[]');
+  sessionStorage.setItem(PICK_KEY, JSON.stringify(cart.filter(id => donePids.indexOf(id) < 0)));
+  draftSave();
+  render();
+  let html = '<b>' + TR('提交结果') + '：</b>';
+  if(okMsgs.length) html += '<span style="color:var(--ok,#1d9e75)">' + esc(okMsgs.join('；')) + '</span>';
+  if(failMsgs.length) html += (html ? '<br>' : '') + '<span style="color:var(--danger,#e24b4a)">' + esc(failMsgs.join('；')) + '</span>';
+  if(!okMsgs.length && !failMsgs.length) html = TR('没有可提交的明细');
+  if(DRAFT.length) html += '<br><span style="color:var(--danger,#e24b4a)">' +
+    esc(TRP('还有 {n} 行未提交，请修改后继续提交', {n: DRAFT.length})) + '</span>';
+  msg(html);
+  // 只有在「全成功且草稿已空」时才自动回列表；部分成功必须留下结果说明给用户看
+  if(okMsgs.length && !DRAFT.length && !failMsgs.length) setTimeout(() => location.reload(), 1200);
+}
+
+function submitDoc(type){
+  if(SUBMIT_BUSY){ msg(TR('提交中，请稍候')); return; }
+  const rows = DRAFT.map((r, i) => ({r, i})).filter(x => x.r.type === type);
+  // v1.0.66：这类提示写回表单上方的消息位，不再弹右上角 toast（重复点会叠一排）
+  if(!rows.length){ msg(TR('该类型没有明细行')); render(); return; }
+  const errs = validateAllRows(rows);
+  if(errs.length){
+    markRowErrors(errs);
+    msg(TRP('有 {n} 行未通过校验，已用红色标出，请修改后重试', {n: errs.length}));
+    return;
+  }
+  msg(TR('提交中，请稍候'));
+  withSubmitBusy(Promise.resolve().then(() => postDoc(type, rows))).then(d => {
+    if(d && d.ok) finishSubmit([d.msg || typeName(type)], [], rows.map(x => x.r));
+    else finishSubmit([], [(d && d.error) || TR('提交失败')], []);
+  }).catch(() => finishSubmit([], [TR('提交失败，请重试')], []));
+}
+
+function submitAll(){
+  if(SUBMIT_BUSY){ msg(TR('提交中，请稍候')); return; }
+  const all = DRAFT.map((r, i) => ({r, i}));
+  if(!all.length){ msg(TR('请先添加物料明细')); return; }
+  // v1.0.59：按类型独立成单。某类型里有错，只跳过这一张单并报出具体行；
+  // 其它类型照常提交，各自拿到系统自动生成的单号。
+  const errs = validateAllRows(all);
+  const badByType = {};
+  errs.forEach(function(e){
+    const r = DRAFT[e.ri];
+    if(!r) return;
+    (badByType[r.type] = badByType[r.type] || []).push(e);
+  });
+  if(errs.length) markRowErrors(errs);
+  const errRefs = errs.map(function(e){ return {r: DRAFT[e.ri], text: e.text, code: e.code}; });
+  const types = SUBMIT_TYPES.filter(t => all.some(x => x.r.type === t));
+  if(!types.length){ msg(TR('请先添加物料明细')); return; }
+  const submitTypes = types.filter(t => !badByType[t]);
+  const skipTypes = types.filter(t => badByType[t]);
+  const list = submitTypes.map(t => typeName(t) + ' ' + all.filter(x => x.r.type === t).length + ' ' + TR('行')).join('、') +
+    (skipTypes.length ? '；' + skipTypes.map(t => typeName(t) + TR('（有错误，本次不提交）')).join('、') : '');
+  if(!window.confirm(TRP('将提交以下申请单：{list}。确定继续吗？', {list: list}))) return;
+  const okMsgs = [], failMsgs = [], doneRows = [];
+  skipTypes.forEach(function(t){
+    const detail = badByType[t].map(function(e){
+      return TR('明细') + ' [' + e.code + ']：' + e.text;
+    }).join('；');
+    failMsgs.push(typeName(t) + TR('未提交') + '：' + detail + '。' + TR('请检查后重试'));
+  });
+  if(!submitTypes.length){ finishSubmit([], failMsgs, [], errRefs); return; }
+  let chain = Promise.resolve();
+  submitTypes.forEach(t => {
+    const rows = all.filter(x => x.r.type === t);
+    chain = chain.then(() => postDoc(t, rows)).then(d => {
+      if(d && d.ok){ okMsgs.push(d.msg || typeName(t)); rows.forEach(x => doneRows.push(x.r)); }
+      else failMsgs.push(typeName(t) + '：' + ((d && d.error) || TR('提交失败')));
+    }, () => failMsgs.push(typeName(t) + '：' + TR('提交失败，请重试')));
+  });
+  withSubmitBusy(chain).then(() => finishSubmit(okMsgs, failMsgs, doneRows, errRefs));
+}
+
+// 整单撤销 / 申请撤销
+function openCancel(docNo){
+  document.getElementById('cancel-form').action = '/applications/doc/' + encodeURIComponent(docNo) + '/cancel';
+  document.getElementById('cancel-info').innerHTML = '{{ tr('确定要撤销申请单') }} <b>' + esc(docNo) + '</b> {{ tr('吗？') }}{{ tr('撤销后不可恢复') }}。';
+  document.getElementById('cancel-modal').style.display = 'flex';
+}
+// 行级撤销：只撤这一条明细
+function openCancelOne(aid, code){
+  document.getElementById('cancel-form').action = '/applications/' + aid + '/cancel';
+  document.getElementById('cancel-info').innerHTML = '{{ tr('确定要撤销') }} <b>' + esc(code) + '</b> {{ tr('这一条明细吗？') }}{{ tr('撤销后不可恢复') }}。';
+  document.getElementById('cancel-modal').style.display = 'flex';
+}
+function openCancelReqOne(aid, code){
+  document.getElementById('cancel-req-form').action = '/applications/' + aid + '/cancel-request';
+  const box = document.getElementById('cancel-req-info');
+  if(box) box.innerHTML = '{{ tr('仅对') }} <b>' + esc(code) + '</b> {{ tr('这一条明细提交撤销请求') }}';
+  document.getElementById('cancel-req-modal').style.display = 'flex';
+}
+function openCancelReq(docNo){
+  document.getElementById('cancel-req-form').action = '/applications/doc/' + encodeURIComponent(docNo) + '/cancel-request';
+  document.getElementById('cancel-req-modal').style.display = 'flex';
+}
+
+// ============ v1.0.47 报废单签字附件（保留，供普通出库报废单使用） ============
+let ATTACH_DOC = '', ATTACH_LOCKED = false;
+function attachMsg(t){ const b = document.getElementById('attach-msg'); if(b) b.innerHTML = '<b>' + t + '</b>'; }
+// v1.0.52：上传/删除附件后，就地刷新外层列表的「签字附件 (N)」与「未传附件/提交审批」区，
+// 不再让用户看到「明明传了却还显示(0)」。图片列表已刷新时同步更新这两处即可。
+async function refreshAttachUI(){
+  if(!ATTACH_DOC) return;
+  const r = await fetch('/scrap/' + encodeURIComponent(ATTACH_DOC) + '/attachments');
+  const d = await r.json().catch(() => ({}));
+  const n = (d.items || []).length;
+  const btns = document.querySelectorAll('button[id^="attbtn-"][data-doc]');
+  let target = null;
+  btns.forEach(function(b){ if(b.getAttribute('data-doc') === ATTACH_DOC) target = b; });
+  if(!target) return;
+  target.textContent = TR('签字附件') + ' (' + n + ')';
+  if(target.getAttribute('data-submitted') === '1') return; // 已提交：状态区固定「已提交审批」
+  const sub = target.parentNode.querySelector('[id^="attsub-"]');
+  if(!sub) return;
+  if(n > 0){
+    sub.innerHTML = '<button class="btn btn-xs btn-primary" style="margin-left:4px" onclick="submitScrapDoc(\'' +
+      ATTACH_DOC + '\', this)">' + TR('提交审批') + '</button>';
+  }else{
+    sub.innerHTML = '<span class="badge badge-warn" style="margin-left:4px">' + TR('未传附件不可审批') + '</span>';
   }
 }
-function tfReset(){
-  const whs = [...new Set(LOCS.map(l=>l.warehouse))].sort();
-  fillSel(document.getElementById('tf-wh'), whs, TR('仓库号…'));
-  fillSel(document.getElementById('tf-rack'), [], TR('货架号…'));
-  fillSel(document.getElementById('tf-shelf'), [], TR('货位号…'));
-  fillSel(document.getElementById('tf-bin'), [], TR('格位号…'));
-  document.getElementById('tf-bin').disabled = true;
-  document.getElementById('tf-loc-id').value = '';
-  document.getElementById('tf-msg').textContent = '';
-  tfModeChange();
+function openScrapAttach(docNo, submitted){
+  ATTACH_DOC = docNo;
+  ATTACH_LOCKED = !!submitted;
+  document.getElementById('attach-doc-no').textContent = docNo;
+  attachMsg(ATTACH_LOCKED ? TR('已提交审批，不能再上传或删除附件') : '');
+  const up = document.getElementById('attach-file');
+  if(up) up.disabled = ATTACH_LOCKED;
+  const ub = document.getElementById('attach-upload-btn');
+  if(ub) ub.disabled = ATTACH_LOCKED;
+  document.getElementById('attach-modal').style.display = 'flex';
+  loadScrapAttach();
 }
-// 初始化级联（页面加载时已选 transfer 的情况）
-if(document.getElementById('app-type').value==='transfer'){
-  tfReset();
-  document.getElementById('transfer-panel').style.display='flex';
-  document.getElementById('qty-wrap').style.display='none';
-  document.getElementById('apply-form').querySelector('[name=quantity]').removeAttribute('required');
+// v1.0.51：上传签字档后点「提交审批」，单据才进审批待办；提交后附件锁定
+async function submitScrapDoc(docNo, btn){
+  if(!window.confirm(TR('确定提交审批吗？提交后将不能再上传或删除签字附件。'))) return;
+  if(btn) btn.disabled = true;
+  try {
+    const r = await fetch('/scrap/' + encodeURIComponent(docNo) + '/submit', {method:'POST'});
+    const d = await r.json().catch(() => ({}));
+    if(!r.ok || !d.ok){ alert(TR('提交失败') + '：' + (d.error || '')); if(btn) btn.disabled = false; return; }
+    alert(TR('已提交审批，等待审批人处理'));
+    location.reload();
+  } catch(e){ alert(TR('提交失败，请重试')); if(btn) btn.disabled = false; }
 }
-// 预选备件（从备件查询带入）时同步数量类型与源库位（必须带上 id，否则源库位加载失败）
+async function loadScrapAttach(){
+  const box = document.getElementById('attach-list');
+  if(!box || !ATTACH_DOC) return;
+  const r = await fetch('/scrap/' + encodeURIComponent(ATTACH_DOC) + '/attachments');
+  const d = await r.json().catch(() => ({}));
+  const list = d.items || [];
+  box.innerHTML = list.length
+    ? list.map(x => '<div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid var(--border,#ddd)">' +
+        '<a href="/media/' + encodeURIComponent(x.image_name) + '" target="_blank">' +
+        '<img src="/media/' + encodeURIComponent(x.image_name) + '" style="width:48px;height:48px;object-fit:cover;border-radius:4px"></a>' +
+        '<span class="muted small">' + esc(x.uploaded_at || '') + '</span>' +
+        (ATTACH_LOCKED ? '' : '<button class="btn btn-xs btn-warn" onclick="delScrapAttach(' + x.id + ')" title="' + TR('删除该附件') + '">✕ ' + TR('删除') + '</button>') + '</div>').join('')
+    : '<div class="muted small">' + TR('还没有上传附件') + '</div>';
+}
+async function uploadScrapAttach(){
+  const inp = document.getElementById('attach-file');
+  const files = Array.prototype.slice.call(inp.files || []);
+  if(!files.length) return attachMsg(TR('请先选择图片'));
+  if(!ATTACH_DOC) return attachMsg(TR('请先关闭并重新打开签字附件窗口'));
+  let okN = 0, errs = [];
+  attachMsg(TR('正在上传') + '…');
+  for(let i = 0; i < files.length; i++){
+    const fd = new FormData();
+    fd.append('image', files[i]);
+    try {
+      const r = await fetch('/scrap/' + encodeURIComponent(ATTACH_DOC) + '/attachment',
+                            {method:'POST', body:fd});
+      const d = await r.json().catch(() => ({}));
+      if(r.ok && d.ok) okN++;
+      else errs.push((files[i].name || '') + ':' + (d.error || TR('上传失败')));
+    } catch(e){ errs.push((files[i].name || '') + ':' + TR('上传失败')); }
+  }
+  inp.value = '';
+  await loadScrapAttach();
+  if(okN) refreshAttachUI(); // v1.0.52：同步外层列表计数与「提交审批」按钮
+  attachMsg((okN ? TR('已上传 {n} 张附件').replace('{n}', okN) : '')
+            + (errs.length ? (okN ? '<br>' : '') + esc(TR('失败') + '：' + errs.join('；')) : ''));
+}
+async function delScrapAttach(id){
+  if(!window.confirm(TR('确定删除这张附件吗？'))) return;
+  const r = await fetch('/scrap/' + encodeURIComponent(ATTACH_DOC) + '/attachment/' + id,
+                        {method:'DELETE'});
+  const d = await r.json().catch(() => ({}));
+  if(!r.ok || !d.ok) return attachMsg(TR('删除失败') + '：' + (d.error || ''));
+  attachMsg(TR('已删除该附件'));
+  loadScrapAttach();
+  refreshAttachUI(); // v1.0.52：删到 0 张时把「提交审批」退回「未传附件不可审批」
+}
+
+// ============ v1.0.52 单据详情 / 驳回单重开与删除 ============
+function esc2(s){ return String(s==null?'':s).replace(/[&<>"']/g, function(m){
+  return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]; }); }
+async function fetchDocDetail(docNo){
+  const r = await fetch('/api/doc/' + encodeURIComponent(docNo) + '/detail');
+  return await r.json().catch(() => ({}));
+}
+function detailHTML(d){
+  const its = d.items || [];
+  let h = '<div class="muted small" style="margin-bottom:8px">' + esc2(d.app_type || '') +
+    ' · ' + TR('申请人') + ' ' + esc2(d.applicant || '') + ' · ' + esc2(d.created_at || '') +
+    ' · ' + TR('状态') + ' ' + esc2(d.overall || '') + '</div>';
+  if(d.approval_note) h += '<div style="margin-bottom:8px"><b>' + TR('审批意见') + '：</b>' + esc2(d.approval_note) + '</div>';
+  h += '<table class="table" style="font-size:12px"><thead><tr><th>' + TR('物料') + '</th><th>' + TR('数量') +
+    '</th><th>' + TR('来源库位') + '</th><th>' + TR('目标库位') + '</th><th>' + TR('用途/原因') + '</th></tr></thead><tbody>';
+  its.forEach(function(x){
+    h += '<tr><td class="mono">' + esc2(x.part_code) + '<br><span class="muted">' + esc2(x.name) + '</span></td>' +
+      '<td class="num">' + esc2(x.quantity) + ' ' + esc2(x.unit) + '</td>' +
+      '<td class="small">' + esc2(x.from_loc) + '</td><td class="small">' + esc2(x.to_loc) + '</td>' +
+      '<td class="small">' + esc2(x.reason || x.out_type) + '</td></tr>';
+  });
+  h += '</tbody></table>';
+  if(d.attach_count) h += '<div class="muted small" style="margin-top:8px">' + TR('签字附件') + '：' + d.attach_count + '</div>';
+  return h;
+}
+async function viewDocDetail(docNo){
+  document.getElementById('dd-docno').textContent = docNo;
+  const box = document.getElementById('dd-body');
+  box.innerHTML = TR('加载中') + '…';
+  document.getElementById('doc-detail-modal').style.display = 'flex';
+  const d = await fetchDocDetail(docNo);
+  box.innerHTML = d.ok ? detailHTML(d) : ('<span class="badge badge-warn">' + esc2(d.error || TR('加载失败')) + '</span>');
+}
+let RO_DOC = '', RO_ROWS = [];
+async function openReopen(docNo){
+  RO_DOC = docNo;
+  document.getElementById('ro-docno').textContent = docNo;
+  const box = document.getElementById('ro-items');
+  box.innerHTML = TR('加载中') + '…';
+  document.getElementById('ro-msg').innerHTML = '';
+  document.getElementById('reopen-modal').style.display = 'flex';
+  const d = await fetchDocDetail(docNo);
+  if(!d.ok){ box.innerHTML = '<span class="badge badge-warn">' + esc2(d.error || TR('加载失败')) + '</span>'; return; }
+  RO_ROWS = d.items || [];
+  box.innerHTML = '<table class="table" style="font-size:12px"><thead><tr><th>' + TR('物料') +
+    '</th><th>' + TR('原数量') + '</th><th>' + TR('新数量') + '（' + TR('可增减') + '）</th></tr></thead><tbody>' +
+    RO_ROWS.map(function(x){
+      return '<tr><td class="mono">' + esc2(x.part_code) + '<br><span class="muted">' + esc2(x.name) + '</span></td>' +
+        '<td class="num">' + esc2(x.quantity) + '</td>' +
+        '<td><input class="f-input" id="ro-q-' + x.id + '" data-id="' + x.id + '" type="number" min="0.0001" step="any" value="' + esc2(x.quantity) + '" style="width:110px"></td></tr>';
+    }).join('') + '</tbody></table>';
+}
+async function submitReopen(){
+  const qtys = {};
+  RO_ROWS.forEach(function(x){
+    const el = document.getElementById('ro-q-' + x.id);
+    if(el) qtys[String(x.id)] = el.value;
+  });
+  const msg = document.getElementById('ro-msg');
+  if(!window.confirm(TR('确定保存修订吗？单据将退回待处理重新审批。'))) return;
+  msg.innerHTML = TR('提交中') + '…';
+  try {
+    const r = await fetch('/api/doc/' + encodeURIComponent(RO_DOC) + '/reopen', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({qtys: qtys})});
+    const d = await r.json().catch(() => ({}));
+    if(!r.ok || !d.ok){ msg.innerHTML = '<span class="badge badge-warn">' + esc2(d.error || TR('提交失败')) + '</span>'; return; }
+    // v1.0.55：保存修订后直接回主界面；附件从主列表「签字附件」按钮进入
+    alert(TR('已退回待处理，可重新提交审批'));
+    location.reload();
+  } catch(e){ msg.innerHTML = '<span class="badge badge-warn">' + TR('提交失败，请重试') + '</span>'; }
+}
+async function delRejected(docNo){
+  if(!window.confirm(TR('确定删除这张驳回废单吗？删除后不可恢复。'))) return;
+  try {
+    const r = await fetch('/api/doc/' + encodeURIComponent(docNo) + '/delete-rejected', {method:'POST'});
+    const d = await r.json().catch(() => ({}));
+    if(!r.ok || !d.ok){ alert(TR('删除失败') + '：' + (d.error || '')); return; }
+    alert(TR('已删除废单'));
+    location.reload();
+  } catch(e){ alert(TR('删除失败，请重试')); }
+}
+
+// 页面加载：先恢复上次没提交的草稿（切页回来不丢），再合并信息查询页新勾选的件
 (function(){
-  const pid = document.getElementById('app-part-id').value;
-  if(pid){
-    fetch('/api/parts/'+pid).then(r=>r.json()).then(d=>{
-      onPartPick({id:Number(pid), qty_decimal:d.qty_decimal||0, is_valuable:d.is_valuable||0});
-    }).catch(()=>{});
-  } else {
-    onTypeChange();
+  loadEmptyLocs();
+  if(DRAFT.length) render();
+  const cart = JSON.parse(sessionStorage.getItem(PICK_KEY) || '[]');
+  if(cart.length){
+    addParts(cart.map(id => ({id: id})));
   }
 })();
-
-function openCancel(aid, no){
-  document.getElementById('cancel-form').action='/applications/'+aid+'/cancel';
-  document.getElementById('cancel-info').innerHTML='{{ tr('确定要撤销申请单') }} <b>'+no+'</b> {{ tr('吗？') }}{{ tr('撤销后不可恢复') }}{{ tr('。') }}';
-  document.getElementById('cancel-modal').style.display='flex';
-}
-function openCancelReq(aid, no){
-  document.getElementById('cancel-req-form').action='/applications/'+aid+'/cancel-request';
-  document.getElementById('cancel-req-form').dataset.no = no;
-  document.getElementById('cancel-req-modal').style.display='flex';
-}
-function esc(s){ const d=document.createElement('div'); d.textContent=s==null?'':String(s); return d.innerHTML; }
 </script>
 {% endblock %}

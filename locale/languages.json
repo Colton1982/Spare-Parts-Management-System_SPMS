@@ -1,0 +1,221 @@
+{
+ "_default": "zh",
+ "_comment": "新增语言只需在这里加一行 + 放一个 catalog/<code>.json",
+ "zh": {
+  "currency": "¥",
+  "date": "{Y}-{m}-{d}",
+  "dir": "ltr",
+  "en": "Chinese",
+  "forms": [
+   "other"
+  ],
+  "locale": "zh",
+  "money": "{sym}{num}",
+  "native": "中文",
+  "num": [
+   ",",
+   "."
+  ],
+  "plural": 1,
+  "scale": "wan",
+  "status": "ready"
+ },
+ "en": {
+  "currency": "¥",
+  "date": "{d} {M} {Y}",
+  "dir": "ltr",
+  "en": "English",
+  "forms": [
+   "one",
+   "other"
+  ],
+  "locale": "en",
+  "money": "{sym}{num}",
+  "native": "English",
+  "num": [
+   ",",
+   "."
+  ],
+  "plural": 2,
+  "scale": "short",
+  "status": "ready"
+ },
+ "ja": {
+  "currency": "¥",
+  "date": "{Y}/{m}/{d}",
+  "dir": "ltr",
+  "en": "Japanese",
+  "forms": [
+   "other"
+  ],
+  "locale": "ja",
+  "money": "{sym}{num}",
+  "native": "日本語",
+  "num": [
+   ",",
+   "."
+  ],
+  "plural": 1,
+  "scale": "wan",
+  "status": "ready"
+ },
+ "ko": {
+  "currency": "¥",
+  "date": "{Y}.{m}.{d}",
+  "dir": "ltr",
+  "en": "Korean",
+  "forms": [
+   "other"
+  ],
+  "locale": "ko",
+  "money": "{sym}{num}",
+  "native": "한국어",
+  "num": [
+   ",",
+   "."
+  ],
+  "plural": 1,
+  "scale": "wan",
+  "status": "ready"
+ },
+ "th": {
+  "currency": "¥",
+  "date": "{d}/{m}/{Y}",
+  "dir": "ltr",
+  "en": "Thai",
+  "forms": [
+   "other"
+  ],
+  "locale": "th",
+  "money": "{sym}{num}",
+  "native": "ไทย",
+  "num": [
+   ",",
+   "."
+  ],
+  "plural": 1,
+  "scale": "short",
+  "status": "ready"
+ },
+ "vi": {
+  "currency": "¥",
+  "date": "{d}/{m}/{Y}",
+  "dir": "ltr",
+  "en": "Vietnamese",
+  "forms": [
+   "other"
+  ],
+  "locale": "vi",
+  "money": "{sym}{num}",
+  "native": "Tiếng Việt",
+  "num": [
+   ".",
+   ","
+  ],
+  "plural": 1,
+  "scale": "short",
+  "status": "ready"
+ },
+ "id": {
+  "currency": "¥",
+  "date": "{d}/{m}/{Y}",
+  "dir": "ltr",
+  "en": "Indonesian",
+  "forms": [
+   "other"
+  ],
+  "locale": "id",
+  "money": "{sym}{num}",
+  "native": "Bahasa Indonesia",
+  "num": [
+   ".",
+   ","
+  ],
+  "plural": 1,
+  "scale": "short",
+  "status": "ready"
+ },
+ "ru": {
+  "currency": "¥",
+  "date": "{d}.{m}.{Y}",
+  "dir": "ltr",
+  "en": "Russian",
+  "forms": [
+   "one",
+   "few",
+   "many",
+   "other"
+  ],
+  "locale": "ru",
+  "money": "{num} {sym}",
+  "native": "Русский",
+  "num": [
+   " ",
+   ","
+  ],
+  "plural": 3,
+  "scale": "short",
+  "status": "ready"
+ },
+ "fr": {
+  "currency": "¥",
+  "date": "{d}/{m}/{Y}",
+  "dir": "ltr",
+  "en": "French",
+  "forms": [
+   "one",
+   "many",
+   "other"
+  ],
+  "locale": "fr",
+  "money": "{num} {sym}",
+  "native": "Français",
+  "num": [
+   " ",
+   ","
+  ],
+  "plural": 2,
+  "scale": "short",
+  "status": "ready"
+ },
+ "de": {
+  "currency": "¥",
+  "date": "{d}.{m}.{Y}",
+  "dir": "ltr",
+  "en": "German",
+  "forms": [
+   "one",
+   "other"
+  ],
+  "locale": "de",
+  "money": "{num} {sym}",
+  "native": "Deutsch",
+  "num": [
+   ".",
+   ","
+  ],
+  "plural": 2,
+  "scale": "short",
+  "status": "ready"
+ },
+ "es": {
+  "currency": "¥",
+  "date": "{d}/{m}/{Y}",
+  "dir": "ltr",
+  "en": "Spanish",
+  "forms": [
+   "one",
+   "other"
+  ],
+  "locale": "es",
+  "money": "{num} {sym}",
+  "native": "Español",
+  "num": [
+   ".",
+   ","
+  ],
+  "plural": 2,
+  "scale": "short",
+  "status": "ready"
+ }
+}

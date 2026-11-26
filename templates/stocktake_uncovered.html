@@ -1,0 +1,84 @@
+{# SPMS 备件辅料仓管系统 | 作者：菜鸟大叔 (@rookie-uncle / @Colton1982) | 邮箱：510658927@qq.com | QQ：510658927 | Gitee：https://gitee.com/rookie-uncle | GitHub：https://github.com/Colton1982 | Copyright (c) 2026 rookie-uncle. All rights reserved. | Apache-2.0 #}
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="page-title">{{ tr('本期未盘明细') }}</div>
+    <div class="muted small">
+      {{ tr('本期应盘日') }} <span class="mono">{{ info.cycle_key }}</span>
+      · {{ tr('容差窗口') }} <span class="mono">{{ info.from }} ~ {{ info.to }}</span>
+    </div>
+  </div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap">
+    <a class="btn" href="{{ url_for('stocktake_uncovered') }}?cycle={{ info.cycle_query }}&wh={{ wh }}&kw={{ kw }}&export=1">{{ tr('导出 CSV') }}</a>
+    <form method="post" action="{{ url_for('stocktake_new') }}" style="display:inline">
+      <input type="hidden" name="scope_mode" value="remain">
+      <button class="btn btn-primary" type="submit">{{ tr('只盘剩余行') }}</button>
+    </form>
+    <a class="btn" href="{{ url_for('stocktakes_page') }}">{{ tr('返回盘点管理') }}</a>
+  </div>
+</div>
+
+<div class="stat-row" style="margin:4px 0 12px">
+  <div class="stat-card"><div class="stat-label">{{ tr('在库总量') }}</div><div class="stat-num">{{ info.total }}</div></div>
+  <div class="stat-card"><div class="stat-label">{{ tr('已盘') }}</div><div class="stat-num" style="color:var(--green,#22c55e)">{{ info.counted }}</div></div>
+  <div class="stat-card"><div class="stat-label">{{ tr('未盘') }}</div><div class="stat-num" style="color:{{ 'var(--red)' if info.uncovered else 'var(--green)' }}">{{ info.uncovered }}</div></div>
+  <div class="stat-card"><div class="stat-label">{{ tr('覆盖率') }}</div><div class="stat-num">{% if info.total %}{{ ([info.counted * 100 / info.total, 100]|min)|round|int }}%{% else %}-{% endif %}</div></div>
+</div>
+
+<div class="card">
+  <form method="get" class="filters" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+    <input type="hidden" name="cycle" value="{{ info.cycle_query }}">
+    <select class="f-input" name="wh" style="max-width:180px">
+      <option value="">{{ tr('全部仓库') }}</option>
+      {% for w in whs %}
+      <option value="{{ w }}" {{ 'selected' if w == wh }}>{{ w }}</option>
+      {% endfor %}
+    </select>
+    <input class="f-input" name="kw" value="{{ kw }}" placeholder="{{ tr('物料编码 / 名称 / 库位') }}" style="max-width:240px">
+    <button class="btn" type="submit">{{ tr('筛选') }}</button>
+    <span class="muted small">{{ tr('共 {n} 行', n=rows|length) }}</span>
+  </form>
+
+  <div class="table-wrap table-sticky" style="overflow:auto;max-height:clamp(360px, calc(100vh - 380px), 900px)">
+    <table class="table" style="min-width:max-content">
+      <thead>
+        <tr>
+          <th>{{ tr('仓库') }}</th>
+          <th>{{ tr('货架') }}</th>
+          <th>{{ tr('库位') }}</th>
+          <th>{{ tr('物料编码') }}</th>
+          <th>{{ tr('物料名称') }}</th>
+          <th>{{ tr('规格') }}</th>
+          <th>{{ tr('单位') }}</th>
+          <th class="num">{{ tr('账面数量') }}</th>
+          <th>{{ tr('上次盘点') }}</th>
+          <th>{{ tr('为什么还没盘') }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr>
+          <td>{{ r.warehouse or '-' }}</td>
+          <td>{{ r.rack or '-' }}</td>
+          <td class="mono">{{ r.location or '-' }}</td>
+          <td class="mono">{{ r.part_code }}</td>
+          <td>{{ r.name }}</td>
+          <td class="muted">{{ r.spec or '-' }}</td>
+          <td>{{ r.unit or '' }}</td>
+          <td class="num">{{ '%g'|format(r.quantity or 0) }}</td>
+          <td class="muted small">{{ r.last_done or tr('从未') }}</td>
+          {# v1.0.40：把「为什么还没盘」直接写出来，看板那 3 条未盘不用再猜 #}
+          <td class="small">
+            {% if r.why == 'new' %}<span class="badge badge-info">{{ tr('本期新增库存行') }}</span>
+            {% else %}<span class="badge badge-muted">{{ tr('本期无盘点单覆盖') }}</span>{% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="10" class="muted" style="text-align:center;padding:24px">{{ tr('本期没有未盘行，全部已盘') }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

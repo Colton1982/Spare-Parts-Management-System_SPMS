@@ -1,3 +1,6 @@
-flask>=3.0
-ldap3>=2.9
-pillow>=10.0
+# SPMS v1.2 - SQLite 最小运行依赖
+# 使用 Windows 免安装包时无需安装本文件；仅源码运行需要。
+Flask>=3.1,<4            # Web 框架
+ldap3>=2.9,<3            # AD 域登录
+Pillow>=10.0,<13         # 备件图片压缩
+openpyxl>=3.1,<4         # Excel 导入导出

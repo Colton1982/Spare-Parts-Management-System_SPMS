@@ -1,13 +1,15 @@
+{# SPMS 备件辅料仓管系统 | 作者：菜鸟大叔 (@rookie-uncle / @Colton1982) | 邮箱：510658927@qq.com | QQ：510658927 | Gitee：https://gitee.com/rookie-uncle | GitHub：https://github.com/Colton1982 | Copyright (c) 2026 rookie-uncle. All rights reserved. | Apache-2.0 #}
 {% extends "base.html" %}
-{% block title %}{{ tr('page_permissions') }} - Spare Parts Management System{% endblock %}
-{% block page_title %}>{{ tr('page_permissions') }}{% endblock %}
+{% block title %}{{ tr('page_permissions') }} - Inventory Management System{% endblock %}
+{% block page_title %}{{ tr('page_permissions') }}{% endblock %}
 {% block content %}
 
 <div class="card">
-  <div class="card-title">{{ tr('角色') }} × {{ tr('功能权限矩阵') }}{{ tr('（') }}{{ tr('模块级') }} + {{ tr('操作级') }}{{ tr('，') }}{{ tr('可配置') }}{{ tr('）') }}</div>
-  <p class="muted small">
-    {{ tr('模块级勾选') }} = {{ tr('拥有该模块全部子操作') }}{{ tr('，') }}{{ tr('子操作支持独立细粒度控制') }}{{ tr('：') }}<b>{{ tr('灰色跟随模块级') }}</b>{{ tr('；') }}{{ tr('单独勾选') }} = {{ tr('允许该操作') }}{{ tr('；') }}
-    {{ tr('取消勾选') }} = {{ tr('禁止该操作') }}{{ tr('（') }}{{ tr('即使模块级已勾选，也会被单独禁止') }}{{ tr('）') }}{{ tr('。') }}{{ tr('修改后点') }}{{ tr('「') }}{{ tr('保存权限') }}{{ tr('」') }}{{ tr('立即生效') }}{{ tr('。') }}
+  <div class="card-title">{{ tr('角色') }} × {{ tr('功能权限矩阵') }}</div>
+  <div class="muted small ui-hint" style="margin:-6px 0 12px">{{ tr('模块级') }} + {{ tr('操作级') }}{{ mk('，') }}{{ tr('可配置') }}</div>
+  <p class="muted small ui-hint">
+    {{ tr('模块级勾选') }} = {{ tr('拥有该模块全部子操作') }}{{ mk('，') }}{{ tr('子操作支持独立细粒度控制') }}{{ mk('：') }}<b>{{ tr('灰色跟随模块级') }}</b>{{ mk('；') }}{{ tr('单独勾选') }} = {{ tr('允许该操作') }}{{ mk('；') }}
+    {{ tr('取消勾选') }} = {{ tr('禁止该操作') }}{{ mk('（') }}{{ tr('即使模块级已勾选，也会被单独禁止') }}{{ mk('）') }}{{ mk('。') }}{{ tr('修改后点') }}{{ mk('「') }}{{ tr('保存权限') }}{{ mk('」') }}{{ tr('立即生效') }}{{ mk('。') }}
   </p>
   <form method="post" id="perm-form">
     <div class="table-wrap">
@@ -16,7 +18,7 @@
           <tr>
             <th style="min-width:190px">{{ tr('功能 / 操作') }}</th>
             {% for role in roles %}
-            <th class="center">{{ tr(ROLE_NAMES[role]) }}</th>
+            <th class="center">{{ ROLE_NAMES[role] }}</th>
             {% endfor %}
           </tr>
         </thead>
@@ -28,13 +30,13 @@
             <td class="center">
               <input type="checkbox" name="perm_{{ role }}_{{ module }}" value="1"
                      {{ 'checked' if matrix.get((role, module)) }}
-                     title="{{ tr('模块级权限') }}{{ tr('（') }}{{ tr('包含全部子操作') }}{{ tr('）') }}">
+                     title="{{ tr('模块级权限') }}（{{ tr('包含全部子操作') }}）">
             </td>
             {% endfor %}
           </tr>
           {% for action, alabel in perm_actions.get(module, {}).items() %}
           <tr class="perm-action-row">
-            <td>　└ {{ alabel }} <span class="muted small">{{ tr('（') }}{{ tr('灰色') }}={{ tr('跟随模块级') }}{{ tr('）') }}</span></td>
+            <td>　└ {{ alabel }} <span class="muted small">{{ mk('（') }}{{ tr('灰色') }}={{ tr('跟随模块级') }}{{ mk('）') }}</span></td>
             {% for role in roles %}
             {% set key = (role, module, action) %}
             {% set mod_allow = matrix.get((role, module)) %}
@@ -42,7 +44,7 @@
             {% set checked = cfg if cfg is not none else mod_allow %}
             <td class="center">
               <input type="checkbox" id="cb_{{ role }}_{{ module }}_{{ action }}" class="perm-action-cb"
-                     {{ 'checked' if checked }} title="{{ tr('操作级权限') }}{{ tr('：') }}{{ tr('勾选') }}={{ tr('允许') }}{{ tr('，') }}{{ tr('取消') }}={{ tr('禁止') }}{{ tr('，') }}{{ tr('灰色') }}={{ tr('跟随模块级') }}">
+                     {{ 'checked' if checked }} title="{{ tr('操作级权限') }}：{{ tr('勾选') }}={{ tr('允许') }}，{{ tr('取消') }}={{ tr('禁止') }}，{{ tr('灰色') }}={{ tr('跟随模块级') }}">
               <input type="hidden" id="hid_{{ role }}_{{ module }}_{{ action }}"
                      name="perm_action_state_{{ role }}_{{ module }}_{{ action }}"
                      value="{{ '1' if cfg else ('0' if cfg is not none else 'follow') }}">
@@ -54,9 +56,9 @@
         </tbody>
       </table>
     </div>
-    <div class="muted small" style="margin:8px 0">
-      {{ tr('提示') }}{{ tr('：') }}{{ tr('建议至少保留一名高级管理人员拥有') }}{{ tr('「') }}{{ tr('用户管理') }}{{ tr('」') }}{{ tr('与') }}{{ tr('「') }}{{ tr('权限配置') }}{{ tr('」') }}{{ tr('权限') }}{{ tr('，') }}{{ tr('避免锁死系统') }}{{ tr('。') }}
-      {{ tr('模块级未勾选') }}{{ tr('、') }}{{ tr('子操作也未配置时，该角色无法使用对应功能') }}{{ tr('。') }}
+    <div class="muted small ui-hint" style="margin:8px 0">
+      {{ tr('提示') }}{{ mk('：') }}{{ tr('建议至少保留一名高级管理人员拥有') }}{{ mk('「') }}{{ tr('用户管理') }}{{ mk('」') }}{{ tr('与') }}{{ mk('「') }}{{ tr('权限配置') }}{{ mk('」') }}{{ tr('权限') }}{{ mk('，') }}{{ tr('避免锁死系统') }}{{ mk('。') }}
+      {{ tr('模块级未勾选') }}{{ mk('、') }}{{ tr('子操作也未配置时，该角色无法使用对应功能') }}{{ mk('。') }}
     </div>
     <button class="btn btn-primary" type="submit">{{ tr('保存权限') }}</button>
   </form>

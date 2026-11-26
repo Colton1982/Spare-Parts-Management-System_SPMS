@@ -1,0 +1,53 @@
+[
+ {
+  "lang": "en",
+  "level": "通过",
+  "coverage": {
+   "filled": 2146,
+   "total": 2146,
+   "percent": 100.0
+  },
+  "items": [
+   {
+    "level": "通过",
+    "check": "注册表",
+    "detail": "forms=one/other date={d} {M} {Y}"
+   },
+   {
+    "level": "通过",
+    "check": "覆盖率",
+    "detail": "100.0%（2146/2146）"
+   },
+   {
+    "level": "通过",
+    "check": "占位符",
+    "detail": "全部一致（{cur} 由运行期自动注入，不计入差异）"
+   },
+   {
+    "level": "通过",
+    "check": "复数",
+    "detail": "结构完整（11 条复数词条）"
+   },
+   {
+    "level": "通过",
+    "check": "格式",
+    "detail": "日期 07 Mar 2026｜数字 1,234,567｜金额 CNY 1,234.50"
+   },
+   {
+    "level": "通过",
+    "check": "空白",
+    "detail": "0 次（未译内容均回退中文，不会白屏）"
+   },
+   {
+    "level": "通过",
+    "check": "回退",
+    "detail": "0 次取词回退中文"
+   },
+   {
+    "level": "通过",
+    "check": "冒烟",
+    "detail": "8 个页面可正常打开"
+   }
+  ]
+ }
+]

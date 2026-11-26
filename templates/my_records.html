@@ -1,11 +1,13 @@
+{# SPMS 备件辅料仓管系统 | 作者：菜鸟大叔 (@rookie-uncle / @Colton1982) | 邮箱：510658927@qq.com | QQ：510658927 | Gitee：https://gitee.com/rookie-uncle | GitHub：https://github.com/Colton1982 | Copyright (c) 2026 rookie-uncle. All rights reserved. | Apache-2.0 #}
 {% extends "base.html" %}
-{% block title %}{{ tr('page_my_records') }} - Spare Parts Management System{% endblock %}
-{% block page_title %}>{{ tr('page_my_records') }}{% endblock %}
+{% block title %}{{ tr('page_my_records') }} - Inventory Management System{% endblock %}
+{% block page_title %}{{ tr('page_my_records') }}{% endblock %}
 {% block content %}
 
 <div class="card">
-  <div class="card-title">{{ tr('我的出入库 / 操作记录（近200条）') }}</div>
-  <div class="table-wrap">
+  <div class="card-title">{{ tr('我的出入库 / 操作记录') }}</div>
+  <div class="muted small ui-hint" style="margin:-6px 0 12px">{{ tr('仅显示本人的操作记录，最多显示最近 200 条') }}</div>
+  <div class="table-wrap table-sticky" style="overflow:auto;max-height:clamp(360px, calc(100vh - 320px), 900px)">
     <table class="table">
       <thead><tr>
         <th>{{ tr('th_no') }}</th><th>{{ tr('th_time') }}</th><th>{{ tr('th_part') }}</th><th>{{ tr('th_type') }}</th><th>{{ tr('th_quantity') }}</th>
@@ -37,11 +39,12 @@
 </div>
 
 <div class="card">
-  <div class="card-title">{{ tr('我的申请单（近200条）') }}</div>
-  <div class="table-wrap">
+  <div class="card-title">{{ tr('我的申请单') }}</div>
+  <div class="muted small ui-hint" style="margin:-6px 0 12px">{{ tr('仅显示本人发起的申请单，最多显示最近 200 条') }}</div>
+  <div class="table-wrap table-sticky" style="overflow:auto;max-height:clamp(360px, calc(100vh - 320px), 900px)">
     <table class="table">
       <thead><tr>
-        <th>{{ tr('th_no') }}</th><th>{{ tr('th_time') }}</th><th>{{ tr('th_part') }}</th><th>{{ tr('th_type') }}</th><th>{{ tr('th_quantity') }}</th><th>{{ tr('th_status') }}</th><th>{{ tr('审批/处理意见') }}</th>
+        <th>{{ tr('th_no') }}</th><th>{{ tr('th_time') }}</th><th>{{ tr('th_part') }}</th><th>{{ tr('th_type') }}</th><th>{{ tr('th_quantity') }}</th><th>{{ tr('th_status') }}</th><th>{{ tr('审批进度') }}</th><th>{{ tr('审批/处理意见') }}</th>
       </tr></thead>
       <tbody>
         {% for a in apps %}
@@ -62,9 +65,19 @@
             {% elif a.status=='canceled' %}<span class="badge badge-muted">{{ tr('status_canceled') }}</span>
             {% else %}<span class="badge badge-ok">{{ tr('status_completed') }}</span>{% endif %}
           </td>
+          <td class="small" style="line-height:1.6">
+            {% if a.status in ('pending',) %}
+              {% if a.assignee_name %}<span class="muted">⏳ {{ tr('待批') }}：{{ a.assignee_name }}</span>
+              {% else %}<span class="muted">{{ tr('待仓管处理') }}</span>{% endif %}
+            {% elif a.approver_name %}
+              <span style="color:#34d399">✓ {{ tr('已批') }}：{{ a.approver_name }}</span>
+            {% elif a.operator_name %}
+              <span style="color:#34d399">✓ {{ tr('已处理') }}：{{ a.operator_name }}</span>
+            {% else %}-{% endif %}
+          </td>
           <td class="muted">{{ a.approval_note or a.operator_note or '-' }}</td>
         </tr>
-        {% else %}<tr><td colspan="7" class="muted center">{{ tr('暂无申请单') }}</td></tr>{% endfor %}
+        {% else %}<tr><td colspan="8" class="muted center">{{ tr('暂无申请单') }}</td></tr>{% endfor %}
       </tbody>
     </table>
   </div>

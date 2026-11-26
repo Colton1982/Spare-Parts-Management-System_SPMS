@@ -1,0 +1,214 @@
+{# SPMS 备件辅料仓管系统 | 作者：菜鸟大叔 (@rookie-uncle / @Colton1982) | 邮箱：510658927@qq.com | QQ：510658927 | Gitee：https://gitee.com/rookie-uncle | GitHub：https://github.com/Colton1982 | Copyright (c) 2026 rookie-uncle. All rights reserved. | Apache-2.0 #}
+{% extends "base.html" %}
+{% block title %}{{ tr('金额单位') }} - Inventory Management System{% endblock %}
+{% block page_title %}{{ tr('金额单位') }}{% endblock %}
+{% block content %}
+
+<div class="card">
+  <div class="card-title" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+    <span>
+      {{ tr('当前记账币种') }}：<b class="mono">{{ cfg.code }}</b>
+      <span class="badge badge-ok" style="margin-left:6px">{{ cur() }}</span>
+      <span class="muted small ui-hint" style="margin-left:8px">{{ tr('界面语言只改变写法，不改变金额') }}</span>
+    </span>
+    <a class="btn btn-xs" href="{{ url_for('parts_manage_page') }}">← {{ tr('返回信息维护') }}</a>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:12px 0">
+    <div class="stat-card"><div class="stat-label">{{ tr('物料条数') }}</div><div class="stat-num">{{ fmt_num(stats.parts) }}</div></div>
+    <div class="stat-card"><div class="stat-label">{{ tr('库存总额') }}</div><div class="stat-num">{{ fmt_money(stats.stock_value) }}</div></div>
+    <div class="stat-card"><div class="stat-label">{{ tr('流水笔数') }}</div><div class="stat-num">{{ fmt_num(stats.txs) }}</div></div>
+    <div class="stat-card"><div class="stat-label">{{ tr('流水金额合计') }}</div><div class="stat-num">{{ fmt_money(stats.tx_value) }}</div></div>
+  </div>
+  <div class="muted small ui-hint">{{ tr('换币种会同时改写物料单价与历史流水金额，这是一次记账本位币变更，不是显示切换') }}{{ mk('。') }}{{ tr('每次换算都会留下调整单，可随时撤销') }}{{ mk('。') }}</div>
+</div>
+
+<div class="card">
+  <div class="card-title">{{ tr('自定义币种') }}<span class="muted small card-hint" style="margin-left:8px;font-weight:400">{{ tr('内置 23 种之外的市场，在这里加一条就能用') }}</span></div>
+  {% set cu = cfg.custom or {} %}
+  <form method="post" action="{{ url_for('parts_currency_custom') }}" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+    <label class="f-label">{{ tr('币种代码') }}
+      <input class="f-input mono" name="code" maxlength="3" style="width:92px;text-transform:uppercase" placeholder="NZD" value="{{ cu.code or '' }}">
+    </label>
+    <label class="f-label">{{ tr('币种符号') }}
+      <input class="f-input mono" name="symbol" maxlength="6" style="width:92px" placeholder="NZ$" value="{{ cu.symbol or '' }}">
+    </label>
+    <label class="f-label">{{ tr('中文名称') }}
+      <input class="f-input" name="zh" maxlength="20" style="width:130px" placeholder="NZD" value="{{ cu.zh or '' }}">
+    </label>
+    <label class="f-label">{{ tr('英文名称') }}
+      <input class="f-input" name="en" maxlength="40" style="width:170px" placeholder="New Zealand Dollar" value="{{ cu.en or '' }}">
+    </label>
+    <label class="f-label">{{ tr('小数位') }}
+      <input class="f-input" name="decimals" type="number" min="0" max="4" step="1" style="width:80px" value="{{ cu.decimals if cu.decimals is not none else 2 }}">
+    </label>
+    <button class="btn btn-primary" type="submit">{{ tr('btn_save') }}</button>
+    {% if cu.code %}
+    <button class="btn btn-ghost" type="submit" name="action" value="remove">{{ tr('清除') }}</button>
+    {% endif %}
+  </form>
+  <div class="muted small ui-hint" style="margin-top:6px">{{ tr('保存后可在上方「目标币种」里选它，真正切换仍要走换算流程') }}{{ mk('。') }}</div>
+</div>
+
+<div class="card">
+  <div class="card-title">{{ tr('第一步 试算') }}<span class="muted small card-hint" style="margin-left:8px;font-weight:400">{{ tr('只计算，不写库，可以反复试') }}</span></div>
+  <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+    <label class="f-label">{{ tr('目标币种') }}
+      <select class="f-input" id="to-cur" style="min-width:180px">
+        {% for c in currencies %}{% if c.code != cfg.code %}
+        <option value="{{ c.code }}">{{ c.code }} — {{ c.name }} {{ c.symbol }}</option>
+        {% endif %}{% endfor %}
+      </select>
+    </label>
+    <label class="f-label">{{ tr('汇率') }}<span class="muted small">（1 {{ cfg.code }} = ?）</span>
+      <input class="f-input" id="rate" type="number" step="0.000001" min="0" placeholder="0.137300" style="width:160px">
+    </label>
+    <button class="btn btn-primary" id="btn-preview" type="button">{{ tr('试算') }}</button>
+  </div>
+  <div id="pv" style="margin-top:14px"></div>
+</div>
+
+<div class="card" id="apply-card" style="display:none">
+  <div class="card-title" style="color:var(--red)">{{ tr('第二步 执行换算') }}</div>
+  <div class="muted small ui-hint" style="margin-bottom:10px">
+    {{ tr('执行后会立刻改写全部物料单价与历史流水金额，并把全局币种切换为') }} <b id="ap-to" class="mono"></b>{{ mk('。') }}
+    {{ tr('请确认上面的试算结果无误') }}{{ mk('。') }}
+  </div>
+  <label class="f-label" style="display:block;margin-bottom:8px">
+    <input type="checkbox" id="ap-ack">
+    {{ tr('我已核对试算结果，确认这是一次记账本位币变更，不是汇率换算预览') }}
+  </label>
+  <label class="f-label">{{ tr('输入确认词') }} <span class="mono">{{ confirm_word }}</span>
+    <input class="f-input" id="ap-word" type="text" autocomplete="off" placeholder="{{ confirm_word }}" style="width:200px">
+  </label>
+  <label class="f-label">{{ tr('备注') }}<span class="f-note">{{ mk('（') }}{{ tr('选填') }}{{ mk('，') }}{{ tr('会记入调整单') }}{{ mk('）') }}</span>
+    <input class="f-input" id="ap-note" type="text" maxlength="200" style="width:320px">
+  </label>
+  <div style="margin-top:10px">
+    <button class="btn btn-danger" id="btn-apply" type="button" disabled>{{ tr('执行换算') }}</button>
+  </div>
+  <form id="ap-form" method="post" action="{{ url_for('parts_currency_apply') }}" style="display:none">
+    <input type="hidden" name="to_cur" id="ap-to-cur">
+    <input type="hidden" name="rate" id="ap-rate">
+    <input type="hidden" name="confirm" id="ap-confirm">
+    <input type="hidden" name="note" id="ap-note-h">
+  </form>
+</div>
+
+<div class="card">
+  <div class="card-title">{{ tr('调整记录') }}<span class="muted small card-hint" style="margin-left:8px;font-weight:400">{{ tr('按时间倒序，只能撤销最近一张') }}</span></div>
+  {% if ops %}
+  <div class="table-wrap">
+    <table class="table">
+      <thead><tr>
+        <th>{{ tr('单号') }}</th><th>{{ tr('时间') }}</th><th>{{ tr('币种变更') }}</th>
+        <th style="text-align:right">{{ tr('汇率') }}</th>
+        <th style="text-align:right">{{ tr('物料') }}</th>
+        <th style="text-align:right">{{ tr('流水') }}</th>
+        <th style="text-align:right">{{ tr('换算前') }}</th>
+        <th style="text-align:right">{{ tr('换算后') }}</th>
+        <th>{{ tr('状态') }}</th><th>{{ tr('操作人') }}</th><th>{{ tr('操作') }}</th>
+      </tr></thead>
+      <tbody>
+        {% for o in ops %}
+        <tr>
+          <td class="mono">{{ o.op_no }}</td>
+          <td class="muted small">{{ o.created_at }}</td>
+          <td class="mono">{{ o.from_cur }} → {{ o.to_cur }}</td>
+          <td style="text-align:right" class="mono">{{ o.rate }}</td>
+          <td style="text-align:right">{{ o.part_count }}</td>
+          <td style="text-align:right">{{ o.tx_count }}</td>
+          <td style="text-align:right" class="muted">{{ o.total_before }}</td>
+          <td style="text-align:right">{{ o.total_after }}</td>
+          <td>
+            {% if o.status == 'active' %}<span class="badge badge-ok">{{ tr('已生效') }}</span>
+            {% else %}<span class="badge">{{ tr('已撤销') }}</span>{% endif %}
+          </td>
+          <td>{{ o.operator_name }}</td>
+          <td>
+            {% if o.status == 'active' and o.id == latest_active %}
+            <button class="btn btn-xs" type="button"
+                    onclick="doRevert({{ o.id }}, '{{ o.op_no }}')">{{ tr('撤销') }}</button>
+            {% else %}—{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="muted small">{{ tr('还没有换算记录') }}{{ mk('。') }}</div>
+  {% endif %}
+</div>
+
+<form id="rv-form" method="post" action="{{ url_for('parts_currency_revert') }}" style="display:none">
+  <input type="hidden" name="op_id" id="rv-op">
+  <input type="hidden" name="confirm" id="rv-confirm">
+</form>
+
+<script>
+var LAST = null;
+function pvHtml(d){
+  var rows = (d.sample || []).map(function(s){
+    return '<tr><td class="mono">' + s.code + '</td><td>' + s.name + '</td>' +
+           '<td style="text-align:right">' + s.before + '</td>' +
+           '<td style="text-align:right">' + s.after + '</td></tr>';
+  }).join('');
+  return '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px">' +
+    '<div class="stat-card"><div class="stat-label">{{ tr('库存总额') }}</div><div class="stat-num" style="font-size:16px">' +
+      d.stock_before + ' → ' + d.stock_after + '</div></div>' +
+    '<div class="stat-card"><div class="stat-label">{{ tr('流水金额合计') }}</div><div class="stat-num" style="font-size:16px">' +
+      d.tx_before + ' → ' + d.tx_after + '</div></div>' +
+    '<div class="stat-card"><div class="stat-label">{{ tr('影响范围') }}</div><div class="stat-num" style="font-size:16px">' +
+      d.parts + ' / ' + d.txs + '</div><div class="card-sub">{{ tr('物料 / 流水') }}</div></div>' +
+  '</div>' +
+  (rows ? '<div class="table-wrap" style="margin-top:12px"><table class="table"><thead><tr>' +
+    '<th>{{ tr('料号') }}</th><th>{{ tr('名称') }}</th>' +
+    '<th style="text-align:right">{{ tr('现单价') }}</th>' +
+    '<th style="text-align:right">{{ tr('换算后') }}</th></tr></thead><tbody>' + rows + '</tbody></table></div>' : '');
+}
+document.getElementById('btn-preview').onclick = function(){
+  var to = document.getElementById('to-cur').value;
+  var rate = document.getElementById('rate').value;
+  var box = document.getElementById('pv');
+  box.innerHTML = '<span class="muted small">{{ tr('计算中') }}…</span>';
+  var fd = new FormData();
+  fd.append('to_cur', to); fd.append('rate', rate);
+  fetch('{{ url_for("parts_currency_preview") }}', {method:'POST', body:fd, credentials:'same-origin'})
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      if(!d.ok){ box.innerHTML = '<span style="color:var(--red)">' + (d.msg || '') + '</span>'; return; }
+      LAST = d;
+      box.innerHTML = pvHtml(d);
+      document.getElementById('apply-card').style.display = '';
+      document.getElementById('ap-to').textContent = d.to;
+      document.getElementById('ap-to-cur').value = d.to;
+      document.getElementById('ap-rate').value = d.rate;
+      document.getElementById('ap-ack').checked = false;
+      document.getElementById('ap-word').value = '';
+      document.getElementById('btn-apply').disabled = true;
+    })
+    .catch(function(){ box.innerHTML = '<span style="color:var(--red)">{{ tr('试算失败，请重试') }}</span>'; });
+};
+function chkApply(){
+  var ok = document.getElementById('ap-ack').checked &&
+           document.getElementById('ap-word').value.trim().toUpperCase() === '{{ confirm_word }}';
+  document.getElementById('btn-apply').disabled = !ok;
+}
+document.getElementById('ap-ack').onchange = chkApply;
+document.getElementById('ap-word').oninput = chkApply;
+document.getElementById('btn-apply').onclick = function(){
+  if(!LAST) return;
+  document.getElementById('ap-confirm').value = document.getElementById('ap-word').value.trim().toUpperCase();
+  document.getElementById('ap-note-h').value = document.getElementById('ap-note').value;
+  document.getElementById('ap-form').submit();
+};
+function doRevert(id, no){
+  if(!confirm('{{ tr('确认撤销') }} ' + no + '？{{ tr('金额将按快照写回') }}')) return;
+  var w = prompt('{{ tr('请输入确认词') }} {{ revert_word }}{{ tr('以继续') }}');
+  if(w === null) return;
+  document.getElementById('rv-op').value = id;
+  document.getElementById('rv-confirm').value = String(w).trim().toUpperCase();
+  document.getElementById('rv-form').submit();
+}
+</script>
+{% endblock %}

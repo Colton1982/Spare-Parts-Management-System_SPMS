@@ -1,0 +1,244 @@
+{# SPMS 备件辅料仓管系统 | 作者：菜鸟大叔 (@rookie-uncle / @Colton1982) | 邮箱：510658927@qq.com | QQ：510658927 | Gitee：https://gitee.com/rookie-uncle | GitHub：https://github.com/Colton1982 | Copyright (c) 2026 rookie-uncle. All rights reserved. | Apache-2.0 #}
+{% extends "base.html" %}
+{% block title %}{{ tr('本期合并报告') }} - Inventory Management System{% endblock %}
+{% block page_title %}{{ tr('本期合并报告') }}{% endblock %}
+{% block content %}
+{% set s = period.summary %}
+<div class="card">
+  <div class="card-title no-print" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+    <span style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <a class="btn btn-xs" href="{{ url_for('stocktakes_page') }}">← {{ tr('盘点管理') }}</a>
+      <span class="mono" style="font-size:15px">{{ period.cycle_key }}</span>
+      <span class="badge badge-info">{{ tr('本期合并报告') }}</span>
+    </span>
+    <span style="display:flex;gap:6px;align-items:center">
+      <label class="f-check small" style="margin-right:6px"><input type="checkbox" id="only-diff" onchange="toggleDiff(this.checked)">{{ tr('仅看差异') }}</label>
+      <a class="btn" href="{{ url_for('stocktake_reports', cycle=period.cycle_key) }}">{{ tr('盘点记录') }}</a>
+      <a class="btn btn-primary" href="{{ url_for('stocktake_period_export', cycle=period.cycle_key) }}">{{ tr('导出 Excel') }}</a>
+      <button class="btn" onclick="window.print()">{{ tr('打印') }}</button>
+    </span>
+  </div>
+
+  <div class="rpt-head">
+    <div>
+      <span class="rpt-title">{{ tr('盘点报告') }}</span>
+      <span class="rpt-sub" style="margin-left:10px">{{ tr('合并范围') }}{{ mk('：') }}{{ period.cycle_key }}</span>
+    </div>
+    <div class="rpt-sub">{{ tr('制表时间') }}{{ mk('：') }}{{ printed_at }}</div>
+  </div>
+
+  <div class="ui-hint no-print" style="margin:8px 0 12px;padding:10px 12px;border-left:3px solid var(--primary,#3b82f6);background:color-mix(in srgb, var(--primary,#3b82f6) 5%, transparent)">
+    <div class="small" style="font-weight:600;margin-bottom:4px">{{ tr('合并规则') }}</div>
+    <div class="muted small">{{ tr('同一盘点期内多张单据按库存行合并为一条：全部正常取最近一次；一旦抓到异常即记为异常，但数量取最后一次实盘值。原始单据与逐单报告均保留。') }}</div>
+  </div>
+
+  {% if period.diff_sources %}
+  <div class="ui-hint" style="margin:0 0 12px;padding:10px 12px;border-left:3px solid var(--red,#e24b4a);background:rgba(226,75,74,.07)">
+    <div class="small" style="font-weight:600;margin-bottom:4px">{{ tr('差异追溯说明') }}</div>
+    <div class="small">{{ tr('看板红柱统计的是本期曾抓到的差异，因此即使后续盘点账实相符，红柱仍会显示。') }}</div>
+    <div class="small">{{ tr('差异来源单据') }}{{ mk('：') }}<span class="mono">{{ period.diff_sources|join('、') }}</span></div>
+    {% if period.final_no %}
+    <div class="small muted">{{ tr('最后一单') }} <span class="mono">{{ period.final_no }}</span>
+      {% if period.final_bad == 0 %}{{ tr('账实已相符；下方差异为历史追溯记录，原因分析仍有效。') }}
+      {% else %}{{ tr('仍有差异未处理。') }}{% endif %}</div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <table class="rpt-meta">
+    <tbody>
+      <tr>
+        <th>{{ tr('合并范围') }}</th><td class="mono">{{ period.from_date }} ~ {{ period.to_date }}</td>
+        <th>{{ tr('最后盘点日') }}</th><td class="mono">{{ period.last_date or '—' }}</td>
+      </tr>
+      <tr>
+        <th>{{ tr('来源单据') }}</th><td>{{ docs|length }} {{ tr('张') }}</td>
+        <th>{{ tr('审批人') }}</th><td>{{ approvers|join(' / ') if approvers else '—' }}</td>
+      </tr>
+      <tr>
+        <th>{{ tr('盘点进度') }}</th><td>{{ stats.done }} / {{ stats.total }} {{ tr('条') }}</td>
+        <th>{{ tr('盘点范围') }}</th><td>{{ docs[0].scope if docs else '' }}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="sub-h">{{ tr('盘点结论') }}</div>
+  <div class="stat-row">
+    <div class="stat-card"><div class="stat-label">{{ tr('账面总数') }}</div><div class="stat-num">{{ s.get('book',0) }}</div></div>
+    <div class="stat-card"><div class="stat-label">{{ tr('实盘总数') }}</div><div class="stat-num">{{ s.get('actual',0) }}</div></div>
+    <div class="stat-card"><div class="stat-label">{{ tr('差异总数') }}</div><div class="stat-num" style="color:{{ 'var(--green)' if s.get('diff',0)>=0 else 'var(--red)' }}">{{ s.get('diff',0) }}</div></div>
+    <div class="stat-card"><div class="stat-label">{{ tr('差异金额(元)') }}</div><div class="stat-num">{{ '%.2f'|format(s.get('amount',0)) }}</div></div>
+    <div class="stat-card"><div class="stat-label">{{ tr('贵重差异条数') }}</div><div class="stat-num">{{ s.get('v_count',0) }}</div></div>
+    <div class="stat-card"><div class="stat-label">{{ tr('异常条数') }}</div><div class="stat-num" style="color:{{ 'var(--red)' if s.get('abnormal',0) else 'inherit' }}">{{ s.get('abnormal',0) }}</div></div>
+  </div>
+
+  <div class="stat-row">
+    <div class="stat-card"><div class="stat-label">{{ tr('盘盈') }}</div><div class="stat-num">{{ stats.gain }}</div><div class="muted small">+{{ '%g'|format(stats.gain_qty) }} · {{ '%.2f'|format(stats.gain_amt) }} {{ tr('元') }}</div></div>
+    <div class="stat-card"><div class="stat-label">{{ tr('盘亏') }}</div><div class="stat-num">{{ stats.loss }}</div><div class="muted small">-{{ '%g'|format(stats.loss_qty) }} · {{ '%.2f'|format(stats.loss_amt|abs) }} {{ tr('元') }}</div></div>
+    <div class="stat-card"><div class="stat-label">{{ tr('错料') }}</div><div class="stat-num">{{ stats.mismatch }}</div><div class="muted small">{{ tr('实盘料号与账面不符') }}</div></div>
+    <div class="stat-card"><div class="stat-label">{{ tr('无差异') }}</div><div class="stat-num">{{ stats.same }}</div><div class="muted small">{{ tr('账实相符') }}</div></div>
+  </div>
+
+  {# v1.0.62：盘亏与盘盈相抵后净额为 0，不等于本期没异常 —— 红字点明 #}
+  {% if period.gross_gain > 0 and period.gross_loss > 0 %}
+  <div class="ui-hint" style="margin:0 0 12px;padding:10px 12px;border-left:3px solid var(--red,#e24b4a);background:rgba(226,75,74,.07)">
+    <div class="small" style="font-weight:600;margin-bottom:4px;color:var(--red,#e24b4a)">{{ tr('净额说明') }}</div>
+    <div class="small" style="color:var(--red,#e24b4a)">{{ tr('本期差异净额为 {n}，但过程中曾盘亏 {loss} 个、盘盈 {gain} 个；两次原因不同，不能按无差异看待。', n=s.get('diff',0), loss='%g'|format(period.gross_loss), gain='%g'|format(period.gross_gain)) }}</div>
+    <div class="small muted">{{ tr('详见下方「差异原因分析汇总」中的盘点过程。') }}</div>
+  </div>
+  {% endif %}
+
+  <div class="sub-h">{{ tr('按原因汇总') }}</div>
+  {% if reason_rows %}
+  <table class="rpt-meta" style="margin:6px 0 12px">
+    <thead><tr>
+      <th style="width:auto">{{ tr('原因') }}</th>
+      <th style="width:110px;text-align:right">{{ tr('差异条数') }}</th>
+      <th style="width:110px;text-align:right">{{ tr('数量合计') }}</th>
+      <th style="width:130px;text-align:right">{{ tr('差异金额') }}</th>
+    </tr></thead>
+    <tbody>
+      {% for r in reason_rows %}
+      <tr><td>{{ r.label }}</td><td style="text-align:right">{{ r.cnt }}</td><td style="text-align:right">{{ '%g'|format(r.qty) }}</td><td style="text-align:right">{{ '%.2f'|format(r.amt) }}</td></tr>
+      {% endfor %}
+      {% if stats.no_reason %}
+      <tr><td class="muted">{{ tr('未标注') }}</td><td style="text-align:right">{{ stats.no_reason }}</td><td style="text-align:right">—</td><td style="text-align:right">—</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="muted small" style="margin:6px 0 12px">{{ tr('本次盘点无差异，无需归因') }}</div>
+  {% endif %}
+
+  <div class="sub-h">{{ tr('来源单据') }}</div>
+  <div class="table-wrap" style="margin-bottom:12px">
+    <table class="table">
+      <thead><tr>
+        <th>{{ tr('盘点单号') }}</th><th>{{ tr('完成日') }}</th><th>{{ tr('创建人') }}</th>
+        <th>{{ tr('盘点范围') }}</th><th style="text-align:right">{{ tr('明细') }}</th>
+        <th style="text-align:right">{{ tr('差异条数') }}</th><th>{{ tr('操作') }}</th>
+      </tr></thead>
+      <tbody>
+        {% for d in docs %}
+        <tr>
+          <td class="mono">{{ d.no }}</td><td class="mono">{{ d.date }}</td><td>{{ d.created_by_name or '—' }}</td>
+          <td>{{ d.scope }}</td><td style="text-align:right">{{ d.item_cnt }}</td>
+          <td style="text-align:right;color:{{ 'var(--red)' if d.diff_cnt else 'inherit' }}">{{ d.diff_cnt }}</td>
+          <td style="white-space:nowrap">
+            <a class="btn btn-xs btn-primary" href="{{ d.report_url }}">{{ tr('查看报告') }}</a>
+            <a class="btn btn-xs" href="{{ d.detail_url }}">{{ tr('详情') }}</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="sub-h">{{ tr('盘点明细') }}</div>
+  <div class="table-wrap">
+    <table class="table" id="rpt-items">
+      <thead><tr>
+        <th style="width:44px">#</th>
+        <th style="white-space:nowrap">{{ tr('料号') }}</th><th>{{ tr('名称') }}</th><th>{{ tr('库位') }}</th>
+        <th style="text-align:right">{{ tr('账面数量') }}</th><th style="text-align:right">{{ tr('实盘数量') }}</th>
+        <th style="text-align:right">{{ tr('差异') }}</th><th style="width:56px">{{ tr('状态') }}</th><th>{{ tr('实盘料号') }}</th>
+        <th style="text-align:right">{{ tr('单价(元)') }}</th><th style="text-align:right">{{ tr('差异金额') }}</th>
+        <th style="width:126px">{{ tr('差异原因') }}</th><th>{{ tr('单据编号') }}</th><th>{{ tr('贵重') }}</th>
+      </tr></thead>
+      <tbody>
+        {% for it in items %}
+        {% set has_diff = 1 if it.abnormal else 0 %}
+        <tr class="{{ 'row-val' if it.is_valuable and it.abnormal }}" data-diff="{{ has_diff }}">
+          <td class="muted small">{{ loop.index }}</td>
+          <td class="mono" style="white-space:nowrap">{{ it.part_code }}</td>
+          <td>{{ it.part_name }}</td><td>{{ it.location or '—' }}</td>
+          <td style="text-align:right">{{ it.book_qty }}</td>
+          <td style="text-align:right">{{ it.actual_qty if it.actual_qty is not none else '—' }}</td>
+          <td style="text-align:right;color:{{ 'var(--green)' if (it.diff or 0)>0 else ('var(--red)' if (it.diff or 0)<0 else 'inherit') }}">{{ it.diff or 0 }}</td>
+          <td>{% if it.abnormal %}<span class="tag tag-orange">{{ tr('异常') }}</span>{% else %}{{ tr('正常') }}{% endif %}</td>
+          <td>{% if it.is_wrong %}<span class="tag tag-orange">{{ tr('错料') }} → {{ it.actual_part_code }}</span>{% else %}—{% endif %}</td>
+          <td style="text-align:right">{{ it.unit_price or 0 }}</td>
+          <td style="text-align:right">{{ '%.2f'|format(it.diff_amt) }}</td>
+          <td>{% if has_diff %}{{ it.reason_label or '—' }}{% else %}—{% endif %}</td>
+          <td class="mono small">{{ it.source_no or '—' }}</td>
+          <td>{% if it.is_valuable %}<span class="badge badge-val">{{ tr('贵重') }}</span>{% else %}—{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot><tr>
+        <th colspan="4" style="text-align:right">{{ tr('合计') }}</th>
+        <th style="text-align:right">{{ '%g'|format(s.get('book',0)) }}</th>
+        <th style="text-align:right">{{ '%g'|format(s.get('actual',0)) }}</th>
+        <th style="text-align:right">{{ '%g'|format(s.get('diff',0)) }}</th>
+        <th></th><th></th><th></th><th style="text-align:right">{{ '%.2f'|format(s.get('amount',0)) }}</th>
+        <th></th><th>{{ s.get('v_count',0) }}</th>
+      </tr></tfoot>
+    </table>
+  </div>
+
+  {# v1.0.74：差异分析全报告只此一处；过程压缩进「盘点过程」列，超期原因另有专门页面。#}
+  <div class="sub-h">{{ tr('差异原因分析汇总') }}</div>
+  <div class="muted small ui-hint no-print" style="margin:-2px 0 8px">
+    {{ tr('差异原因、原因分析、改善处理与任务状态集中在此；盘点过程按日期列出每次异常。') }}
+  </div>
+  <div class="table-wrap">
+    <table class="table" id="rpt-analysis-summary">
+      <thead><tr>
+        <th>{{ tr('料号') }}</th><th>{{ tr('库位') }}</th>
+        <th style="text-align:right">{{ tr('差异') }}</th>
+        <th style="width:56px">{{ tr('状态') }}</th>
+        <th style="min-width:145px">{{ tr('盘点过程') }}</th>
+        <th>{{ tr('差异原因') }}</th>
+        <th style="min-width:150px">{{ tr('原因分析') }}</th>
+        <th style="min-width:150px">{{ tr('改善处理') }}</th>
+        <th>{{ tr('责任人') }}</th><th>{{ tr('计划完成日期') }}</th>
+        <th>{{ tr('单据编号') }}</th>
+      </tr></thead>
+      <tbody>
+        {% set _diff_items = [] %}
+        {% for it in items %}
+          {% if it.abnormal %}{% set _ = _diff_items.append(it) %}{% endif %}
+        {% endfor %}
+        {% for it in _diff_items %}
+        <tr>
+          <td class="mono" style="white-space:nowrap">{{ it.part_code }}</td>
+          <td>{{ it.location or '—' }}</td>
+          <td style="text-align:right;color:{{ 'var(--green)' if (it.diff or 0)>0 else ('var(--red)' if (it.diff or 0)<0 else 'inherit') }}">{{ it.diff or 0 }}</td>
+          <td><span class="tag tag-orange">{{ tr('异常') }}</span></td>
+          <td class="small" style="white-space:pre-wrap">
+            {% for h in it.hist %}
+            <div>{{ h.source_date }} · <span class="mono">{{ h.source_no }}</span> · {{ h.diff or 0 }} · {{ h.reason_label or tr('未标注') }}</div>
+            {% else %}{{ tr('单次盘点') }}{% endfor %}
+          </td>
+          <td>{{ it.reason_label or tr('未标注') }}</td>
+          <td style="white-space:pre-wrap">{{ it.cause or '—' }}</td>
+          <td style="white-space:pre-wrap">{{ it.action or '—' }}
+            {% if it.action %}<div class="muted small" style="margin-top:4px">{{ tr('改善行动状态') }}{{ mk('：') }}{{ tr('已完成') if it.action_status == 'done' else tr('未完成') }}</div>{% endif %}</td>
+          <td>{{ it.action_owner or '—' }}</td>
+          <td style="white-space:nowrap">{{ it.action_due or '—' }}</td>
+          <td class="mono small">{{ it.merged_diff_source or it.source_no or '—' }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="11" style="text-align:center;color:#94a3b8">{{ tr('本次盘点无差异') }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="sub-h">{{ tr('签署确认') }}</div>
+  <table class="rpt-sign"><tbody><tr>
+    <th>{{ tr('盘点人') }}</th><td></td><th>{{ tr('复核人') }}</th><td></td>
+    <th>{{ tr('审批人') }}</th><td></td><th>{{ tr('日期') }}</th><td></td>
+  </tr></tbody></table>
+  <div class="muted small rpt-foot">{{ tr('本报告合并同一盘点期内的多张已完成单据；每笔明细保留来源单号，原始报告可在盘点记录中逐张回查。') }}</div>
+</div>
+
+<script>
+function toggleDiff(on){
+  document.querySelectorAll('#rpt-items tbody tr[data-diff]').forEach(function(tr){
+    tr.style.display = (on && tr.getAttribute('data-diff') === '0') ? 'none' : '';
+  });
+}
+toggleDiff(document.getElementById('only-diff').checked);
+</script>
+{% endblock %}

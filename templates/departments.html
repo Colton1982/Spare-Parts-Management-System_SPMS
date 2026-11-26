@@ -1,6 +1,7 @@
+{# SPMS 备件辅料仓管系统 | 作者：菜鸟大叔 (@rookie-uncle / @Colton1982) | 邮箱：510658927@qq.com | QQ：510658927 | Gitee：https://gitee.com/rookie-uncle | GitHub：https://github.com/Colton1982 | Copyright (c) 2026 rookie-uncle. All rights reserved. | Apache-2.0 #}
 {% extends "base.html" %}
-{% block title %}{{ tr('page_departments') }} - Spare Parts Management System{% endblock %}
-{% block page_title %}>{{ tr('page_departments') }}{% endblock %}
+{% block title %}{{ tr('page_departments') }} - Inventory Management System{% endblock %}
+{% block page_title %}{{ tr('page_departments') }}{% endblock %}
 {% block content %}
 
 <div class="card">
@@ -10,28 +11,30 @@
     <input class="f-input" name="remark" placeholder="{{ tr('备注(可空)') }}">
     <button class="btn btn-primary" type="submit">{{ tr('添加部门') }}</button>
   </form>
-  <div class="muted small">{{ tr('部门维护后，新增/编辑用户时可从下拉框选择；部门下有用户时不允许删除（需先调整用户部门）。') }}</div>
+  <div class="muted small ui-hint">{{ tr('部门维护后，新增/编辑用户时可从下拉框选择；部门下有用户时不允许删除（需先调整用户部门）。') }}</div>
 </div>
 
 <div class="card">
-  <div class="card-title">{{ tr('部门列表') }}{{ tr('（') }}{{ tr('共') }} {{ deps|length }} {{ tr('个') }}{{ tr('）') }}</div>
+  <div class="card-title">{{ tn('departments.list_count', deps|length) }}</div>
+  <div class="muted small ui-hint" style="margin-bottom:8px">{{ tr('部门主管/经理用于盘点审批默认指派：新建盘点时自动带出，可再手动调整。') }}</div>
   <div class="table-wrap">
     <table class="table">
-      <thead><tr><th>ID</th><th>{{ tr('部门名称') }}</th><th>{{ tr('备注') }}</th><th>{{ tr('人数') }}</th><th>{{ tr('创建时间') }}</th><th>{{ tr('th_ops') }}</th></tr></thead>
+      <thead><tr><th>ID</th><th>{{ tr('部门名称') }}</th><th title="{{ tr('主管（一级默认审批人）') }}">{{ tr('主管') }}</th><th title="{{ tr('经理（二级默认审批人）') }}">{{ tr('经理') }}</th><th>{{ tr('人数') }}</th><th>{{ tr('创建时间') }}</th><th>{{ tr('th_ops') }}</th></tr></thead>
       <tbody>
         {% for d in deps %}
         <tr>
           <td>{{ d.id }}</td>
           <td><b>{{ d.name }}</b></td>
-          <td class="muted">{{ d.remark or '-' }}</td>
+          <td>{{ d.supervisor_name or '-' }}</td>
+          <td>{{ d.manager_name or '-' }}</td>
           <td>{{ d.user_count }}</td>
           <td class="mono">{{ d.created_at }}</td>
           <td class="ops">
-            <button class="btn btn-xs" onclick="openDepEdit({{ d.id }}, '{{ d.name }}', '{{ d.remark or '' }}')">{{ tr('btn_edit') }}</button>
+            <button class="btn btn-xs" onclick="openDepEdit({{ d.id }}, '{{ d.name }}', '{{ d.remark or '' }}', {{ d.supervisor_id or 'null' }}, {{ d.manager_id or 'null' }})">{{ tr('btn_edit') }}</button>
             <button class="btn btn-xs btn-danger" onclick="delDep({{ d.id }}, '{{ d.name }}')">{{ tr('btn_delete') }}</button>
           </td>
         </tr>
-        {% else %}<tr><td colspan="6" class="muted center">{{ tr('暂无部门') }}</td></tr>{% endfor %}
+        {% else %}<tr><td colspan="7" class="muted center">{{ tr('暂无部门') }}</td></tr>{% endfor %}
       </tbody>
     </table>
   </div>
@@ -43,7 +46,13 @@
     <form class="modal-body" method="post" id="dep-edit-form">
       <label class="f-label">{{ tr('部门名称') }}<input class="f-input" name="name" id="d-name" required></label>
       <label class="f-label">{{ tr('备注') }}<textarea class="f-input" name="remark" id="d-remark" rows="2"></textarea></label>
-      <div class="muted small">{{ tr('改名后，该部门下所有用户的部门会自动同步为新名称。') }}</div>
+      <label class="f-label">{{ tr('一级审批人（主管）') }}
+        <span id="d-supervisor-picker"></span>
+      </label>
+      <label class="f-label">{{ tr('二级审批人（部门管理）') }}
+        <span id="d-manager-picker"></span>
+      </label>
+      <div class="muted small ui-hint">{{ tr('改名后，该部门下所有用户的部门会自动同步为新名称。') }}</div>
       <div class="modal-foot"><button class="btn btn-primary" type="submit">{{ tr('btn_save') }}</button>
       <button class="btn" type="button" onclick="closeModal('dep-edit-modal')">{{ tr('btn_cancel') }}</button></div>
     </form>
@@ -52,15 +61,26 @@
 {% endblock %}
 {% block scripts %}
 <script>
+const DEP_USERS = {{ users | tojson }};
+const SUP_PICK = initApproverPicker({
+  rootId: 'd-supervisor-picker', name: 'supervisor_id',
+  cands: DEP_USERS, base: [], def: null, allowBlank: true, blankLabel: '{{ tr("不指定") }}'
+});
+const MGR_PICK = initApproverPicker({
+  rootId: 'd-manager-picker', name: 'manager_id',
+  cands: DEP_USERS, base: [], def: null, allowBlank: true, blankLabel: '{{ tr("不指定") }}'
+});
 function closeModal(id){ document.getElementById(id).style.display='none'; }
-function openDepEdit(did, name, remark){
+function openDepEdit(did, name, remark, supId, mgrId){
   document.getElementById('dep-edit-form').action='/departments/'+did+'/edit';
   document.getElementById('d-name').value=name;
   document.getElementById('d-remark').value=remark;
+  SUP_PICK.set(supId ? String(supId) : '');
+  MGR_PICK.set(mgrId ? String(mgrId) : '');
   document.getElementById('dep-edit-modal').style.display='flex';
 }
 function delDep(did, name){
-  if(!confirm(TR('确定删除部门')+' '+name+TR(' ？\n{{ tr('（') }}部门下有用户时无法删除{{ tr('）') }}\n删除后进入回收站{{ tr('（') }}')+TR('管理员可恢复')+'{{ tr('）') }}')) return;
+  if(!confirm(TR('确定删除部门')+' '+name+TR(' ？\n（部门下有用户时无法删除）\n删除后进入回收站（')+TR('有权限的用户可恢复')+'）')) return;
   const f=document.createElement('form'); f.method='post'; f.action='/departments/'+did+'/delete';
   document.body.appendChild(f); f.submit();
 }

@@ -1,0 +1,82 @@
+{# SPMS 备件辅料仓管系统 | 作者：菜鸟大叔 (@rookie-uncle / @Colton1982) | 邮箱：510658927@qq.com | QQ：510658927 | Gitee：https://gitee.com/rookie-uncle | GitHub：https://github.com/Colton1982 | Copyright (c) 2026 rookie-uncle. All rights reserved. | Apache-2.0 #}
+{# v1.0.18：改善行动任务监控（从报告归档移到盘点管理页）。
+   依赖上下文：task_groups / task_open / task_done / task_overdue /
+   only_overdue / show_done / today / kw。task_from 由 include 时传入。 #}
+<div class="card" style="margin-top:16px" id="card-stocktake-tasks">
+  <div class="card-title" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+    <span>{{ tr('异常分析与改善任务监控') }}</span>
+    <span class="muted small" style="font-weight:400">{{ tr('未完成 {n} 条', n=task_open) }} · {{ tr('超期 {n} 条', n=task_overdue) }}</span>
+  </div>
+  <div class="muted small ui-hint" style="margin:-6px 0 12px">
+    {{ tr('提交盘点单时每条差异填写的原因与改善处理会生成任务，在这里跟踪责任人与计划完成日期，完成后标记归档。') }}
+    {# v1.0.62：表只读；未结束任务的原因/改善行动由责任人在报告里改写 #}
+    <b>{{ tr('此处仅查看；未结束任务的原因与改善行动、完成/撤销请进入对应盘点报告操作。') }}</b>
+  </div>
+
+  <div class="stat-row" style="margin:4px 0 12px">
+    <div class="stat-card"><div class="stat-label">{{ tr('未完成改善行动') }}</div><div class="stat-num" style="color:{{ 'var(--red)' if task_open else 'var(--green)' }}">{{ task_open }}</div></div>
+    <div class="stat-card"><div class="stat-label">{{ tr('已超期') }}</div><div class="stat-num" style="color:{{ 'var(--red)' if task_overdue else 'var(--green)' }}">{{ task_overdue }}</div></div>
+    <div class="stat-card"><div class="stat-label">{{ tr('已完成改善行动') }}</div><div class="stat-num" style="color:var(--green)">{{ task_done }}</div></div>
+  </div>
+
+  <form method="get" style="display:flex;gap:10px;flex-wrap:wrap;margin:4px 0 12px;align-items:center">
+    <input type="hidden" name="kw" value="{{ kw }}">
+    <label class="f-check small" style="white-space:nowrap">
+      <input type="checkbox" name="task_overdue" value="1" {{ 'checked' if only_overdue }}>{{ tr('只看超期') }}
+    </label>
+    <label class="f-check small" style="white-space:nowrap">
+      <input type="checkbox" name="task_hide_done" value="1" {{ 'checked' if not show_done }}>{{ tr('隐藏已完成任务') }}
+    </label>
+    <button class="btn" type="submit">{{ tr('btn_search') }}</button>
+    <a class="btn" href="{{ url_for('stocktakes_page') }}">{{ tr('btn_reset') }}</a>
+  </form>
+
+  <div class="table-wrap">
+    <table class="table">
+      <thead><tr>
+        <th>{{ tr('料号') }}</th>
+        <th>{{ tr('名称') }}</th>
+        <th>{{ tr('库位') }}</th>
+        <th style="text-align:right">{{ tr('差异') }}</th>
+        <th style="min-width:150px">{{ tr('原因分析') }}</th>
+        <th style="min-width:170px">{{ tr('改善处理') }}</th>
+        <th>{{ tr('责任人') }}</th>
+        <th>{{ tr('计划完成日期') }}</th>
+        <th>{{ tr('状态') }}</th>
+        <th>{{ tr('盘点报告') }}</th>
+      </tr></thead>
+      <tbody>
+        {% for g in task_groups %}
+        <tr><td colspan="10" style="background:var(--panel-2,#f8fafc);font-weight:600">
+          <a href="{{ url_for('stocktake_report', sid=g.rows[0].stocktake_id) }}">{{ g.no }}</a>
+          <span class="muted small" style="font-weight:400"> · {{ tr('创建人') }}{{ mk('：') }}{{ g.by or '—' }} · {{ tr('共 {n} 条', n=g.rows|length) }}</span>
+        </td></tr>
+        {% for t in g.rows %}
+        <tr>
+          <td class="mono small">{{ t.part_code }}</td>
+          <td>{{ t.part_name or '—' }}</td>
+          <td class="small">{{ t.location or '—' }}</td>
+          <td style="text-align:right">{{ t.diff or 0 }}</td>
+          <td class="small" style="white-space:pre-wrap">{{ t.cause or '—' }}</td>
+          <td class="small" style="white-space:pre-wrap">{{ t.action }}</td>
+          <td>{{ t.action_owner or '—' }}</td>
+          <td class="mono" style="white-space:nowrap;color:{{ 'var(--red)' if t.overdue else 'inherit' }}">{{ t.action_due or '—' }}</td>
+          <td>
+            {% if t.is_done %}<span class="badge badge-ok">{{ tr('已完成') }}</span>
+            {% elif t.overdue %}<span class="badge badge-danger">{{ tr('已超期') }}</span>
+            {% else %}<span class="badge badge-warn">{{ tr('未完成') }}</span>{% endif %}
+          </td>
+          <td style="white-space:nowrap">
+            {# v1.0.40：只读监控——不给标记完成按钮，改成进报告操作 #}
+            <a class="btn btn-xs" href="{{ url_for('stocktake_report', sid=t.stocktake_id) }}">{{ tr('进入报告') }}</a>
+            {% if t.is_done %}<div class="muted small" style="margin-top:2px">{{ t.action_done_by or '—' }} · {{ t.action_done_at or '—' }}</div>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+        {% else %}
+        <tr><td colspan="10" style="text-align:center;color:#94a3b8">{{ tr('暂无改善行动任务') }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>

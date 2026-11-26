@@ -1,16 +1,18 @@
+{# SPMS 备件辅料仓管系统 | 作者：菜鸟大叔 (@rookie-uncle / @Colton1982) | 邮箱：510658927@qq.com | QQ：510658927 | Gitee：https://gitee.com/rookie-uncle | GitHub：https://github.com/Colton1982 | Copyright (c) 2026 rookie-uncle. All rights reserved. | Apache-2.0 #}
 {% extends "base.html" %}
-{% block title %}{{ tr('page_transfer') }} - Spare Parts Management System{% endblock %}
-{% block page_title %}>{{ tr('page_transfer') }}{% endblock %}
+{% block title %}{{ tr('page_transfer') }} - Inventory Management System{% endblock %}
+{% block page_title %}{{ tr('page_transfer') }}{% endblock %}
 {% block content %}
 
 <div class="card">
-  <div class="card-title">{{ tr('库位调拨') }}{{ tr('（') }}A库 {{ tr('→') }} B库{{ tr('，') }}{{ tr('库存总量不变') }}{{ tr('）') }}</div>
-  {% if preset_part %}<div class="flash flash-info" style="margin-bottom:10px">{{ tr('已从备件查询带入') }}{{ tr('：') }}<b>{{ preset_name }}</b>{{ tr('（可修改）') }}</div>{% endif %}
+  <div class="card-title">{{ tr('库位调拨') }}</div>
+  <div class="muted small ui-hint" style="margin:-6px 0 12px">{{ tr('A库 → B库') }}{{ mk('，') }}{{ tr('库存总量不变') }}</div>
+  {% if preset_part %}<div class="flash flash-info" style="margin-bottom:10px">{{ tr('已从信息查询带入') }}{{ mk('：') }}<b>{{ preset_name }}</b>{{ tr('（可修改）') }}</div>{% endif %}
   <form class="inline-form" method="post" action="{{ url_for('transfer_do') }}">
     <input type="hidden" name="part_id" id="tr-part-id" value="{{ preset_part or '' }}">
     <span class="part-pick">
-      <button type="button" class="btn" onclick="PartPicker.show('tr-part-id','tr-part-name')">{{ tr('🔍 选择备件…') }}</button>
-      <span id="tr-part-name" class="muted">{% if preset_part %}{{ tr('已选') }}{{ tr('：') }}{{ preset_name }}{% else %}{{ tr('未选择') }}{% endif %}</span>
+      <button type="button" class="btn" onclick="PartPicker.show('tr-part-id','tr-part-name')">{{ tr('🔍 选择物料…') }}</button>
+      <span id="tr-part-name" class="muted">{% if preset_part %}{{ tr('已选') }}{{ mk('：') }}{{ preset_name }}{% else %}{{ tr('未选择') }}{% endif %}</span>
     </span>
     <input class="f-input" type="number" name="quantity" step="1" min="0.01" placeholder="{{ tr('调拨数量') }}" required>
     <select class="f-input" name="from_location" required>
@@ -24,11 +26,12 @@
     <input class="f-input" type="text" name="remark" placeholder="{{ tr('备注(可空)') }}">
     <button class="btn btn-primary" type="submit">{{ tr('执行调库') }}</button>
   </form>
-  <div class="muted small">{{ tr('备件选择') }}{{ tr('：') }}{{ tr('点击') }}{{ tr('「') }}{{ tr('选择备件') }}{{ tr('」') }}{{ tr('弹出搜索框') }}{{ tr('，') }}{{ tr('支持按') }} {{ tr('料号') }}/{{ tr('名称') }}/{{ tr('规格') }} {{ tr('关键词搜索') }}{{ tr('调出库位库存不足时将无法执行；如需新库位请先在直接入库中录入') }}{{ tr('。') }}</div>
+  <div class="muted small ui-hint">{{ tr('物料选择') }}{{ mk('：') }}{{ tr('点击') }}{{ mk('「') }}{{ tr('选择物料') }}{{ mk('」') }}{{ tr('弹出搜索框') }}{{ mk('，') }}{{ tr('支持按') }} {{ tr('料号') }}/{{ tr('名称') }}/{{ tr('规格') }} {{ tr('关键词搜索') }}{{ tr('调出库位库存不足时将无法执行；如需新库位请先在直接入库中录入') }}{{ mk('。') }}</div>
 </div>
 
 <div class="card">
-  <div class="card-title">{{ tr('调库记录') }}{{ tr('（') }}{{ tr('近 100 条') }}{{ tr('）') }}</div>
+  <div class="card-title">{{ tr('调库记录') }}</div>
+  <div class="muted small ui-hint" style="margin:-6px 0 12px">{{ tr('近 100 条') }}</div>
   <div class="table-wrap">
     <table class="table">
       <thead><tr><th>{{ tr('th_no') }}</th><th>{{ tr('th_time') }}</th><th>{{ tr('th_part') }}</th><th>{{ tr('方向') }}</th><th>{{ tr('th_location') }}</th><th>{{ tr('th_quantity') }}</th><th>{{ tr('th_operator') }}</th><th>{{ tr('备注') }}</th></tr></thead>

@@ -1,0 +1,17 @@
+# ===== 敏感与运行时文件（严禁提交） =====
+settings.json
+data/
+runtime/
+logs/
+__pycache__/
+*.pyc
+
+# ===== 编辑器/系统 =====
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# ===== 内部工作产物（不随开源发布） =====
+concat_worklist.csv

@@ -1,9 +1,10 @@
+{# SPMS 备件辅料仓管系统 | 作者：菜鸟大叔 (@rookie-uncle / @Colton1982) | 邮箱：510658927@qq.com | QQ：510658927 | Gitee：https://gitee.com/rookie-uncle | GitHub：https://github.com/Colton1982 | Copyright (c) 2026 rookie-uncle. All rights reserved. | Apache-2.0 #}
 <!DOCTYPE html>
-<html lang="{{ request.args.get('lang') or session.get('lang') or 'zh' }}">
+<html lang="{{ cur_lang }}" dir="{{ cur_dir or 'ltr' }}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Spare Parts Management System · Data Screen</title>
+<title>Inventory Management System · Data Screen</title>
 <style>
   :root{ {{ screen_style }} }
   *{ box-sizing:border-box; margin:0; padding:0; }
@@ -36,28 +37,53 @@
              font-variant-numeric:tabular-nums; letter-spacing:1px; line-height:1; }
   #sc-clock .clk-date{ font-size:12px; color:var(--sub); margin-left:10px; letter-spacing:.5px; }
   #screen-grid{
-    position:relative; z-index:1; width:100%;
-    height:calc(100% - 72px);
-    padding:14px;
+    display:flex;
+    flex-direction:column;
+    gap:4px;
+    padding:6px;
+    width:100%;
+    height: calc(100vh - 72px);
+    overflow: hidden;
+  }
+  .scr-row{
+    display:flex;
+    flex-direction:row;
+    gap:4px;
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
+  }
+  .scr-col{
+    display:flex;
+    flex-direction:column;
+    gap:4px;
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
   }
   .scr-card-abs{
-    position:absolute;
-    transition:left .35s ease, top .35s ease, width .35s ease, height .35s ease;
+    display:flex; flex-direction:column;
+    min-height: 0;
+    flex: 1;
+    min-width: 0;
   }
   .scr-card{
     width:100%; height:100%; position:relative;
     background:var(--card);
     border:1px solid var(--cardb);
     border-radius:12px;
-    padding:6px 11px;
+    padding:8px 14px;
     display:flex; flex-direction:column;
     overflow:hidden;
     box-shadow:0 4px 16px rgba(0,0,0,.18);
   }
   body.dark .scr-card{
     background:var(--card);
-    border:1px solid rgba(148,163,184,.22);
-    box-shadow:0 6px 18px rgba(0,0,0,.35);
+    /* v1.0.11：描边必须跟着色系走。以前这里写死灰边，把 SCREEN_PALETTES.cardb
+       整个盖掉了 —— 换色系时卡片边框永远不变，正是「看着没变化」的元凶。 */
+    border:1px solid var(--cardb);
+    box-shadow:0 6px 18px rgba(0,0,0,.35),
+               0 0 16px color-mix(in srgb, var(--accent) 14%, transparent);
   }
   .scr-card-title{
     font-size:12.5px; font-weight:600; color:var(--label);
@@ -72,16 +98,56 @@
     content:''; width:4px; height:12px; border-radius:2px;
     background:var(--accent); flex:none;
   }
-  .scr-card-body{ flex:1; min-height:0; position:relative; overflow:hidden; }
-  .scr-card-body table{ width:100%; border-collapse:collapse; font-size:11.5px; }
-  .scr-card-body th, .scr-card-body td{ padding:2px 6px; text-align:left; white-space:nowrap; }
+  .scr-card-body{ flex:1; min-height:0; position:relative; overflow:hidden; overflow-x:hidden; }
+  /* 仅库存预警、出入库流水列表允许滚动，隐藏滚动条 */
+  #card-body-alerts, #card-body-recent_tx{ overflow-y:auto; scrollbar-width:none; }
+  #card-body-alerts::-webkit-scrollbar, #card-body-recent_tx::-webkit-scrollbar{ display:none; }
+  /* 固定表格布局 + 省略号：库位码（WH-02-R-01-S-01-B-02）、操作人名这类长串
+     在 3 格宽的卡片里会把表撑出卡片边界，压到右边相邻卡上。 */
+  .scr-card-body table{ width:100%; border-collapse:collapse; font-size:11.5px; table-layout:fixed; }
+  .scr-card-body th, .scr-card-body td{ padding:2px 6px; text-align:left; white-space:nowrap;
+    overflow:hidden; text-overflow:ellipsis; }
   .scr-card-body th{ color:var(--label); font-weight:600; border-bottom:1px solid var(--cardb); }
   .scr-card-body tr:nth-child(even) td{ background:var(--cardb); }
   .scr-card-body td.num{ text-align:right; }
   .scr-card-body .mono{ font-family:Consolas,Menlo,monospace; }
+  /* 分类占比卡：金额饼 / 数量饼并排（卡片偏扁）或上下叠（卡片偏高）。
+     每块自带一个小标题，否则两个饼颜色一样，看不出哪个是按金额、哪个是按数量。 */
+  .cat-pies{ position:absolute; inset:0; display:flex; gap:6px; }
+  .cat-pies.col{ flex-direction:column; }
+  .cat-pie{ flex:1 1 0; min-width:0; min-height:0; display:flex; flex-direction:column; }
+  .cat-cap{ flex:0 0 auto; font-size:10.5px; line-height:13px; color:var(--label); opacity:.75;
+            padding-left:2px; letter-spacing:.3px; }
+  .cat-pies.col .cat-cap{ text-align:center; }
+  /* flex:1 1 0 —— 高度完全由 flex 分配（charts.js 会把量到的尺寸钉进内联 height，
+     basis=0 时那条内联高度不参与主轴计算，重绘不会一次比一次矮）。 */
+  .cat-pie canvas{ flex:1 1 0; min-height:0; width:100%; display:block; }
   .muted{ color:var(--sub); }
-  .num-lg{ font-size:24px; font-weight:700; color:var(--num); line-height:1.15; }
-  .sub-sm{ font-size:10px; color:var(--sub); margin-top:2px; line-height:1.3; }
+  .num-lg{ font-size:30px; font-weight:700; color:var(--num); line-height:1.15; }
+  .sub-sm{ font-size:12px; color:var(--sub); margin-top:4px; line-height:1.3; }
+  /* KPI 卡（1 格高的窄卡）：数字与上期说明共处一行，越界就换行，绝不让字被裁掉 */
+  .stat-mini{ display:flex; align-items:baseline; gap:8px; height:100%;
+              flex-wrap:wrap; overflow:hidden; align-content:center; }
+  /* 字号跟视口高度走：1080p 上仍是 26px，768 高的小屏自动收到 18px 左右，
+     否则 KPI 卡只有 1 格高、数字会被上下切掉半个 */
+  .stat-mini .num-lg{ font-size:clamp(17px, 2.4vh, 26px); flex:none; }
+  .stat-mini .sub-sm{ font-size:clamp(9px, 1vh, 10.5px); margin-top:0; flex:1 1 auto; min-width:0;
+                      white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  /* 待处理申请卡同样被压窄：两组「数字 + 标签」横排，字号收小，允许折行 */
+  .pend-mini{ display:flex; align-items:baseline; gap:16px; height:100%;
+              flex-wrap:wrap; overflow:hidden; align-content:center; }  .pend-mini .pm-item{ display:flex; align-items:baseline; gap:6px; flex:0 1 auto; min-width:0;
+                       font-size:clamp(9px, 1vh, 10.5px); color:var(--sub); white-space:nowrap; }
+  .pend-mini .pm-item > span{ min-width:0; overflow:hidden; text-overflow:ellipsis; }
+  .pend-mini .pm-item b{ font-size:clamp(17px, 2.2vh, 24px); font-weight:700; color:var(--num); line-height:1.1; flex:none; }
+  .pend-mini .pm-item b.warn{ color:var(--alert_low); }
+  /* 库存总览卡：1 格高窄卡正文只有 ~40px，三项做成一行摘要（数字大、标签小，超长省略） */
+  .so-mini{ display:flex; align-items:center; height:100%; overflow:hidden; }
+  .so-mini .so-line{ font-size:clamp(9px, 1.05vh, 10.5px); color:var(--sub);
+                     white-space:nowrap; overflow:hidden; text-overflow:ellipsis; line-height:1.2; }
+  .so-mini .so-line > span{ margin-right:11px; }
+  .so-mini .so-line > span:last-child{ margin-right:0; }
+  .so-mini .so-line b{ font-size:clamp(13px, 1.7vh, 17px); font-weight:700; color:var(--num);
+                       margin-right:4px; font-variant-numeric:tabular-nums; }
   .pill{
     display:inline-block; padding:1px 8px; border-radius:10px;
     font-size:11px; font-weight:600;
@@ -102,11 +168,370 @@
 .tx-scroll{overflow:hidden;position:relative;width:100%}
 .tx-scroll table{width:100%;border-collapse:collapse;white-space:nowrap}
 @keyframes txMarquee{0%{transform:translateY(0)}100%{transform:translateY(-50%)}}
+
+/* ==================== 样式（只管形状）+ 色系（只管颜色） ====================
+   v1.0.10 起大屏拆成三个独立维度：样式 = 形状语言，色系 = 颜色，排版 = 卡片坐标。
+   颜色一律来自 :root 的 --sbg / --card / --num / --accent …,由色系生成；
+   这里只写圆角、切角、描边、标题标记、底纹。
+   铁律：这个区块里不允许出现硬编码色值（#xxx / rgb()），否则配「珍珠白」时整片糊掉；
+   需要半透明就用 color-mix(in srgb, var(--num) 22%, transparent)。 */
+body[class*="skin-"] .scr-card-title{ font-size:12px; letter-spacing:1.2px; font-weight:500; }
+body[class*="skin-"] .scr-card{ padding:10px 16px; }
+body[class*="skin-"] #screen-grid{ padding:10px 14px; gap:10px; }
+body[class*="skin-"] .scr-row, body[class*="skin-"] .scr-col{ gap:10px; }
+/* KPI 卡竖排：大数字在上、说明在下。以前只在「高端皮肤」开，因为只有它们的排版
+   给 KPI 留了 1.4~1.5 格；现在排版与样式解耦，五套样式统一竖排，
+   小屏由下面的 max-height 媒体查询把字号收回来。 */
+body[class*="skin-"] .stat-mini{
+  flex-direction:column; flex-wrap:nowrap; align-content:flex-start;
+  align-items:flex-start; justify-content:center; gap:2px;
+}
+body[class*="skin-"] .stat-mini .num-lg{
+  font-size:clamp(22px, 3.4vh, 38px); font-weight:800; letter-spacing:-.5px;
+  font-variant-numeric:tabular-nums;
+}
+body[class*="skin-"] .stat-mini .sub-sm{
+  font-size:clamp(9px, 1.05vh, 11px); letter-spacing:.3px; white-space:normal;
+}
+/* 1366×768 / 1280×720 这类小屏：KPI 卡只有 80 来像素，标题+数字+说明挤不下，
+   必须把数字和行距一起收，否则说明那行会被上下裁掉半截 */
+@media (max-height: 820px){
+  body[class*="skin-"] .scr-card{ padding:7px 12px; }
+  body[class*="skin-"] #screen-grid{ padding:7px 10px; gap:7px; }
+  body[class*="skin-"] .scr-row, body[class*="skin-"] .scr-col{ gap:7px; }
+  body[class*="skin-"] .scr-card-title{ font-size:11px; padding-bottom:3px; margin-bottom:3px; }
+  body[class*="skin-"] .stat-mini{ gap:0; }
+  body[class*="skin-"] .stat-mini .num-lg{ font-size:clamp(17px, 2.5vh, 24px); line-height:1.1; }
+  body[class*="skin-"] .stat-mini .sub-sm{ font-size:9.5px; line-height:1.2; }
+}
+
+/* ---- ① 深空极光：玻璃流光 · 柔边圆角 ----
+   玻璃拟态的关键是「一层薄雾 + 顶沿一道高光」：卡片半透明、16px 圆角、
+   背景两团柔光斑；标题用发光线体标记，数字是白→主色的竖向渐变。
+   全部颜色走变量，换成鎏金就是金色玻璃，换成珍珠白就是磨砂白玻璃。 */
+body.skin-aurora{
+  background:
+    radial-gradient(circle at 12% -6%, color-mix(in srgb, var(--num) 24%, transparent), transparent 58%),
+    radial-gradient(circle at 88% 108%, color-mix(in srgb, var(--accent) 20%, transparent), transparent 60%),
+    linear-gradient(160deg, var(--sbg), var(--sbg2));
+}
+body.skin-aurora .scr-card{
+  background:linear-gradient(160deg,
+      color-mix(in srgb, var(--card) 88%, transparent),
+      color-mix(in srgb, var(--sbg2) 74%, transparent));
+  border:1px solid color-mix(in srgb, var(--num) 20%, transparent);
+  border-radius:16px;
+  box-shadow:0 10px 34px color-mix(in srgb, var(--sbg) 62%, transparent),
+             inset 0 1px 0 rgba(255,255,255,.10);
+  backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
+}
+body.skin-aurora .scr-card::before{
+  content:''; position:absolute; left:14px; right:14px; top:0; height:1px;
+  background:linear-gradient(90deg,transparent, color-mix(in srgb, var(--num) 70%, transparent), transparent);
+}
+body.skin-aurora .scr-card-title{ position:relative; border-bottom:none; color:var(--num); letter-spacing:2.2px; }
+body.skin-aurora .scr-card-title::before{
+  background:linear-gradient(180deg, var(--num), var(--accent));
+  box-shadow:0 0 10px color-mix(in srgb, var(--num) 60%, transparent);
+}
+body.skin-aurora .scr-card-title::after{
+  content:''; position:absolute; left:0; right:0; bottom:0; height:1px;
+  background:linear-gradient(90deg, color-mix(in srgb, var(--num) 48%, transparent),
+              color-mix(in srgb, var(--accent) 32%, transparent), transparent);
+}
+body.dark.skin-aurora .num-lg{
+  background:linear-gradient(180deg,#ffffff, var(--num));
+  -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;
+  text-shadow:none;
+}
+body.light.skin-aurora .num-lg{ color:var(--num); }
+body.skin-aurora .scr-card-body tr:nth-child(even) td{ background:color-mix(in srgb, var(--num) 6%, transparent); }
+body.dark.skin-aurora #sc-title{
+  background:linear-gradient(90deg,#ffffff, var(--num));
+  -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;
+}
+body.light.skin-aurora #sc-title{ color:var(--title); }
+
+/* ---- ② 指挥舱：仪表 HUD · 四角括号 ----
+   数据舱语言：卡片四角各一段折角括号、底纹是 44px 网格、主趋势标题下压一条
+   渐隐短线；数字冰白加冷光晕（不是彩色），远看像仪表读数。 */
+body.skin-command{
+  background:
+    radial-gradient(1100px 540px at 50% 0%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 70%),
+    linear-gradient(color-mix(in srgb, var(--accent) 7%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--accent) 7%, transparent) 1px, transparent 1px),
+    linear-gradient(135deg, var(--sbg), var(--sbg2));
+  background-size:auto, 44px 44px, 44px 44px, auto;
+}
+body.skin-command .scr-card{
+  background:
+    linear-gradient(var(--accent),var(--accent)) left 0 top 0/14px 2px,
+    linear-gradient(var(--accent),var(--accent)) left 0 top 0/2px 14px,
+    linear-gradient(var(--accent),var(--accent)) right 0 top 0/14px 2px,
+    linear-gradient(var(--accent),var(--accent)) right 0 top 0/2px 14px,
+    linear-gradient(var(--accent),var(--accent)) left 0 bottom 0/14px 2px,
+    linear-gradient(var(--accent),var(--accent)) left 0 bottom 0/2px 14px,
+    linear-gradient(var(--accent),var(--accent)) right 0 bottom 0/14px 2px,
+    linear-gradient(var(--accent),var(--accent)) right 0 bottom 0/2px 14px,
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--card) 94%, transparent),
+      color-mix(in srgb, var(--sbg) 92%, transparent));
+  background-repeat:no-repeat;
+  border:1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+  border-radius:6px;
+  box-shadow:0 6px 24px color-mix(in srgb, var(--sbg) 58%, transparent),
+             inset 0 0 34px color-mix(in srgb, var(--accent) 7%, transparent);
+}
+body.skin-command .scr-card-title{ position:relative; border-bottom:none; color:var(--num); letter-spacing:2px; }
+body.skin-command .scr-card-title::before{ background:var(--accent); }
+body.dark.skin-command .scr-card-title::before{ box-shadow:0 0 10px color-mix(in srgb, var(--accent) 70%, transparent); }
+body.skin-command .scr-card-title::after{
+  content:''; position:absolute; left:0; bottom:0; height:2px; width:42%;
+  background:linear-gradient(90deg,var(--accent),transparent);
+}
+body.skin-command .num-lg{ color:var(--num); }
+body.dark.skin-command .num-lg{ text-shadow:0 0 20px color-mix(in srgb, var(--num) 30%, transparent); }
+body.skin-command #sc-title{ color:var(--title); }
+body.dark.skin-command #sc-title{ text-shadow:0 0 18px color-mix(in srgb, var(--accent) 30%, transparent); }
+body.skin-command #sc-head::after{ background:linear-gradient(90deg,transparent,var(--cardb),transparent); }
+
+/* ---- ③ 锻炉钢板：直角切角 · 工业钢线 ----
+   直角、右上 45° 切角（clip-path）、斜切平行四边形标题标记、锻痕虚线、
+   底部熔光 + 斜向钢纹；数字纯色压一层暖光，不做渐变（钢板不反光）。
+   切角是这套的身份，任何配色都不能把它抹掉。 */
+body.skin-ember{
+  background:
+    radial-gradient(1200px 300px at 50% 108%, color-mix(in srgb, var(--num) 22%, transparent), transparent 72%),
+    radial-gradient(900px 480px at 88% -14%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 64%),
+    repeating-linear-gradient(135deg, color-mix(in srgb, var(--num) 4%, transparent) 0 2px, transparent 2px 14px),
+    linear-gradient(170deg, var(--sbg), var(--sbg2));
+}
+body.skin-ember .scr-card{
+  background:linear-gradient(180deg, var(--card), color-mix(in srgb, var(--card) 84%, var(--sbg)));
+  border:1px solid color-mix(in srgb, var(--num) 20%, transparent);
+  border-radius:0;
+  clip-path:polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 0 100%);
+}
+body.skin-ember .scr-card::before{
+  content:''; position:absolute; left:0; top:0; width:56px; height:2px;
+  background:linear-gradient(90deg, color-mix(in srgb, var(--num) 85%, transparent), transparent);
+}
+body.skin-ember .scr-card-title{
+  color:var(--sub); letter-spacing:2.5px;
+  border-bottom:1px dashed color-mix(in srgb, var(--num) 24%, transparent);
+}
+body.skin-ember .scr-card-title::before{
+  width:10px; height:10px; border-radius:0;
+  transform:skewX(-20deg);
+  background:linear-gradient(120deg, color-mix(in srgb, var(--num) 60%, #ffffff), var(--num));
+  box-shadow:2px 0 6px color-mix(in srgb, var(--num) 40%, transparent);
+}
+body.skin-ember .num-lg{ color:var(--num); }
+body.dark.skin-ember .num-lg{ text-shadow:0 2px 14px color-mix(in srgb, var(--num) 35%, transparent); }
+body.skin-ember #sc-title{ letter-spacing:6px; color:var(--title); }
+body.skin-ember #sc-head::after{ background:linear-gradient(90deg,transparent,color-mix(in srgb, var(--num) 42%, transparent),transparent); }
+
+/* ---- ④ 绢面鎏金：大圆角双环 · 轻奢 ----
+   宴会厅而不是指挥室：20px 大圆角、描边之外再垫一圈同色内衬（双环）、
+   标题标记是一颗发亮圆珠 + 下方居中装饰线、卡片底沿一道收边线；
+   数字是「白→主色→强调色」的横向渐变，像烫在绢面上的字。 */
+body.skin-rose{
+  background:
+    radial-gradient(900px 500px at 50% -18%, color-mix(in srgb, var(--num) 16%, transparent), transparent 66%),
+    radial-gradient(700px 420px at 10% 108%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 66%),
+    linear-gradient(160deg, var(--sbg), var(--sbg2));
+}
+body.skin-rose .scr-card{
+  background:
+    linear-gradient(115deg, rgba(255,255,255,.05), rgba(255,255,255,0) 34%),
+    linear-gradient(180deg, var(--card), color-mix(in srgb, var(--card) 82%, var(--sbg)));
+  border:1px solid color-mix(in srgb, var(--num) 24%, transparent);
+  border-radius:20px;
+  box-shadow:0 16px 36px color-mix(in srgb, var(--sbg) 55%, transparent),
+             inset 0 0 0 1px color-mix(in srgb, var(--num) 14%, transparent);
+}
+body.skin-rose .scr-card::before{ content:none; }
+body.skin-rose .scr-card::after{
+  content:''; position:absolute; left:22%; right:22%; bottom:0; height:1px;
+  background:linear-gradient(90deg, transparent, color-mix(in srgb, var(--num) 42%, transparent), transparent);
+}
+body.skin-rose .scr-card-title{ position:relative; color:var(--num); letter-spacing:3px; border-bottom:none; }
+body.skin-rose .scr-card-title::before{
+  width:7px; height:7px; border-radius:50%;
+  background:radial-gradient(circle at 34% 30%, #ffffff, var(--num) 72%);
+  box-shadow:0 0 9px color-mix(in srgb, var(--num) 65%, transparent);
+}
+body.skin-rose .scr-card-title::after{
+  content:''; position:absolute; left:50%; bottom:0; height:2px; width:46%;
+  transform:translateX(-50%);
+  background:linear-gradient(90deg, transparent, color-mix(in srgb, var(--num) 55%, transparent), transparent);
+}
+body.dark.skin-rose .num-lg{
+  background:linear-gradient(100deg,#ffffff 6%, var(--num) 58%, var(--accent));
+  -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;
+  text-shadow:none;
+}
+body.light.skin-rose .num-lg{ color:var(--num); }
+body.skin-rose #sc-title{ letter-spacing:5px; color:var(--title); }
+body.skin-rose #sc-head::after{ background:linear-gradient(90deg,transparent,color-mix(in srgb, var(--num) 42%, transparent),transparent); }
+
+/* ---- ⑤ 声呐深潜：线框竖边 · 冷静耐看 ----
+   去圆角、去上下边框，只留左右两条竖线（左粗右细，像水族箱隔断）、
+   顶部一条虚线缝；底纹是一圈圈荡开的声呐波纹；标题标记是短横杠；
+   数字单色 + 微光晕。最克制的一套，长时间盯屏不累。 */
+body.skin-aqua{
+  background:
+    repeating-radial-gradient(circle at 20% 6%, color-mix(in srgb, var(--num) 9%, transparent) 0 1px, transparent 1px 84px),
+    radial-gradient(1000px 520px at 84% 112%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 66%),
+    linear-gradient(168deg, var(--sbg), var(--sbg2));
+}
+body.skin-aqua .scr-card{
+  background:color-mix(in srgb, var(--card) 88%, transparent);
+  border:none;
+  border-left:2px solid color-mix(in srgb, var(--num) 48%, transparent);
+  border-right:1px solid color-mix(in srgb, var(--num) 14%, transparent);
+  border-radius:2px;
+  box-shadow:inset 0 0 30px color-mix(in srgb, var(--num) 6%, transparent);
+}
+body.skin-aqua .scr-card::before{
+  content:''; position:absolute; left:0; right:0; top:0; height:1px;
+  background:repeating-linear-gradient(90deg, color-mix(in srgb, var(--num) 45%, transparent) 0 10px, transparent 10px 18px);
+}
+body.skin-aqua .scr-card-title{ position:relative; color:var(--num); letter-spacing:2px; border-bottom:none; }
+body.skin-aqua .scr-card-title::before{
+  width:12px; height:3px; border-radius:1px;
+  background:var(--accent);
+}
+body.dark.skin-aqua .scr-card-title::before{ box-shadow:0 0 8px color-mix(in srgb, var(--accent) 55%, transparent); }
+body.skin-aqua .scr-card-title::after{
+  content:''; position:absolute; left:0; bottom:0; height:1px; width:100%;
+  background:linear-gradient(90deg, color-mix(in srgb, var(--num) 30%, transparent), transparent 72%);
+}
+body.skin-aqua .num-lg{ color:var(--num); }
+body.dark.skin-aqua .num-lg{ text-shadow:0 0 16px color-mix(in srgb, var(--num) 30%, transparent); }
+body.skin-aqua #sc-title{ letter-spacing:4px; color:var(--title); }
+body.skin-aqua #sc-head::after{ background:linear-gradient(90deg,transparent,color-mix(in srgb, var(--num) 38%, transparent),transparent); }
+
+/* ---- ⑥ 星舰舰桥：梯形舰桥 · 斜角标签 · 星点 ----
+   参考图那种展馆语言：顶部居中梯形舰桥标题栏（两侧斜切收口、底沿一道亮线），
+   背景三组不同周期的细星点，卡片四角括号比指挥舱更粗更亮，
+   卡片标题换成带斜角的小标签块。颜色全部走色系变量，浅底由本段末尾覆盖。
+   DOM 一个没加：梯形板是 #sc-head::before，标题靠 flex 居中、LOGO/时钟绝对定位。 */
+body.skin-bridge{
+  background:
+    radial-gradient(circle at 12% 18%, color-mix(in srgb, var(--title) 46%, transparent) 0 1px, transparent 1.7px),
+    radial-gradient(circle at 68% 42%, color-mix(in srgb, var(--accent) 52%, transparent) 0 1px, transparent 1.7px),
+    radial-gradient(circle at 34% 78%, color-mix(in srgb, var(--num) 46%, transparent) 0 1px, transparent 1.7px),
+    radial-gradient(1200px 520px at 50% -12%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 68%),
+    linear-gradient(170deg, var(--sbg), var(--sbg2));
+  background-size:137px 121px, 191px 167px, 223px 197px, auto, auto;
+}
+body.skin-bridge #sc-head{ justify-content:center; text-align:center; }
+body.skin-bridge #sc-head::before{
+  content:''; position:absolute; left:50%; top:0; transform:translateX(-50%);
+  width:min(58%, 760px); height:100%; z-index:0;
+  background:
+    linear-gradient(180deg, transparent calc(100% - 2px), var(--accent) 0),
+    linear-gradient(180deg, color-mix(in srgb, var(--head2) 92%, transparent),
+                            color-mix(in srgb, var(--head) 88%, transparent));
+  clip-path:polygon(7% 0, 93% 0, 100% 100%, 0 100%);
+  box-shadow:0 0 26px color-mix(in srgb, var(--accent) 24%, transparent);
+}
+body.skin-bridge #sc-head::after{
+  height:2px;
+  background:linear-gradient(90deg, transparent 0, var(--cardb) 12%, var(--accent) 50%, var(--cardb) 88%, transparent 100%);
+}
+body.skin-bridge #sc-head > div:not(#sc-clock){ position:relative; z-index:1; }
+body.skin-bridge #sc-head img{
+  position:absolute; left:28px; top:50%; transform:translateY(-50%); z-index:1;
+}
+body.skin-bridge #sc-clock{
+  position:absolute; right:28px; top:50%; transform:translateY(-50%);
+  margin-left:0; z-index:1;
+}
+body.skin-bridge .scr-card{
+  background:
+    linear-gradient(var(--accent),var(--accent)) left 0 top 0/18px 2px,
+    linear-gradient(var(--accent),var(--accent)) left 0 top 0/2px 18px,
+    linear-gradient(var(--accent),var(--accent)) right 0 top 0/18px 2px,
+    linear-gradient(var(--accent),var(--accent)) right 0 top 0/2px 18px,
+    linear-gradient(var(--accent),var(--accent)) left 0 bottom 0/18px 2px,
+    linear-gradient(var(--accent),var(--accent)) left 0 bottom 0/2px 18px,
+    linear-gradient(var(--accent),var(--accent)) right 0 bottom 0/18px 2px,
+    linear-gradient(var(--accent),var(--accent)) right 0 bottom 0/2px 18px,
+    linear-gradient(180deg, color-mix(in srgb, var(--card) 94%, transparent),
+                            color-mix(in srgb, var(--sbg) 90%, transparent));
+  background-repeat:no-repeat;
+  border:1px solid color-mix(in srgb, var(--accent) 26%, transparent);
+  border-radius:4px;
+  box-shadow:0 6px 22px color-mix(in srgb, var(--sbg) 55%, transparent),
+             inset 0 0 28px color-mix(in srgb, var(--accent) 8%, transparent);
+}
+body.skin-bridge .scr-card-title{
+  position:relative; width:fit-content; max-width:100%;
+  border-bottom:none; padding:3px 14px 3px 10px; margin-bottom:6px;
+  color:var(--title); letter-spacing:1.4px;
+  background:
+    linear-gradient(var(--accent),var(--accent)) left 0/2px 100% no-repeat,
+    color-mix(in srgb, var(--accent) 26%, transparent);
+  clip-path:polygon(0 0, calc(100% - 8px) 0, 100% 100%, 8px 100%);
+}
+body.skin-bridge .scr-card-title::before{ display:none; }
+body.skin-bridge .scr-card-title::after{
+  content:''; position:absolute; left:0; right:0; bottom:0; height:1px;
+  background:color-mix(in srgb, var(--num) 40%, transparent);
+}
+body.skin-bridge .num-lg{ color:var(--num); }
+body.skin-bridge #sc-title{ letter-spacing:3px; color:var(--title); }
+body.light.skin-bridge{
+  background:
+    radial-gradient(circle at 12% 18%, color-mix(in srgb, var(--num) 10%, transparent) 0 1px, transparent 1.7px),
+    radial-gradient(circle at 68% 42%, color-mix(in srgb, var(--num) 8%, transparent) 0 1px, transparent 1.7px),
+    linear-gradient(170deg, var(--sbg), var(--sbg2));
+  background-size:137px 121px, 191px 167px, auto;
+}
+/* 浅底：梯形板别用深色的 --head，否则在白底上糊成一块灰斑；改用品牌浅蓝白。
+   卡片内部把 --accent 局部重定向到 --num，四角括号 / 斜角标签 / 描边统一跟蓝色主数字，
+   避免珍珠白那套橙色强调色在白底蓝字里乱跳。 */
+body.light.skin-bridge #sc-head::before{
+  background:
+    linear-gradient(180deg, transparent calc(100% - 2px), var(--num) 0),
+    linear-gradient(180deg, color-mix(in srgb, var(--sbg2) 88%, transparent),
+                            color-mix(in srgb, var(--card) 78%, transparent));
+  box-shadow:none;
+}
+body.light.skin-bridge #sc-head::after{
+  background:linear-gradient(90deg, transparent 0, var(--cardb) 12%, var(--num) 50%, var(--cardb) 88%, transparent 100%);
+}
+body.light.skin-bridge .scr-card{ --accent: var(--num); }
+body.light.skin-bridge .scr-card-title{
+  background:
+    linear-gradient(var(--num),var(--num)) left 0/2px 100% no-repeat,
+    color-mix(in srgb, var(--num) 12%, transparent);
+}
+
+/* ---- v1.0.11 赛博发光：颜色全走色系变量，浅底自动关掉 ----
+   放在五套皮肤之后，用 [class*="skin-"] 抬特异性，统一压过各皮肤里偏弱的旧 text-shadow；
+   只动 text-shadow，不碰各皮肤用来做形状的 box-shadow（双环 / 玻璃 / 切角都靠它）。 */
+body.dark[class*="skin-"] .num-lg{
+  text-shadow:0 0 8px color-mix(in srgb, var(--num) 60%, transparent),
+              0 0 26px color-mix(in srgb, var(--num) 38%, transparent);
+}
+body.dark[class*="skin-"] #sc-title{
+  text-shadow:0 0 10px color-mix(in srgb, var(--accent) 60%, transparent),
+              0 0 30px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+body.dark[class*="skin-"] .scr-card-title{
+  text-shadow:0 0 10px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+body.light[class*="skin-"] .num-lg,
+body.light[class*="skin-"] #sc-title,
+body.light[class*="skin-"] .scr-card-title{ text-shadow:none; }
 </style>
 </head>
-<body class="{{ 'light' if screen_light else 'dark' }}">
+<body class="{{ 'light' if screen_light else 'dark' }} skin-{{ cfg.style }}">
   <div id="sc-head">
-    {% if screen_brand.logo_file %}<img id="sc-logo" src="{{ url_for('media', fname=screen_brand.logo_file) }}" alt="">{% endif %}
+    {% if cfg.sb_show_logo and screen_brand.logo_file %}<img id="sc-logo" src="{{ url_for('media', fname=screen_brand.logo_file) }}" alt="">{% endif %}
     <div>
       <div id="sc-title" {% if screen_brand.title_color and not screen_light %}style="color:{{ screen_brand.title_color }}"{% endif %}>{{ screen_brand.title }}</div>
       <div id="sc-subtitle" {% if screen_brand.subtitle_color and not screen_light %}style="color:{{ screen_brand.subtitle_color }}"{% endif %}>{{ screen_brand.subtitle }}</div>
@@ -115,23 +540,73 @@
   </div>
 
   <div id="screen-grid">
-    {% for key, meta in screen_cards.items() %}
-    <div class="scr-card-abs" id="card-{{ key }}" data-mod="{{ meta.module }}">
-      <div class="scr-card">
-        <div class="scr-card-title">{{ meta.label }}</div>
-        <div class="scr-card-body" id="card-body-{{ key }}">{% if key in screen_chart_cards %}<canvas id="chart-{{ key }}"></canvas>{% endif %}</div>
+    {# 递归渲染布局树：col/row 都是 flex 容器，卡片按 flex 权重占位。
+       跨行卡片（如跨两行的分类占比饼）就是靠「左边一列 + 右边一张横跨两行」表达出来的。 #}
+    {%- macro render_node(node) -%}
+      {%- if node.t == 'card' -%}
+      <div class="scr-card-abs" id="card-{{ node.key }}" data-mod="{{ screen_cards[node.key].module }}" style="flex:{{ node.flex }};">
+        <div class="scr-card">
+          <div class="scr-card-title">{{ screen_cards[node.key].label }}</div>
+          <div class="scr-card-body" id="card-body-{{ node.key }}">{% if node.key == 'category' %}<div class="cat-pies" id="cat-pies">
+              <div class="cat-pie"><span class="cat-cap">{{ tr('金额') }}</span><canvas id="chart-category"></canvas></div>
+              <div class="cat-pie"><span class="cat-cap">{{ tr('数量') }}</span><canvas id="chart-category-qty"></canvas></div>
+            </div>{% elif node.key in screen_chart_cards %}<canvas id="chart-{{ node.key }}"></canvas>{% endif %}</div>
+        </div>
       </div>
-    </div>
-    {% endfor %}
+      {%- else -%}
+      <div class="scr-{{ node.t }}" style="flex:{{ node.flex }};">
+        {%- for ch in node.children %}{{ render_node(ch) }}{%- endfor -%}
+      </div>
+      {%- endif -%}
+    {%- endmacro -%}
+    {% if layout_tree %}{{ render_node(layout_tree) }}{% endif %}
   </div>
 
   <script>
     window._TRJSON = {{ tr_json | tojson | safe }};
-    window.TR = function(k){ return (window._TRJSON && Object.prototype.hasOwnProperty.call(window._TRJSON, k)) ? window._TRJSON[k] : k; };
+    window.CURLANG = {{ cur_lang | tojson | safe }};
+    /* 漏词上报（与 base.html 同款，大屏是独立模板必须自己带一份） */
+    window._TRMISSQ = [];
+    window._TRMISSN = {};
+    window._trMiss = function(k){
+      if (window.CURLANG === 'zh' || !k || k.length > 200 || window._TRMISSN[k]) return;
+      window._TRMISSN[k] = 1;
+      window._TRMISSQ.push(k);
+      clearTimeout(window._TRMISS_T);
+      window._TRMISS_T = setTimeout(function(){
+        var keys = window._TRMISSQ.slice(0, 40);
+        window._TRMISSQ = [];
+        if (!keys.length) return;
+        try {
+          fetch('/api/lang/miss', {method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({keys: keys, page: location.pathname})}
+          ).catch(function(){});
+        } catch(e){}
+      }, 3000);
+    };
+    window.TR = function(k){
+      var hit = window._TRJSON && Object.prototype.hasOwnProperty.call(window._TRJSON, k);
+      var v = hit ? window._TRJSON[k] : k;
+      if (!hit) { window._trMiss(k); }
+      return v;
+    };
+    /* 大屏是独立模板，不走 base.html，这几个变量必须自己注入：
+       否则 charts.js 的数字缩写会退回默认体系（中文变 K/M，英文反而变“万”）。 */
+    window.NUM_SCALE = {{ (cur_scale or 'short') | tojson | safe }};
+    window.LOCALE = {{ cur_locale | tojson | safe }};
+    window.COLON = {{ ('：' if cur_lang in ('zh','ja') else ': ') | tojson | safe }};
   </script>
-  <script src="{{ url_for('static', filename='js/charts.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/charts.js', v='20261124a') }}"></script>
   <script>
     window.SCREEN_LANG = '{{ request.args.get('lang') or screen_lang }}';
+    /* 皮肤名单 = 全部预设风格（custom 无皮肤，由服务端注入）。
+       render() 轮询切换深浅主题时靠它把 skin-* 类补回 body。 */
+    window.__SKINS = {{ screen_skins | tojson | safe }};
+    /* 每套配色对应的图表色板（饼图/柱线）。放在服务端是为了和 SCREEN_STYLES
+       同一处维护：改配色不用再翻 JS 找色值。custom 风格没有条目 → 前端按
+       --num / --accent 现算一版。 */
+    window.__SCREEN_CHART = {{ screen_charts | tojson | safe }};
   var SCFG = null;
   // 大屏右上角实时时钟（科技大屏标配）
   (function(){
@@ -142,22 +617,23 @@
       function tick(){
         var d = new Date();
         var lang = (window.SCREEN_LANG || 'zh');
-        var wd;
-        if(lang === 'zh'){ wd = ['日','一','二','三','四','五','六'][d.getDay()]; }
-        else if(lang === 'ja'){ wd = ['日','月','火','水','木','金','土'][d.getDay()]; }
-        else if(lang === 'ko'){ wd = ['일','월','화','수','목','금','토'][d.getDay()]; }
-        else if(lang === 'th'){ wd = ['อา.','จ.','อ.','พ.','พฤ.','ศ.','ส.'][d.getDay()]; }
-        else if(lang === 'vi'){ wd = ['CN','T2','T3','T4','T5','T6','T7'][d.getDay()]; }
-        else if(lang === 'ru'){ wd = ['Вс','Пн','Вт','Ср','Чт','Пт','Сб'][d.getDay()]; }
-        else if(lang === 'fr'){ wd = ['Dim','Lun','Mar','Mer','Jeu','Ven','Sam'][d.getDay()]; }
-        else if(lang === 'de'){ wd = ['So','Mo','Di','Mi','Do','Fr','Sa'][d.getDay()]; }
-        else { wd = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()]; }
-        var m = d.getMonth() + 1, dd = d.getDate(), dateTxt;
-        if(lang === 'zh'){ dateTxt = m + '月' + dd + '日 · 星期' + wd; }
-        else if(lang === 'ja'){ dateTxt = m + '月' + dd + '日（' + wd + '）'; }
-        else if(lang === 'ko'){ dateTxt = m + '월 ' + dd + '일 (' + wd + ')'; }
-        else { var lc = {en:'en-US',th:'th-TH',vi:'vi-VN',ru:'ru-RU',fr:'fr-FR',de:'de-DE'}[lang] || 'en-US';
-               dateTxt = d.toLocaleDateString(lc, {month:'short', day:'numeric'}) + ' · ' + wd; }
+        // 星期与日期交给 Intl：加新语言不用再回来加一个 else if 分支。
+        // （BCP47 允许单语言码，es / cs / pt-BR 都能直接用）
+        var wd, dateTxt;
+        try {
+          wd = new Intl.DateTimeFormat(lang, {
+            weekday: lang === 'zh' ? 'long' : 'short'
+          }).format(d);
+          // 日期整段交给 Intl，不再区分中英分支：中文的 month:'short' 本身就是
+          // 「10月」，再手拼 '月/日' 只会在新增语言时留一个永远走不到的分支，
+          // 顺带让这两处中文字面量被漏翻扫描判成硬编码。
+          dateTxt = new Intl.DateTimeFormat(lang, {
+            month: 'short', day: 'numeric'
+          }).format(d) + ' · ' + wd;
+        } catch(e) {
+          wd = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()];
+          dateTxt = (d.getMonth()+1) + '/' + d.getDate() + ' · ' + wd;
+        }
         c.innerHTML = pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds()) +
           '<span class="clk-date">' + dateTxt + '</span>';
       }
@@ -165,51 +641,248 @@
       setInterval(tick, 1000);
     }catch(e){ console.error(e); }
   })();
+  // 自动轮播滚动：仅库存预警、出入库流水两个列表滚动，其他卡片不滚动
+  function initAutoScroll(){
+    // 滚动速度每次取当前配置（原来只在页面初始化时读一次，
+    // 管理员把速度从 2 调到 6，得手动刷新页面才生效）
+    const speedOf = function(isAlert){
+      const c = window.__SCREEN_CFG || {};
+      return Number(isAlert ? c.alert_scroll_speed : c.tx_scroll_speed) || 2;
+    };
+    // 只绑定指定列表类卡片的滚动
+    const scrollBodies = [
+      document.getElementById('card-body-alerts'),
+      document.getElementById('card-body-recent_tx')
+    ];
+    scrollBodies.forEach(function(el){
+      if(!el) return;
+      if(el.scrollHeight <= el.clientHeight + 10) return;
+      let paused = false;
+      el.addEventListener('mouseenter', ()=> paused = true);
+      el.addEventListener('mouseleave', ()=> paused = false);
+      const isAlert = el.id === 'card-body-alerts';
+      setInterval(function(){
+        if(paused) return;
+        el.scrollTop += speedOf(isAlert) * 0.5;
+        if(el.scrollTop + el.clientHeight >= el.scrollHeight - 2){
+          el.scrollTop = 0;
+        }
+      }, 50);
+    });
+  }
+  setTimeout(initAutoScroll, 1000);
   // 首屏立即使用服务端初始配置布局（不等待数据，打开即稳定，无卡片堆叠闪烁）
   var INIT_CFG = {{ initial_cfg|safe }};
+  window.__SCREEN_CFG = INIT_CFG;
 
-  function fmt(v){ return Number(v||0).toLocaleString('zh-CN'); }
-  function fmt2(v){ return Number(v||0).toLocaleString('zh-CN',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+  function fmt(v){ return Number(v||0).toLocaleString(window.LOCALE || 'zh-CN'); }
+  function fmt2(v){ return Number(v||0).toLocaleString(window.LOCALE || 'zh-CN',{minimumFractionDigits:2,maximumFractionDigits:2}); }
   function esc(s){ const d=document.createElement('div'); d.textContent=s==null?'':String(s); return d.innerHTML; }
+  /* 大屏窄卡数字缩写：跟 charts.js 的进位体系一致（中文 5.1万 / 英文 51K），
+     否则库存总值 278,223.00 在 1 格宽的卡里会顶出边界 */
+  function abbr(v){
+    v = Number(v || 0);
+    const a = Math.abs(v);
+    const t = function(s){ return s.replace(/\.0+$/, '').replace(/(\.\d*?)0+$/, '$1'); };
+    if (window.NUM_SCALE === 'wan') {
+      if (a >= 1e8) return t((v/1e8).toFixed(a >= 1e9 ? 0 : 1)) + TR('亿');
+      if (a >= 1e4) return t((v/1e4).toFixed(a >= 1e5 ? 0 : 1)) + TR('万');
+    } else {
+      if (a >= 1e9) return t((v/1e9).toFixed(1)) + 'B';
+      if (a >= 1e6) return t((v/1e6).toFixed(1)) + 'M';
+      if (a >= 1e4) return t((v/1e3).toFixed(0)) + 'K';
+    }
+    return Number(v.toFixed(2)).toLocaleString(window.LOCALE || 'zh-CN');
+  }
   function pct(prev, cur){
     prev = Number(prev||0); cur = Number(cur||0);
     if(prev === 0) return cur > 0 ? TR('↑新增') : '-';
     const r = (cur - prev) / prev * 100;
     return (r>=0?'↑':'↓') + Math.abs(r).toFixed(1) + '%';
   }
-  // 按卡片高度决定列表最多显示行数（文字不全问题：矮卡片少行、高卡片多行）
-  function rowsFor(key, defMax){
-    const c = (SCFG && SCFG.layout && SCFG.layout.cards) ? SCFG.layout.cards[key] : null;
-    const h = c ? (c.h || 2) : 2;
-    if(h <= 1) return Math.min(2, defMax);
-    if(h === 2) return Math.min(4, defMax);
-    if(h === 3) return Math.min(6, defMax);
-    return defMax;
+  // 按卡片真实像素高度算能放几行表格（行高约 19px）。
+  // 卡片高度是 2.2 / 2.75 这种小数格，写死「h===2 就 4 行」既对不上、
+  // 也不随屏幕分辨率自适应，所以这里直接拿视口高度折算。
+  var ROW_PX = 19;
+  function rowsFit(key, headH){
+    var c = (SCFG && SCFG.layout && SCFG.layout.cards) ? SCFG.layout.cards[key] : null;
+    var h = c ? (Number(c.h) || 2.2) : 2.2;
+    var perUnit = Math.max(40, (window.innerHeight - 84) / 12);   // 12 行网格，减去页头
+    var bodyH = h * perUnit - 16 /*卡片内边距*/ - 28 /*卡片标题*/ - (headH || 0);
+    return Math.max(1, Math.floor(bodyH / ROW_PX));
   }
-  var CHART_OPTS = {
-    font: 12,
-    bottomVal: false,   // 大屏不画底部数值行{{ tr('，') }}避免遮挡横轴日期标签
-    text: getComputedStyle(document.body).getPropertyValue('--text').trim() || '#e5e7eb',
-    grid: getComputedStyle(document.body).getPropertyValue('--cardb').trim() || '#1e2a3d',
-    line: getComputedStyle(document.body).getPropertyValue('--label').trim() || '#7d8aa0',
-    sub:  getComputedStyle(document.body).getPropertyValue('--label').trim() || '#7d8aa0',
-    value:'#e5e7eb'
-  };
+  /* 饼图配色跟着皮肤走：默认调色板是「仪表盘霓虹色」，压在墨蓝/曜黑底上很跳，
+     像贴了张别人的图。这里以 --num 主色为基准生成同族色（色相小幅偏移 + 明度阶梯），
+     再把 --accent 插进第二位当强调，整屏才是一套色。 */
+  function _hex2hsl(hex){
+    hex = (hex || '').replace('#','');
+    if(hex.length === 3) hex = hex[0]+hex[0]+hex[1]+hex[1]+hex[2]+hex[2];
+    var r = parseInt(hex.substr(0,2),16)/255, g = parseInt(hex.substr(2,2),16)/255, b = parseInt(hex.substr(4,2),16)/255;
+    var mx = Math.max(r,g,b), mn = Math.min(r,g,b), d = mx-mn, h = 0, s = 0, l = (mx+mn)/2;
+    if(d){
+      s = l > .5 ? d/(2-mx-mn) : d/(mx+mn);
+      if(mx === r) h = (g-b)/d + (g < b ? 6 : 0);
+      else if(mx === g) h = (b-r)/d + 2;
+      else h = (r-g)/d + 4;
+      h *= 60;
+    }
+    return [h, s, l];
+  }
+  function _hsl2hex(h,s,l){
+    h = ((h%360)+360)%360; s = Math.max(0,Math.min(1,s)); l = Math.max(0,Math.min(1,l));
+    var c = (1-Math.abs(2*l-1))*s, x = c*(1-Math.abs((h/60)%2-1)), m = l-c/2, rgb;
+    if(h < 60) rgb=[c,x,0]; else if(h < 120) rgb=[x,c,0]; else if(h < 180) rgb=[0,c,x];
+    else if(h < 240) rgb=[0,x,c]; else if(h < 300) rgb=[x,0,c]; else rgb=[c,0,x];
+    return '#' + rgb.map(function(v){
+      var t = Math.round((v+m)*255).toString(16); return t.length === 1 ? '0'+t : t;
+    }).join('');
+  }
+  /* custom 风格（客户自己填色）没有预置色板，按 --num/--accent 现算一条
+     同族阶梯：色相只在 ±12° 内摆动，明度单调递减 —— 不再是彩虹轮转。 */
+  function screenPalette(){
+    try{
+      var cs = getComputedStyle(document.body);
+      var num = cs.getPropertyValue('--num').trim() || '#86b9d9';
+      var acc = cs.getPropertyValue('--accent').trim() || '#c9a05e';
+      var base = _hex2hsl(num);
+      var out = [];
+      for(var i=0;i<8;i++){
+        out.push(_hsl2hex(base[0] + (i % 2 ? 10 : -10) * (1 - i/10),
+                          Math.max(.30, Math.min(.62, base[1] * 0.88)),
+                          Math.max(.30, 0.82 - i * 0.065)));
+      }
+      out.push(acc);
+      out.push(_hsl2hex(base[0], Math.max(.30, base[1] * .8), .34));
+      return out;
+    }catch(e){ return null; }
+  }
+  var CHART_OPTS = {font: 12, colors: null, sep: '#0a141f', bottomVal: false};
+  var _CH_STYLE = '';
+  /* 图表配色跟随「色系」（不跟样式）：色板在服务端 SCREEN_CHART_PALETTES 里，
+     custom 走现算。轮询里色系被改时也要重算（否则改完要重开投屏）。 */
+  function applyChartStyle(pal){
+    pal = pal || 'deepblue';
+    if(pal === _CH_STYLE) return;
+    _CH_STYLE = pal;
+    var cs = getComputedStyle(document.body);
+    var m = (window.__SCREEN_CHART || {})[pal];
+    CHART_OPTS.colors = (m && m.pie) || screenPalette();
+    // 扇区缝隙 = 卡片底色，深底上比白缝干净
+    CHART_OPTS.sep = cs.getPropertyValue('--card').trim() || '#0a141f';
+    CHART_OPTS.text = cs.getPropertyValue('--text').trim() || '#e5e7eb';
+    CHART_OPTS.grid = cs.getPropertyValue('--cardb').trim() || '#1e2a3d';
+    CHART_OPTS.line = cs.getPropertyValue('--label').trim() || '#7d8aa0';
+    CHART_OPTS.sub  = cs.getPropertyValue('--label').trim() || '#7d8aa0';
+    CHART_OPTS.value = cs.getPropertyValue('--num').trim() || '#e5e7eb';
+    CHART_OPTS.centerNum = CHART_OPTS.value;
+    var cin = (m && m['in']) || CHART_OPTS.colors[1] || '#6aa3c6';
+    var cout = (m && m.out) || CHART_OPTS.colors[3] || '#c9a05e';
+    SERIES_QTY[0].color = cin; SERIES_QTY[1].color = cout;
+    SERIES_AMT[0].color = cin; SERIES_AMT[1].color = cout;
+  }
   var SERIES_QTY = [
-    {name:TR('入库'), data:[], color:'#22c55e'},
-    {name:TR('出库'), data:[], color:'#f97316'}
+    {name:TR('入库'), data:[], color:'#6aa3c6'},
+    {name:TR('出库'), data:[], color:'#c9a05e'}
   ];
   var SERIES_AMT = [
-    {name:TR('入库金额'), data:[], color:'#22c55e'},
-    {name:TR('出库金额'), data:[], color:'#f97316'}
+    {name:TR('入库金额'), data:[], color:'#6aa3c6'},
+    {name:TR('出库金额'), data:[], color:'#c9a05e'}
   ];
+
+  // ---- 分类占比卡：金额饼 + 数量饼 ----
+  // 一张卡里塞两个饼，怎么摆要按卡片的实际长宽比掂量：
+  //   并排 / 上下叠 / 只画一个（空间连两个小饼都放不下时，宁可把整卡给一个饼）。
+  // 判据是「哪种摆法饼的半径最大」，不是拍脑袋的比例阈值 —— 不同布局的饼格
+  // 从 1.5 格高到 4.4 格高都有，写死阈值总有一半布局是错的。
+  var CAT_DATA = {amt: null, qty: null};
+  var CAT_LAST = '';
+  var CAT_FLIP = false;   // 只画得下一个饼时，按刷新节拍在「金额 / 数量」之间轮换
+  function pieRadius(w, h){
+    if(w < 60 || h < 60) return 0;
+    const legendH = 46;                       // 图例约两行
+    if((w / h) < 2.0) return Math.min(Math.max(60, h - legendH) / 2 - 8, w / 2 - 16);
+    return Math.min(h / 2 - 16, w * 0.46 / 2 - 12);
+  }
+  /* 大屏的饼改成圆环：环心能放合计值，比一个实心大饼更像仪表盘。
+     CHART_OPTS 是共享对象，这里浅拷贝一份再补 donut/center 参数，别污染柱线图。 */
+  function pieOpts(kind){
+    var o = {};
+    Object.keys(CHART_OPTS).forEach(function(k){ o[k] = CHART_OPTS[k]; });
+    o.donut = true;
+    o.donutRatio = 0.6;
+    o.nameMax = 14;               // 大屏图例窄，长分类名截断；看板/分析页不传，按原名显示
+    o.centerLabel = TR('合计');   // 上面已有「金额 / 数量」小标题，环心只写合计
+    return o;
+  }
+  function drawCatPies(){
+    const wrap = document.getElementById('cat-pies');
+    if(!wrap) return;
+    const boxA = wrap.children[0], boxQ = wrap.children[1];
+    const hasAmt = !!CAT_DATA.amt, hasQty = !!CAT_DATA.qty;
+    const r = wrap.getBoundingClientRect();
+    if(r.width < 20 || r.height < 20) return;             // 卡片还没排好，等尺寸回调
+    let mode = 'row';                                      // row=并排 col=上下叠 one=只画一个
+    if(hasAmt && hasQty){
+      const rRow = pieRadius((r.width - 6) / 2, r.height);
+      const rCol = pieRadius(r.width, (r.height - 6) / 2);
+      const rOne = pieRadius(r.width, r.height);
+      // 半径太小（<40px）就只保一个饼：这颗饼再分两半就没法看了。
+      // 反过来，让出半宽换不来更大半径（高度受限）时也不值得牺牲一个饼。
+      const best2 = Math.max(rRow, rCol);
+      mode = (best2 < 40 || rOne > best2 * 1.25) ? 'one' : (rCol > rRow ? 'col' : 'row');
+    }else if(!hasAmt && !hasQty){
+      mode = 'row';
+    }
+    const sig = [Math.round(r.width), Math.round(r.height), mode, hasAmt, hasQty, CAT_FLIP].join('|');
+    if(sig === CAT_LAST) return;                           // 几何没变就别重画（会自己触发自己）
+    CAT_LAST = sig;
+    wrap.classList.toggle('col', mode === 'col');
+    if(boxA) boxA.style.display = hasAmt ? '' : 'none';
+    if(boxQ) boxQ.style.display = hasQty ? '' : 'none';
+    ['chart-category', 'chart-category-qty'].forEach(function(id){
+      const cv = document.getElementById(id);
+      if(cv){ cv.style.width = ''; cv.style.height = ''; }   // 让 flex 重新分配，别沿用上次钉死的尺寸
+    });
+    if(mode === 'one'){
+      // 卡太扁，一个饼都勉强：按刷新节拍在「金额 / 数量」之间轮换，两个都不丢。
+      // 只有一个版本有数据时就直接画那个。
+      const showAmt = hasAmt && (CAT_FLIP || !hasQty);
+      if(boxA) boxA.style.display = showAmt ? '' : 'none';
+      if(boxQ) boxQ.style.display = showAmt ? 'none' : '';
+      if(showAmt) drawPie('chart-category', CAT_DATA.amt, pieOpts('amt'));
+      else if(hasQty) drawPie('chart-category-qty', CAT_DATA.qty, pieOpts('qty'));
+      return;
+    }
+    if(hasAmt) drawPie('chart-category', CAT_DATA.amt, pieOpts('amt'));
+    if(hasQty) drawPie('chart-category-qty', CAT_DATA.qty, pieOpts('qty'));
+  }
 
   function renderStat(key, num, sub){
     const b = document.getElementById('card-body-' + key);
     if(!b) return;
-    b.innerHTML = '<div class="num-lg">' + num + '</div><div class="sub-sm">' + sub + '</div>';
+    b.innerHTML = '<div class="stat-mini">' +
+      '<span class="num-lg">' + num + '</span>' +
+      '<span class="sub-sm">' + sub + '</span></div>';
   }
   function render(data){
+    // ---- 样式 / 色系 / 深浅：轮询里跟着配置走，管理员改完不用重新投屏 ----
+    var cfgd = data.config || {};
+    var skin = (window.__SKINS || []).indexOf(cfgd.style || '') >= 0 ? ' skin-' + cfgd.style : '';
+    // 色系变量串由 /api/screen 一起下发：改完色系，已投屏的那块屏下一次刷新就换色
+    if(cfgd.style_css){ document.documentElement.setAttribute('style', cfgd.style_css); }
+    var isLight = (cfgd.light !== undefined && cfgd.light !== null)
+                  ? !!cfgd.light : cfgd.theme === 'light';
+    document.body.className = (isLight ? 'light' : 'dark') + skin;
+    // 图表色板必须在 body class 落定之后再算（要读 --card/--num 这些 CSS 变量）
+    applyChartStyle(cfgd.palette || 'deepblue');
+    // ---- KPI 卡标题：跟随「统计周期」（按日/按周/按月），
+    //      管理员改了周期后不用手动刷新页面，下一次轮询标题就跟着变 ----
+    if(data.stat_labels){
+      Object.keys(data.stat_labels).forEach(function(k){
+        const t = document.querySelector('#card-' + k + ' .scr-card-title');
+        if(t && data.stat_labels[k]) t.textContent = data.stat_labels[k];
+      });
+    }
     // ---- {{ tr('统计卡') }} ----
     if(data.cards){
       const c = data.cards, p = c.prev || {};
@@ -231,25 +904,60 @@
         drawLines('chart-amt_trend', data.series.labels, SERIES_AMT, CHART_OPTS);
       }
     }
-    // ---- 分类占比 ----
-    if(data.category && SCFG.show_price){
-      drawPie('chart-category', data.category, CHART_OPTS);
+    // ---- 分类占比：一个卡里两个饼（金额 + 数量）----
+    // 以前只有金额饼，而且关掉「大屏显示金额」整张卡都被拿掉 —— 无金额版大屏一个饼都没有。
+    // 数量占比不含金额，所以任何时候都画；金额饼只在开金额且有数据时画。
+    const catWrap = document.getElementById('cat-pies');
+    if(catWrap){
+      CAT_FLIP = !CAT_FLIP;                                // 轮换节拍跟轮询走
+      CAT_DATA.amt = (data.category && data.category.length) ? data.category : null;
+      CAT_DATA.qty = (data.category_qty && data.category_qty.length) ? data.category_qty : null;
+      drawCatPies();
+      // 卡片尺寸不是渲染这一刻就能量准的（隐藏/显示、轮询换布局都会变），
+      // 用 ResizeObserver 再校一次：横向并排 ↔ 上下叠 由实际长宽比决定。
+      if(!catWrap.__ro && window.ResizeObserver){
+        catWrap.__ro = new ResizeObserver(function(){
+          if(catWrap.__raf) return;
+          catWrap.__raf = requestAnimationFrame(function(){
+            catWrap.__raf = 0; drawCatPies();
+          });
+        });
+        catWrap.__ro.observe(catWrap);
+      }
     }
     // ---- 待处理申请 ----
     if(data.pending){
       const b = document.getElementById('card-body-pending');
       if(b) b.innerHTML =
-        '<div style="display:flex;gap:24px;align-items:center;height:100%">' +
-          '<div style="display:flex;align-items:baseline;gap:8px"><span class="num-lg">' + data.pending.all + '</span><span class="sub-sm" style="margin-top:0">{{ tr('待处理申请单') }}</span></div>' +
-          '<div style="display:flex;align-items:baseline;gap:8px"><span class="num-lg" style="color:var(--alert_low)">' + data.pending.valuable_out + '</span><span class="sub-sm" style="margin-top:0">{{ tr('贵重出库待审批') }}</span></div>' +
+        '<div class="pend-mini">' +
+          '<span class="pm-item"><b>' + data.pending.all + '</b><span>{{ tr('待处理申请单') }}</span></span>' +
+          '<span class="pm-item"><b class="warn">' + data.pending.valuable_out + '</b><span>{{ tr('贵重出库待审批') }}</span></span>' +
         '</div>';
+    }
+    // ---- 库存总览（物料种数 / 库存总量 / 库存总值，金额仅在「大屏显示金额」开启时返回） ----
+    if(data.stock_overview){
+      const b = document.getElementById('card-body-stock_total');
+      if(b){
+        const so = data.stock_overview;
+        let h = '<div class="so-mini"><div class="so-line">' +
+          '<span><b>' + abbr(so.parts) + '</b>' + TR('物料种数') + '</span>' +
+          '<span><b>' + abbr(so.qty) + '</b>' + TR('库存总量') + '</span>';
+        if(so.amount !== null && so.amount !== undefined){
+          h += '<span><b>' + abbr(so.amount) + '</b>' + TR('库存总值') + '</span>';
+        }
+        h += '</div></div>';
+        b.innerHTML = h;
+      }
     }
     // ---- {{ tr('库存预警') }} ----
     if(data.alerts){
       const b = document.getElementById('card-body-alerts');
       if(b){
         const low = data.alerts.low || [], high = data.alerts.high || [];
-        const nLow = rowsFor('alerts', low.length), nHigh = rowsFor('alerts', high.length);
+        // 一张卡里 low/high 两段共用同一张表，总行数按卡片高度算（含两行 pill + 一行表头）
+        const nTotal = rowsFit('alerts', 24 + 18);
+        const nLow = Math.min(low.length, nTotal);
+        const nHigh = Math.min(high.length, Math.max(0, nTotal - nLow));
         let h = '<div style="margin-bottom:4px"><span class="pill pill-bad">🔻 {{ tr('低于下限') }} ' + low.length + '</span> ' +
                 '<span class="pill pill-warn">🔺 {{ tr('超上限') }} ' + high.length + '</span></div>';
         h += '<table><tr><th>{{ tr('料号') }}</th><th>{{ tr('名称') }}</th><th class="num">{{ tr('库存') }}</th><th class="num">{{ tr('限值') }}</th></tr>';
@@ -261,7 +969,7 @@
           h += '<tr><td class="mono">' + esc(a.code) + '</td><td>' + esc(a.name) + '</td>' +
                '<td class="num" style="color:var(--alert_high)">' + fmt(a.stock) + '</td><td class="num">{{ tr('上限') }} ' + fmt(a.limit) + '</td></tr>';
         });
-        if(!low.length && !high.length) h += '<tr><td colspan="4" class="muted">无{{ tr('，') }}{{ tr('库存健康') }}</td></tr>';
+        if(!low.length && !high.length) h += '<tr><td colspan="4" class="muted">{{ tr('无，库存健康') }}</td></tr>';
         h += '</table>';
         b.innerHTML = h;
       }
@@ -271,10 +979,11 @@
       const b = document.getElementById('card-body-stale');
       if(b){
         const st = data.stale;
-        const nTop = rowsFor('stale', (st.top||[]).length);
+        // 汇总行（种呆滞/金额/阈值）+ 表头占掉的地方要扣掉，否则最后一行被切一半
+        const nTop = rowsFit('stale', 30 + 18);
         let h = '<div style="display:flex;gap:16px;margin-bottom:6px;align-items:baseline">' +
                 '<div><span class="num-lg" style="font-size:22px">' + fmt(st.count) + '</span> <span class="muted" style="font-size:11px">{{ tr('种呆滞') }}</span></div>' +
-                (SCFG.show_price ? '<div><span class="num-lg" style="font-size:22px;color:var(--accent)">' + fmt2(st.amount) + '</span> <span class="muted" style="font-size:11px">{{ tr('元') }}</span></div>' : '') +
+                (SCFG.show_price ? '<div><span class="num-lg" style="font-size:22px;color:var(--accent)">' + fmt2(st.amount) + '</span> <span class="muted" style="font-size:11px">{{ cur() }}</span></div>' : '') +
                 '<div class="muted" style="margin-left:auto;font-size:11px">{{ tr('阈值') }} ' + st.days + ' {{ tr('天') }}</div></div>';
         h += '<table><tr><th>{{ tr('料号') }}</th><th>{{ tr('名称') }}</th><th class="num">{{ tr('库存') }}</th><th class="num">{{ tr('天数') }}</th></tr>';
         (st.top||[]).slice(0,nTop).forEach(x=>{
@@ -291,7 +1000,9 @@
       const b = document.getElementById('card-body-recent_tx');
       if(b){
         const txs = data.recent_tx || [];
-        let h = '<div class="tx-scroll"><table><tr><th>{{ tr('时间') }}</th><th>{{ tr('料号') }}</th><th>{{ tr('类型') }}</th><th class="num">{{ tr('数量') }}</th><th>{{ tr('库位') }}</th><th>{{ tr('操作人') }}</th></tr>';
+        let h = '<div class="tx-scroll"><table><colgroup><col style="width:20%"><col style="width:17%">'
+              + '<col style="width:10%"><col style="width:9%"><col style="width:25%"><col style="width:19%">'
+              + '</colgroup><tr><th>{{ tr('时间') }}</th><th>{{ tr('料号') }}</th><th>{{ tr('类型') }}</th><th class="num">{{ tr('数量') }}</th><th>{{ tr('库位') }}</th><th>{{ tr('操作人') }}</th></tr>';
         txs.forEach(t=>{
           const cls = t.tx_type === 'in' ? 'tx-in' : 'tx-out';
           const lbl = t.tx_type === 'in' ? TR('入库') : TR('出库');
@@ -330,141 +1041,40 @@
   }
 
   // ===== 布局：隐藏金额卡后由相邻模块变宽/变高把空位填满（v3 拉伸补位） =====
+  // ===== 布局显隐：行/列结构由后端按配置切好，这里只处理「开关改了即时生效」 =====
+  // 旧版这里还有一段 grid 坐标重排（gridColumnStart…），但卡片是 flex 子项，
+  // 那些属性本来就空转；跨行卡片也是靠后端 row/col 嵌套树表达的。
   function applyLayout(cfg){
-    // 无金额版独立布局（mode 以 _np 结尾）：直接使用其卡片集，不再按 show_price 切换
-    // 其余布局：开启显示金额时用 cards；未开启且配置了 noprice 模板时用模板，否则退回 cards+拉伸补位
-    const layout = (cfg.layout && cfg.layout) || {};
-    const npMode = String(layout.mode || '').indexOf('_np') >= 0;
-    const cards = npMode ? (layout.cards || {}) : (cfg.show_price ? (layout.cards || {}) : ((layout.noprice) || layout.cards || {}));
-    const PRICE_KEYS = ['stat_in_amt','stat_out_amt','amt_trend','category','line_amt','dev_amt'];
-    const vis = {};
+    // category 不在名单里：这张卡里还有数量饼，关金额时也要显示
+    const PRICE_KEYS = ['stat_in_amt','stat_out_amt','amt_trend','line_amt','dev_amt'];
+    const mods = cfg.modules || [];
     document.querySelectorAll('.scr-card-abs').forEach(function(el){
       const key = el.id.replace('card-','');
-      const c = cards[key];
-      if(!c) return;
       const mod = el.getAttribute('data-mod') || key;
-      let show = (cfg.modules||[]).indexOf(mod) >= 0;
+      let show = mods.indexOf(mod) >= 0;
       if(show && PRICE_KEYS.indexOf(key) >= 0 && !cfg.show_price) show = false;
-      if(show) vis[key] = {x:c.x||0, y:c.y||0, w:c.w||3, h:c.h||2, el:el};
+      el.style.display = show ? '' : 'none';
     });
-    document.querySelectorAll('.scr-card-abs').forEach(function(el){ el.style.display = 'none'; });
-    const GW = 12, GH = 10;
-    function findRects(){
-      const rects = [];
-      for(let y=0; y<GH; y++){
-        let x = 0;
-        while(x < GW){
-          let occ = false;
-          for(const j in vis){ const o=vis[j]; if(o.y<=y && y<o.y+o.h && o.x<=x && x<o.x+o.w){ occ=true; break; } }
-          if(occ){ x++; continue; }
-          let x2 = x;
-          while(x2 < GW){
-            let o2 = false;
-            for(const j in vis){ const o=vis[j]; if(o.y<=y && y<o.y+o.h && o.x<=x2 && x2<o.x+o.w){ o2=true; break; } }
-            if(o2) break;
-            x2++;
-          }
-          let merged = false;
-          for(const r of rects){
-            if(r.x===x && r.w===x2-x && r.y+r.h===y){ r.h++; merged=true; break; }
-          }
-          if(!merged) rects.push({x:x, y:y, w:x2-x, h:1});
-          x = x2;
-        }
+    // 自内向外收掉「整块都空了」的行/列，否则关掉一个模块后那块会留一片空白
+    const conts = Array.prototype.slice.call(document.querySelectorAll('.scr-col, .scr-row'));
+    for(let i = conts.length - 1; i >= 0; i--){
+      const g = conts[i];
+      const kids = g.querySelectorAll('.scr-card-abs');
+      let any = false;
+      for(let j = 0; j < kids.length; j++){
+        if(kids[j].style.display !== 'none'){ any = true; break; }
       }
-      return rects;
-    }
-    // 补位：空位优先横向拉伸相邻卡填满（不嵌入其它卡），横向不可行再纵向拉伸。
-    // 拉伸只变宽/高，卡片位置尽量不动；被对侧卡挡住时只补到挡卡边缘。
-    function fillGap(r){
-      // 1) 横向优先：左侧卡向右拉伸填满空位
-      for(const k in vis){
-        const c = vis[k];
-        if(c.x + c.w === r.x && c.y < r.y + r.h && c.y + c.h > r.y){
-          const target = r.x + r.w;
-          let maxW = target - c.x;
-          for(const j in vis){
-            if(j === k) continue;
-            const o = vis[j];
-            if(o.x > c.x && o.x < target && o.y < c.y + c.h && o.y + o.h > c.y){
-              if(o.x - c.x < maxW) maxW = o.x - c.x;
-            }
-          }
-          if(maxW > c.w){ c.w = maxW; return true; }
-        }
-      }
-      // 2) 横向：右侧卡向左拉伸填满空位
-      for(const k in vis){
-        const c = vis[k];
-        if(c.x === r.x + r.w && c.y < r.y + r.h && c.y + c.h > r.y){
-          const minX = r.x;
-          let minX2 = minX;
-          for(const j in vis){
-            if(j === k) continue;
-            const o = vis[j];
-            if(o.x + o.w > minX && o.x + o.w < c.x + c.w && o.y < c.y + c.h && o.y + o.h > c.y){
-              if(o.x + o.w > minX2) minX2 = o.x + o.w;
-            }
-          }
-          if(minX2 < c.x){ c.x = minX2; c.w = c.x + c.w - minX2; return true; }
-        }
-      }
-      // 3) 纵向：上方卡向下拉伸填满空位
-      for(const k in vis){
-        const c = vis[k];
-        if(c.y + c.h === r.y && c.x < r.x + r.w && c.x + c.w > r.x){
-          const target = r.y + r.h;
-          let maxH = target - c.y;
-          for(const j in vis){
-            if(j === k) continue;
-            const o = vis[j];
-            if(o.y > c.y && o.y < target && o.x < c.x + c.w && o.x + o.w > c.x){
-              if(o.y - c.y < maxH) maxH = o.y - c.y;
-            }
-          }
-          if(maxH > c.h){ c.h = maxH; return true; }
-        }
-      }
-      // 4) {{ tr('纵向') }}：下方卡向上拉伸填满空位
-      for(const k in vis){
-        const c = vis[k];
-        if(c.y === r.y + r.h && c.x < r.x + r.w && c.x + c.w > r.x){
-          const minY = r.y;
-          let minY2 = minY;
-          for(const j in vis){
-            if(j === k) continue;
-            const o = vis[j];
-            if(o.y + o.h > minY && o.y + o.h < c.y + c.h && o.x < c.x + c.w && o.x + o.w > c.x){
-              if(o.y + o.h > minY2) minY2 = o.y + o.h;
-            }
-          }
-          if(minY2 < c.y){ c.y = minY2; c.h = c.y + c.h - minY2; return true; }
-        }
-      }
-      return false;
-    }
-    let changed = true, guard = 0;
-    while(changed && guard++ < 60){
-      changed = false;
-      const rects = findRects();
-      for(const r of rects){
-        if(fillGap(r)){ changed = true; break; }
-      }
-    }
-    for(const k in vis){
-      const c = vis[k];
-      c.el.style.left   = (c.x * 100 / GW) + '%';
-      c.el.style.top    = (c.y * 100 / GH) + '%';
-      c.el.style.width  = (c.w * 100 / GW) + '%';
-      c.el.style.height = (c.h * 100 / GH) + '%';
-      c.el.style.display = '';
+      g.style.display = any ? '' : 'none';
     }
   }
 
   function load(){
     fetch('/api/screen?lang='+(window.SCREEN_LANG||'zh')).then(function(r){ return r.json(); }).then(function(data){
       SCFG = data.config || {};
-      const iv = Math.max(10, Number(SCFG.refresh) || 30);
+      window.__SCREEN_CFG = SCFG;   // 滚动速度等运行期参数跟着刷新走，不用手改页面
+      // 刷新间隔照配置走：设置页允许 5~3600 秒，这里以前写死 10 秒下限，
+      // 填 5 也只会 10 秒刷一次，看起来像"刷新间隔没生效"
+      const iv = Math.max(5, Number(SCFG.refresh) || 30);
       if(window.__sctimer) clearInterval(window.__sctimer);
       window.__sctimer = setInterval(load, iv * 1000);
       applyLayout(SCFG);

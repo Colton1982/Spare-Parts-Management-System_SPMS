@@ -1,10 +1,19 @@
 <!DOCTYPE html>
-<html lang="{{ cur_lang }}">
+<!--
+  SPMS 备件辅料仓管系统 (Spare Parts Management System)
+  作者：菜鸟大叔 (@rookie-uncle / @Colton1982)
+  邮箱：510658927@qq.com  QQ：510658927
+  Gitee：https://gitee.com/rookie-uncle
+  GitHub：https://github.com/Colton1982
+  Copyright (c) 2026 rookie-uncle. All rights reserved.
+  开源协议：Apache-2.0
+-->
+<html lang="{{ cur_lang }}" dir="{{ cur_dir or 'ltr' }}">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{% block title %}Spare Parts Management System{% endblock %}</title>
-<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='20261003') }}">
+<title>{% block title %}Inventory Management System{% endblock %}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='20261126a') }}">
 <style>
   :root{
     --primary: {{ theme.primary }};
@@ -26,42 +35,156 @@
 </style>
 <style>
 .guest-banner{background:#fff7ed;color:#b45309;border-bottom:1px solid #fde68a;font-size:13px;padding:6px 14px;text-align:center}
+/* 审批单/申请单抬头里的「申请人」：一眼先看到是谁提的单，不再和旁边的元信息糊成一片 */
+.app-who{font-weight:700;font-size:13px;color:var(--text,#0f172a);letter-spacing:.2px}
+.nav-badge{
+  position:absolute;right:14px;top:50%;transform:translateY(-50%);
+  min-width:18px;height:18px;padding:0 5px;border-radius:9px;
+  background:#e11d48;color:#fff;font-size:11px;line-height:18px;
+  text-align:center;font-weight:600;box-sizing:border-box;
+}
 </style>
 <script>
 window._TRJSON = {{ tr_json | tojson | safe }};
-window.TR = function(k){ return (window._TRJSON && Object.prototype.hasOwnProperty.call(window._TRJSON, k)) ? window._TRJSON[k] : k; };
-(function(){
-  function fitSidebar(){
-    var sb = document.querySelector('.sidebar');
-    if(!sb || window.innerWidth <= 768) return;
-    var items = sb.querySelectorAll('.nav-item');
-    var max = 0;
-    var cs = null;
-    for(var i=0;i<items.length;i++){
-      var el = items[i];
-      if(!cs) cs = getComputedStyle(el);
-      var span = document.createElement('span');
-      span.style.cssText = 'position:absolute;visibility:hidden;white-space:nowrap;font-size:'+cs.fontSize+';font-family:'+cs.fontFamily+';font-weight:'+cs.fontWeight+';';
-      span.textContent = el.textContent;
-      document.body.appendChild(span);
-      var w = span.getBoundingClientRect().width;
-      document.body.removeChild(span);
-      var pad = parseFloat(getComputedStyle(el).paddingLeft) + parseFloat(getComputedStyle(el).paddingRight);
-      if(w + pad > max) max = w + pad;
+/* 当前语言，供漏词上报判断用：中文是原文，zh 模式查不到不算漏 */
+window.CURLANG = {{ cur_lang | tojson | safe }};
+/* 漏词上报：取词落空时记下 key，攒 3 秒批量发后端。
+   静态扫描只看得到源码里写死的字面量；「前缀+变量+后缀」拼出来的、
+   从数据库读出来的中文，只有页面真正渲染那一刻才会暴露 —— 这里是唯一捕获点。
+   上报静默失败即可，绝不影响页面本身。 */
+window._TRMISSQ = [];
+window._TRMISSN = {};
+/* 只上报「像界面文案」的键：含汉字，或「占位符 + 全角标点」格式串。
+   日志行、已经翻好的整句、纯标点都不报 —— 报上去也只会变成僵尸词条。 */
+window._TRISCOPY = /[\u4e00-\u9fff]|[（）「」『』，。：；！？、—…“”‘’][^（）「」『』，。：；！？、—…“”‘’]*[0-9A-Za-z]/;
+window._trMiss = function(k){
+  if (window.CURLANG === 'zh' || !k || k.length > 200 || window._TRMISSN[k]) return;
+  if (typeof k !== 'string' || !window._TRISCOPY.test(k)) return;
+  if (/[A-Za-z]:[\\/]|\\\\|\.(db|exe|bat|py|json|log|sqlite3?)\b/.test(k)) return;
+  window._TRMISSN[k] = 1;
+  window._TRMISSQ.push(k);
+  clearTimeout(window._TRMISS_T);
+  window._TRMISS_T = setTimeout(function(){
+    var keys = window._TRMISSQ.slice(0, 40);
+    window._TRMISSQ = [];
+    if (!keys.length) return;
+    try {
+      fetch('/api/lang/miss', {method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({keys: keys, page: location.pathname})}
+      ).catch(function(){});
+    } catch(e){}
+  }, 3000);
+};
+/* 当前语言区域标签，供 toLocaleString / Intl 使用 */
+window.LOCALE = {{ cur_locale | tojson | safe }};
+/* 数字进位体系：wan（万/亿）或 short（K/M/B）。图表 Y 轴按它取舍，
+   不是把「万」这个字翻译掉——那样 5万 会变成 510K。 */
+window.NUM_SCALE = {{ (cur_scale or 'short') | tojson | safe }};
+/* 全角/半角标点：图表 tooltip 这类前端拼接用得到（英文冒号后要留空格） */
+window.COLON = {{ ('：' if cur_lang in ('zh','ja') else ': ') | tojson | safe }};
+/* 括号：中文全角（紧贴），英文半角（前面带一个空格），和后端 mk() 一致 */
+window.MK_O = {{ mk('（') | tojson | safe }};
+window.MK_C = {{ mk('）') | tojson | safe }};
+/* 数字与单位之间：中文紧凑（1,234件），西文要空格（1,234 pcs） */
+window.SP = {{ ('' if cur_lang in ('zh','ja') else ' ') | tojson | safe }};
+/* TR：整串查表。词条若是复数字典（{one,few,many,other}）取 other，
+   这样老代码 TR('…') 不会把对象打印到界面上。 */
+window.TR = function(k){
+  var hit = window._TRJSON && Object.prototype.hasOwnProperty.call(window._TRJSON, k);
+  var v = hit ? window._TRJSON[k] : k;
+  if (!hit) { window._trMiss(k); }
+  if (v && typeof v === 'object') { return v.other || v.one || v.many || v.few || k; }
+  return v;
+};
+/* TRP：带占位符。TRP(key, {n: 5}) 会把 key 里的 {n} 换成 5。
+   前端过去没有这个能力，只能「前缀 + n + 后缀」硬拼，一拼就出现中英混杂的碎句。 */
+window.TRP = function(k, p){
+  var s = window.TR(k);
+  if (p) {
+    for (var key in p) {
+      if (Object.prototype.hasOwnProperty.call(p, key)) {
+        s = s.split('{' + key + '}').join(p[key]);
+      }
     }
-    var ico = sb.querySelector('.nav-ico');
-    if(ico){ max += ico.getBoundingClientRect().width + 10; }
-    var root = getComputedStyle(document.documentElement).getPropertyValue('--sidebar-width');
-    var base = parseInt(root, 10) || 216;
-    var w = Math.max(base, Math.min(Math.ceil(max) + 28, 560));
-    if(w !== base){ document.documentElement.style.setProperty('--sidebar-width', w + 'px'); }
   }
-  window.addEventListener('load', fitSidebar);
-  window.addEventListener('resize', fitSidebar);
-})();
+  return s;
+};
+/* TRN：复数。TRN('records.count', 5) → 5 records / 5 записи。
+   复数规则不在前端重写一遍，服务端已经把翻译好的各形式放进词条，
+   这里只按 n 选一个（CLDR 的 one/many 选择由服务端语言档案决定，
+   因此这里只做「是否为 1」的粗分，细分的 few/many 交给 tn() 在服务端渲染）。 */
+window.TRN = function(k, n, p){
+  var v = window._TRJSON && Object.prototype.hasOwnProperty.call(window._TRJSON, k) ? window._TRJSON[k] : null;
+  if (v == null) { window._trMiss(k); }
+  var s;
+  if (v && typeof v === 'object') {
+    if (n === 1 && v.one) { s = v.one; }
+    else { s = v.other || v.many || v.few || v.one || k; }
+  } else {
+    s = (typeof v === 'string' && v) ? v : k;
+  }
+  var pr = {n: n, count: n};
+  if (p) { for (var key in p) { if (Object.prototype.hasOwnProperty.call(p, key)) { pr[key] = p[key]; } } }
+  for (var key2 in pr) {
+    if (Object.prototype.hasOwnProperty.call(pr, key2)) {
+      s = s.split('{' + key2 + '}').join(pr[key2]);
+    }
+  }
+  return s;
+};
+/* v1.0.60：alert 改成右上角非阻塞提示条。
+   还回/执行/校验这类结果提示不需要用户点「确定」才能继续，原生 alert 会打断连续操作。
+   confirm 保留（删除、恢复等破坏性动作仍需二次确认）。 */
+window.spmsToast = function(msg, kind){
+  var text = String(msg == null ? '' : msg);
+  if(!document.body) return;
+  var box = document.getElementById('spms-toasts');
+  if(!box){
+    box = document.createElement('div'); box.id = 'spms-toasts'; box.className = 'spms-toasts';
+    document.body.appendChild(box);
+  }
+  // v1.0.66：同一句话连续触发只保留一条并顺延消失时间；最多同时显示 3 条，
+  // 免得反复点按钮时右上角叠一排相同提示把页面挡住。
+  var now = (Date.now ? Date.now() : +new Date());
+  if(box._lastText === text && box._lastAt && now - box._lastAt < 1500 && box._lastEl && box._lastEl.parentNode){
+    clearTimeout(box._lastEl._timer);
+    box._lastEl._timer = setTimeout(function(){ if(box._lastEl && box._lastEl.parentNode) box._lastEl.parentNode.removeChild(box._lastEl); }, 5000);
+    box._lastAt = now;
+    return box._lastEl;
+  }
+  while(box.children.length >= 3){
+    var old = box.firstChild;
+    clearTimeout(old._timer);
+    box.removeChild(old);
+  }
+  var el = document.createElement('div');
+  el.className = 'spms-toast' + (kind === 'error' ? ' spms-toast-error' : '');
+  var span = document.createElement('span'); span.textContent = text;
+  var x = document.createElement('button'); x.type = 'button'; x.className = 'spms-toast-x';
+  x.textContent = '×'; x.setAttribute('aria-label', TR('关闭'));
+  x.onclick = function(){ if(el.parentNode) el.parentNode.removeChild(el); };
+  el.appendChild(span); el.appendChild(x); box.appendChild(el);
+  el._timer = setTimeout(function(){ if(el.parentNode) el.parentNode.removeChild(el); }, 5000);
+  box._lastText = text; box._lastAt = now; box._lastEl = el;
+  return el;
+};
+window.alert = function(msg){
+  var s = String(msg == null ? '' : msg);
+  return window.spmsToast(msg, /\u5931\u8d25|\u9519\u8bef|\u4e0d\u80fd|\u5fc5\u987b|\u8bf7/.test(s) ? 'error' : null);
+};
+/* v1.0.75：侧栏宽度只认管理员配置，不再按最长菜单项自动撑宽。
+   其它语言（法语/俄语等）菜单名更长，旧逻辑会把侧栏一路撑到 560px，
+   把内容区挤窄；现在固定宽度 + 菜单项文字换行。 */
+document.addEventListener('DOMContentLoaded', function(){
+  var items = document.querySelectorAll('.nav-item');
+  for (var i = 0; i < items.length; i++) {
+    if (items[i].querySelector('.nav-badge')) items[i].classList.add('has-badge');
+  }
+});
 </script>
 </head>
-<body>
+<body{% if not ui_hints %} class="no-hints"{% endif %}>
 {% if cur_user %}
 <div class="layout">
   <aside class="sidebar">
@@ -70,37 +193,46 @@ window.TR = function(k){ return (window._TRJSON && Object.prototype.hasOwnProper
       <img class="brand-logo" src="{{ url_for('media', fname=brand.logo_file) }}" alt="logo" style="height:{{ brand.logo_height or 40 }}px;width:auto">
       {% else %}<div class="brand-icon"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></div>{% endif %}
       <div class="brand-text">
-        <div class="brand-name" style="font-size:{{ brand.title_size or 16 }}px;{% if brand.title_color %}color:{{ brand.title_color }}{% endif %}">{{ brand.title if brand else 'Spare Parts Management System' }}</div>
-        <div class="brand-sub" style="font-size:{{ brand.subtitle_size or 11 }}px;{% if brand.subtitle_color %}color:{{ brand.subtitle_color }}{% endif %}">{{ brand.subtitle if brand and brand.subtitle else 'Spare Parts System' }}</div>
+        <div class="brand-name" style="font-size:{{ brand.title_size or 16 }}px">{{ brand.title if brand else 'Inventory Management System' }}</div>
+        <div class="brand-sub" style="font-size:{{ brand.subtitle_size or 11 }}px">{{ brand.subtitle if brand and brand.subtitle else 'Inventory Management System' }}</div>
       </div>
     </div>
     <nav class="nav">
-      {% if can('dashboard') %}      <a class="nav-item {{ 'active' if request.path == '/dashboard' }}" href="{{ url_for('dashboard') }}"><span class="nav-ico"><svg viewBox="0 0 24 24" width="{{ nav_style.icon_size }}" height="{{ nav_style.icon_size }}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></span>{{ tr('nav_dashboard') }}</a>{% endif %}
-      {% if can('parts_manage') %}<a class="nav-item {{ 'active' if request.path == '/locations' }}" href="{{ url_for('locations_page') }}"><span class="nav-ico"><svg viewBox="0 0 24 24" width="{{ nav_style.icon_size }}" height="{{ nav_style.icon_size }}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="M2 12l10 5 10-5"/><path d="M2 17l10 5 10-5"/></svg></span>{{ tr('nav_locations') }}</a>{% endif %}
-      {% if can('parts_manage') %}<a class="nav-item {{ 'active' if request.path == '/parts/manage' }}" href="{{ url_for('parts_manage_page') }}"><span class="nav-ico"><svg viewBox="0 0 24 24" width="{{ nav_style.icon_size }}" height="{{ nav_style.icon_size }}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/></svg></span>{{ tr('nav_parts_manage') }}</a>{% endif %}
-      <a class="nav-item {{ 'active' if request.path == '/parts' }}" href="{{ url_for('parts_page') }}"><span class="nav-ico"><svg viewBox="0 0 24 24" width="{{ nav_style.icon_size }}" height="{{ nav_style.icon_size }}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg></span>{{ tr('nav_parts') }}</a>
-      {% if can('stale') %}<a class="nav-item {{ 'active' if request.path == '/stale' }}" href="{{ url_for('stale_page') }}"><span class="nav-ico"><svg viewBox="0 0 24 24" width="{{ nav_style.icon_size }}" height="{{ nav_style.icon_size }}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22c4.97 0 9-4.03 9-9s-4.03-9-9-9-9 4.03-9 9 4.03 9 9 9z"/><path d="M12 7v5l3 3"/></svg></span>{{ tr('nav_stale') }}</a>{% endif %}
-      {% if can('apply') %}<a class="nav-item {{ 'active' if request.path == '/applications' }}" href="{{ url_for('applications_page') }}"><span class="nav-ico"><svg viewBox="0 0 24 24" width="{{ nav_style.icon_size }}" height="{{ nav_style.icon_size }}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/></svg></span>{{ tr('nav_apply') }}</a>{% endif %}
-      {% if can('stock_inout') %}<a class="nav-item {{ 'active' if request.path == '/inout' }}" href="{{ url_for('inout_page') }}"><span class="nav-ico"><svg viewBox="0 0 24 24" width="{{ nav_style.icon_size }}" height="{{ nav_style.icon_size }}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v8a2 2 0 0 1-1 1.73l-7 4a2 2 0 0 1-2 0l-7-4A2 2 0 0 1 3 16V8a2 2 0 0 1 1-1.73l7-4a2 2 0 0 1 2 0l7 4A2 2 0 0 1 21 8z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg></span>{{ tr('nav_inout') }}</a>{% endif %}
-      {% if can('approve') %}<a class="nav-item {{ 'active' if request.path == '/approval' }}" href="{{ url_for('approval_page') }}"><span class="nav-ico"><svg viewBox="0 0 24 24" width="{{ nav_style.icon_size }}" height="{{ nav_style.icon_size }}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="m9 11 3 3L22 4"/></svg></span>{{ tr('nav_approval') }}</a>{% endif %}
-      {% if can('departments') %}<a class="nav-item {{ 'active' if request.path == '/departments' }}" href="{{ url_for('departments_page') }}"><span class="nav-ico"><svg viewBox="0 0 24 24" width="{{ nav_style.icon_size }}" height="{{ nav_style.icon_size }}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M9 22v-4h6v4"/><path d="M8 6h.01M12 6h.01M16 6h.01M8 10h.01M12 10h.01M16 10h.01M8 14h.01M12 14h.01M16 14h.01"/></svg></span>{{ tr('nav_departments') }}</a>{% endif %}
-      {% if can('lines_equip') %}<a class="nav-item {{ 'active' if request.path == '/lines' }}" href="{{ url_for('lines_page') }}"><span class="nav-ico"><svg viewBox="0 0 24 24" width="{{ nav_style.icon_size }}" height="{{ nav_style.icon_size }}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 20h20"/><path d="M4 20V9l5 3V9l6 3V5h5v15"/></svg></span>{{ tr('nav_lines') }}</a>{% endif %}
-      {% if can('user_manage') %}<a class="nav-item {{ 'active' if request.path == '/users' }}" href="{{ url_for('users_page') }}"><span class="nav-ico"><svg viewBox="0 0 24 24" width="{{ nav_style.icon_size }}" height="{{ nav_style.icon_size }}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg></span>{{ tr('nav_users') }}</a>{% endif %}
-      {% if can('perm_config') %}<a class="nav-item {{ 'active' if request.path == '/permissions' }}" href="{{ url_for('permissions_page') }}"><span class="nav-ico"><svg viewBox="0 0 24 24" width="{{ nav_style.icon_size }}" height="{{ nav_style.icon_size }}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>{{ tr('nav_permissions') }}</a>{% endif %}
-      {% if cur_user and cur_user.role == 'admin' %}<a class="nav-item {{ 'active' if request.path == '/settings' }}" href="{{ url_for('system_settings') }}"><span class="nav-ico"><svg viewBox="0 0 24 24" width="{{ nav_style.icon_size }}" height="{{ nav_style.icon_size }}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>{{ tr('nav_settings') }}</a>{% endif %}
-      {% if cur_user and cur_user.role in ('admin','warehouse','manager') %}<a class="nav-item {{ 'active' if request.path == '/restore' }}" href="{{ url_for('restore_page') }}"><span class="nav-ico"><svg viewBox="0 0 24 24" width="{{ nav_style.icon_size }}" height="{{ nav_style.icon_size }}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 3"/></svg></span>{{ tr('nav_restore') }}</a>{% endif %}
-      {% if cur_user and cur_user.role == 'admin' %}<a class="nav-item {{ 'active' if request.path == '/screen/config' }}" href="{{ url_for('screen_config') }}"><span class="nav-ico"><svg viewBox="0 0 24 24" width="{{ nav_style.icon_size }}" height="{{ nav_style.icon_size }}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3"/><path d="M1 14h6M9 8h6M17 16h6"/></svg></span>{{ tr('nav_screen_config') }}</a>{% endif %}
-      <a class="nav-item" href="{{ url_for('screen_page') }}" target="_blank"><span class="nav-ico"><svg viewBox="0 0 24 24" width="{{ nav_style.icon_size }}" height="{{ nav_style.icon_size }}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg></span>{{ tr('nav_screen') }}</a>
-      {% if cur_user and cur_user.role == 'admin' %}<a class="nav-item {{ 'active' if request.path == '/parts/recycle' }}" href="{{ url_for('recycle_page') }}"><span class="nav-ico"><svg viewBox="0 0 24 24" width="{{ nav_style.icon_size }}" height="{{ nav_style.icon_size }}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="m19 6-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg></span>{{ tr('nav_recycle') }}</a>{% endif %}
+      {% if can('dashboard') %}      <a class="nav-item {{ 'active' if request.path == '/dashboard' }}" href="{{ url_for('dashboard') }}"><span class="nav-ico"><svg viewBox="0 0 24 24" width="{{ nav_style.icon_size }}" height="{{ nav_style.icon_size }}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></span><span class="nav-label">{{ tr('nav_dashboard') }}</span></a>{% endif %}
+      {% if can('parts_manage') %}<a class="nav-item {{ 'active' if request.path == '/locations' }}" href="{{ url_for('locations_page') }}"><span class="nav-ico"><svg viewBox="0 0 24 24" width="{{ nav_style.icon_size }}" height="{{ nav_style.icon_size }}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="M2 12l10 5 10-5"/><path d="M2 17l10 5 10-5"/></svg></span><span class="nav-label">{{ tr('nav_locations') }}</span></a>{% endif %}
+      {% if can('parts_manage') %}<a class="nav-item {{ 'active' if request.path == '/parts/manage' }}" href="{{ url_for('parts_manage_page') }}"><span class="nav-ico"><svg viewBox="0 0 24 24" width="{{ nav_style.icon_size }}" height="{{ nav_style.icon_size }}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/></svg></span><span class="nav-label">{{ tr('nav_parts_manage') }}</span></a>{% endif %}
+      <a class="nav-item {{ 'active' if request.path == '/parts' }}" href="{{ url_for('parts_page') }}"><span class="nav-ico"><svg viewBox="0 0 24 24" width="{{ nav_style.icon_size }}" height="{{ nav_style.icon_size }}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg></span><span class="nav-label">{{ tr('nav_parts') }}</span></a>
+      {% if can('stale') %}<a class="nav-item {{ 'active' if request.path == '/stale' }}" href="{{ url_for('stale_page') }}"><span class="nav-ico"><svg viewBox="0 0 24 24" width="{{ nav_style.icon_size }}" height="{{ nav_style.icon_size }}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22c4.97 0 9-4.03 9-9s-4.03-9-9-9-9 4.03-9 9 4.03 9 9 9z"/><path d="M12 7v5l3 3"/></svg></span><span class="nav-label">{{ tr('nav_stale') }}</span></a>{% endif %}
+      {% if can('apply') %}<a class="nav-item {{ 'active' if request.path == '/applications' }}" href="{{ url_for('applications_page') }}"><span class="nav-ico"><svg viewBox="0 0 24 24" width="{{ nav_style.icon_size }}" height="{{ nav_style.icon_size }}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/></svg></span><span class="nav-label">{{ tr('nav_apply') }}</span><span class="nav-badge" id="badge-apply" style="display:none">0</span></a>{% endif %}
+      {% if can('stock_inout') %}<a class="nav-item {{ 'active' if request.path == '/inout' }}" href="{{ url_for('inout_page') }}"><span class="nav-ico"><svg viewBox="0 0 24 24" width="{{ nav_style.icon_size }}" height="{{ nav_style.icon_size }}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v8a2 2 0 0 1-1 1.73l-7 4a2 2 0 0 1-2 0l-7-4A2 2 0 0 1 3 16V8a2 2 0 0 1 1-1.73l7-4a2 2 0 0 1 2 0l7 4A2 2 0 0 1 21 8z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg></span><span class="nav-label">{{ tr('nav_inout') }}</span><span class="nav-badge" id="badge-inout" style="display:none">0</span></a>{% endif %}
+      {% if can('borrow') %}<a class="nav-item {{ 'active' if request.path == '/borrows' }}" href="{{ url_for('borrows_page') }}"><span class="nav-ico"><svg viewBox="0 0 24 24" width="{{ nav_style.icon_size }}" height="{{ nav_style.icon_size }}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><path d="M9 7h7M9 11h7"/></svg></span><span class="nav-label">{{ tr('借·换·检·修管理') }}</span><span class="nav-badge" id="badge-borrow" style="display:none">0</span></a>{% endif %}
+      {% if can('stocktake') %}<a class="nav-item {{ 'active' if request.path.startswith('/stocktake') }}" href="{{ url_for('stocktakes_page') }}"><span class="nav-ico"><svg viewBox="0 0 24 24" width="{{ nav_style.icon_size }}" height="{{ nav_style.icon_size }}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="m9 12 2 2 4-4"/></svg></span><span class="nav-label">{{ tr('nav_stocktake') }}</span><span class="nav-badge" id="badge-stocktake" style="display:none">0</span></a>{% endif %}
+      {% if can('approve') or can('stocktake') %}<a class="nav-item {{ 'active' if request.path == '/approval' }}" href="{{ url_for('approval_page') }}"><span class="nav-ico"><svg viewBox="0 0 24 24" width="{{ nav_style.icon_size }}" height="{{ nav_style.icon_size }}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="m9 11 3 3L22 4"/></svg></span><span class="nav-label">{{ tr('nav_approval') }}</span><span class="nav-badge" id="badge-approval" style="display:none">0</span></a>{% endif %}
+      {% if can('departments') %}<a class="nav-item {{ 'active' if request.path == '/departments' }}" href="{{ url_for('departments_page') }}"><span class="nav-ico"><svg viewBox="0 0 24 24" width="{{ nav_style.icon_size }}" height="{{ nav_style.icon_size }}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M9 22v-4h6v4"/><path d="M8 6h.01M12 6h.01M16 6h.01M8 10h.01M12 10h.01M16 10h.01M8 14h.01M12 14h.01M16 14h.01"/></svg></span><span class="nav-label">{{ tr('nav_departments') }}</span></a>{% endif %}
+      {% if can('lines_equip') %}<a class="nav-item {{ 'active' if request.path == '/lines' }}" href="{{ url_for('lines_page') }}"><span class="nav-ico"><svg viewBox="0 0 24 24" width="{{ nav_style.icon_size }}" height="{{ nav_style.icon_size }}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 20h20"/><path d="M4 20V9l5 3V9l6 3V5h5v15"/></svg></span><span class="nav-label">{{ tr('nav_lines') }}</span></a>{% endif %}
+      {% if can('user_manage') %}<a class="nav-item {{ 'active' if request.path == '/users' }}" href="{{ url_for('users_page') }}"><span class="nav-ico"><svg viewBox="0 0 24 24" width="{{ nav_style.icon_size }}" height="{{ nav_style.icon_size }}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg></span><span class="nav-label">{{ tr('nav_users') }}</span></a>{% endif %}
+      {% if can('perm_config') %}<a class="nav-item {{ 'active' if request.path == '/permissions' }}" href="{{ url_for('permissions_page') }}"><span class="nav-ico"><svg viewBox="0 0 24 24" width="{{ nav_style.icon_size }}" height="{{ nav_style.icon_size }}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span><span class="nav-label">{{ tr('nav_permissions') }}</span></a>{% endif %}
+      {% if cur_user and cur_user.role == 'admin' %}<a class="nav-item {{ 'active' if request.path == '/settings' }}" href="{{ url_for('system_settings') }}"><span class="nav-ico"><svg viewBox="0 0 24 24" width="{{ nav_style.icon_size }}" height="{{ nav_style.icon_size }}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span><span class="nav-label">{{ tr('nav_settings') }}</span></a>{% endif %}
+      {% if cur_user and cur_user.role in ('admin','warehouse','manager') %}<a class="nav-item {{ 'active' if request.path == '/restore' }}" href="{{ url_for('restore_page') }}"><span class="nav-ico"><svg viewBox="0 0 24 24" width="{{ nav_style.icon_size }}" height="{{ nav_style.icon_size }}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 3"/></svg></span><span class="nav-label">{{ tr('nav_restore') }}</span></a>{% endif %}
+      {% if can('screen_config') %}<a class="nav-item {{ 'active' if request.path == '/screen/config' }}" href="{{ url_for('screen_config') }}"><span class="nav-ico"><svg viewBox="0 0 24 24" width="{{ nav_style.icon_size }}" height="{{ nav_style.icon_size }}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3"/><path d="M1 14h6M9 8h6M17 16h6"/></svg></span><span class="nav-label">{{ tr('nav_screen_config') }}</span></a>{% endif %}
+      <a class="nav-item" href="{{ url_for('screen_page') }}" target="_blank"><span class="nav-ico"><svg viewBox="0 0 24 24" width="{{ nav_style.icon_size }}" height="{{ nav_style.icon_size }}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg></span><span class="nav-label">{{ tr('nav_screen') }}</span></a>
+      {% if can('recycle') %}<a class="nav-item {{ 'active' if request.path == '/parts/recycle' }}" href="{{ url_for('recycle_page') }}"><span class="nav-ico"><svg viewBox="0 0 24 24" width="{{ nav_style.icon_size }}" height="{{ nav_style.icon_size }}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="m19 6-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg></span><span class="nav-label">{{ tr('nav_recycle') }}</span></a>{% endif %}
     </nav>
-    <div class="sidebar-foot">v1.0 · {{ tr('misc_version') }}</div>
+    <button type="button" class="sidebar-foot spms-author-link" onclick="spmsOpenAuthor()" title="{{ author.about_title }}">{{ author.footer }}</button>
   </aside>
   <div class="main">
     <header class="topbar">
-      {% if cur_user.role == 'guest' %}<div class="guest-banner">{{ tr('访客模式') }}{{ tr('：') }}AD {{ tr('账号不在白名单') }}{{ tr('，') }}{{ tr('仅可查阅备件与呆滞物料') }}{{ tr('（') }}{{ session.get('guest_ad_user','') }}{{ tr('）') }}</div>{% endif %}
+      {% if cur_user.role == 'guest' %}<div class="guest-banner">{{ tr('访客模式') }}{{ mk('：') }}AD {{ tr('账号不在白名单') }}{{ mk('，') }}{{ tr('仅可查阅物料与呆滞物料') }}{{ mk('（') }}{{ session.get('guest_ad_user','') }}{{ mk('）') }}</div>{% endif %}
       <div class="topbar-title">{% block page_title %}{% endblock %}</div>
       <div class="topbar-user">
-        <span class="role-badge role-{{ cur_user.role }}">{{ tr(ROLE_NAMES[cur_user.role]) }}</span>
+        <select class="lang-select" title="{{ tr('界面语言') }}"
+                onchange="spmsSetLang(this.value)"
+                style="max-width:130px;padding:3px 6px;font-size:12px;border-radius:6px;border:1px solid var(--line,#d5dbe3);background:var(--card,#fff);color:var(--text,inherit);cursor:pointer">
+          {% for code, name in LANGUAGES.items() %}
+          <option value="{{ code }}" {{ 'selected' if cur_lang == code }}>{{ name }}</option>
+          {% endfor %}
+        </select>
+        <span class="role-badge role-{{ cur_user.role }}">{{ ROLE_NAMES[cur_user.role] }}</span>
         <span class="user-name">{{ cur_user.display_name }}</span>
         {% if cur_user.role != 'guest' %}<a class="btn btn-xs" href="{{ url_for('change_password') }}">{{ tr('page_password') }}</a>{% endif %}
         <a class="btn btn-xs btn-danger" href="{{ url_for('logout') }}">{{ tr('nav_logout') }}</a>
@@ -110,7 +242,9 @@ window.TR = function(k){ return (window._TRJSON && Object.prototype.hasOwnProper
       {% if msgs %}
         <div class="flash-area">
           {% for cat, m in msgs %}
-            <div class="flash flash-{{ cat }}">{{ tr(m) }}</div>
+            {# 只有真词条才走取词：带参数拼好的整句（如「数据库位置：C:\…」）不在表里，
+               走一遍只会被记成运行期漏词，登记后变成僵尸词条 #}
+            <div class="flash flash-{{ cat }}">{{ tr(m) if term_known(m) else m }}</div>
           {% endfor %}
         </div>
       {% endif %}
@@ -123,19 +257,353 @@ window.TR = function(k){ return (window._TRJSON && Object.prototype.hasOwnProper
 {% else %}
   {% block fullpage %}{% endblock %}
 {% endif %}
-<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+
+<!-- 作者信息弹窗：页脚版权与登录页入口共用；内容为作者身份信息，不随界面语言改写。 -->
+<div id="spms-author-modal" class="modal-mask" style="display:none" onclick="if(event.target===this)spmsCloseAuthor()">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-head">
+      <span>{{ author.about_title }}</span>
+      <button type="button" class="modal-x" onclick="spmsCloseAuthor()" aria-label="Close">×</button>
+    </div>
+    <div class="modal-body">
+      <h3 style="margin:0 0 8px;font-size:18px">{{ author.name }} <span style="font-weight:400;color:var(--muted)">{{ author.handles }}</span></h3>
+      <h4 style="margin:14px 0 6px;font-size:14px">{{ author.contact_title }}</h4>
+      <div style="font-size:13px;line-height:1.9;word-break:break-all">
+        <div>Gitee: <a href="{{ author.gitee }}" target="_blank" rel="noopener noreferrer">{{ author.gitee }}</a></div>
+        <div>GitHub: <a href="{{ author.github }}" target="_blank" rel="noopener noreferrer">{{ author.github }}</a></div>
+        <div>Email: {% for mail in author.emails %}<a href="mailto:{{ mail }}">{{ mail }}</a>{% if not loop.last %} | {% endif %}{% endfor %}</div>
+        <div>QQ: {{ author.qq }}</div>
+      </div>
+      <h4 style="margin:14px 0 6px;font-size:14px">{{ author.copyright_title }}</h4>
+      <div style="font-size:13px;line-height:1.7">{{ author.copyright }}</div>
+      <h4 style="margin:14px 0 6px;font-size:14px">{{ author.license_title }}</h4>
+      <div style="font-size:13px;line-height:1.7">{{ author.license }}</div>
+    </div>
+  </div>
+</div>
+<script>
+window.spmsOpenAuthor = function(){
+  var el = document.getElementById('spms-author-modal');
+  if(el) el.style.display = 'flex';
+};
+window.spmsCloseAuthor = function(){
+  var el = document.getElementById('spms-author-modal');
+  if(el) el.style.display = 'none';
+};
+document.addEventListener('keydown', function(e){
+  if(e && (e.key === 'Escape' || e.keyCode === 27)) window.spmsCloseAuthor();
+});
+</script>
+<script src="{{ url_for('static', filename='js/app.js', v='20261125e') }}"></script>
+<script src="{{ url_for('static', filename='js/cond_rules.js', v='20261118a') }}"></script>
+<script src="{{ url_for('static', filename='js/datetime_picker.js', v='20261121c') }}"></script>
+<script>
+/* 顶栏语言切换：只改 lang 参数，保留当前页与其它查询参数（筛选条件不丢）。
+   服务端 before_request 会把 ?lang= 落成 会话+Cookie+账号档案，跳一次就永久生效。 */
+window.spmsSetLang = function(code){
+  try{
+    var u = new URL(window.location.href);
+    u.searchParams.set('lang', code);
+    window.location.href = u.toString();
+  }catch(e){
+    window.location.href = '?lang=' + encodeURIComponent(code);
+  }
+};
+</script>
+<script>
+/* 审批人选择器：默认收窄为「常用（本部门+最近用过的）」一屏内，
+   可输入姓名/部门过滤全部候选，也可勾选「显示全部」展开。
+   conf: {rootId, name, cands:[{id,display_name,department}], base:[常用id], def, ph} */
+window.initApproverPicker = function(conf){
+  function esc(s){ const d=document.createElement('div'); d.textContent=s==null?'':String(s); return d.innerHTML; }
+  var root = document.getElementById(conf.rootId);
+  if(!root) return null;
+  var cands = conf.cands || [];
+  var byId = {};
+  cands.forEach(function(c){ byId[c.id] = c; });
+  var pickerId = 'ap-picker-' + Math.random().toString(36).slice(2, 8);
+  var modalId = pickerId + '-modal';
+  root.innerHTML =
+    '<input class="f-input ap-display" readonly style="min-width:170px;cursor:pointer" placeholder="'+esc(conf.ph||TR('点击选择…'))+'" value="">'
+    + '<input type="hidden" class="ap-hidden" name="'+esc(conf.name)+'">';
+  var display = root.querySelector('.ap-display');
+  var hidden = root.querySelector('.ap-hidden');
+  // 弹窗HTML
+  var modal = document.createElement('div');
+  modal.className = 'modal-mask';
+  modal.id = modalId;
+  modal.style.display = 'none';
+  modal.onclick = function(e){ if(e.target===this) this.style.display='none'; };
+  modal.innerHTML =
+    '<div class="modal" style="width:360px">'
+    + '<div class="modal-head"><span>'+TR('选择人员')+'</span><button class="modal-x" onclick="document.getElementById(\''+modalId+'\').style.display=\'none\'">✕</button></div>'
+    + '<div class="modal-body">'
+    + '<input class="f-input ap-search" placeholder="'+TR('搜索姓名/部门…')+'" style="margin-bottom:10px">'
+    + '<div class="ap-list" style="max-height:260px;overflow-y:auto;border:1px solid #e4e3dd;border-radius:6px"></div>'
+    + '</div>'
+    + '</div>';
+  document.body.appendChild(modal);
+  var search = modal.querySelector('.ap-search');
+  var list = modal.querySelector('.ap-list');
+  function renderList(filter){
+    filter = (filter||'').trim().toLowerCase();
+    var h = '';
+    if(conf.allowBlank !== false){ h += '<div class="ap-item" data-id="" style="padding:8px 12px;cursor:pointer;border-bottom:1px solid #f0f0f0">'+TR('不指定')+'</div>'; }
+    cands.forEach(function(c){
+      if(!filter || (c.display_name||'').toLowerCase().indexOf(filter)>=0 || (c.department||'').toLowerCase().indexOf(filter)>=0){
+        h += '<div class="ap-item" data-id="'+c.id+'" style="padding:8px 12px;cursor:pointer;border-bottom:1px solid #f0f0f0">'
+          + esc(c.display_name) + ' <span style="color:#888;font-size:12px">'+esc(c.department||TR('未分部门'))+'</span>'
+          + '</div>';
+      }
+    });
+    list.innerHTML = h;
+    // 绑定点击事件
+    list.querySelectorAll('.ap-item').forEach(function(item){
+      item.onclick = function(){
+        var id = this.getAttribute('data-id');
+        setById(id);
+        modal.style.display = 'none';
+      };
+      item.onmouseover = function(){ this.style.background = '#f5f5f5'; };
+      item.onmouseout = function(){ this.style.background = ''; };
+    });
+  }
+  function setById(id){
+    if(!id || !byId[id]){ display.value=''; hidden.value=''; root.dataset.v=''; return; }
+    var c = byId[id];
+    display.value = c.display_name + '（' + (c.department||TR('未分部门')) + '）';
+    hidden.value = String(id);
+    root.dataset.v = String(id);
+  }
+  display.onclick = function(){
+    search.value = '';
+    renderList('');
+    modal.style.display = 'flex';
+    search.focus();
+  };
+  search.oninput = function(){ renderList(this.value); };
+  if(conf.def) setById(conf.def);
+  return {
+    get: function(){ return root.dataset.v || ''; },
+    set: function(id){ setById(id); },
+    show: function(flag){ root.style.display = flag ? '' : 'none'; },
+    root: root
+  };
+};
+</script>
+<script src="{{ url_for('static', filename='js/repairpick.js', v='20261107c') }}"></script>
 {% block scripts %}{% endblock %}
 <script>
+/* 审批人选择器：默认收窄为「常用（本部门+最近用过的）」一屏内，
+   可输入姓名/部门过滤全部候选，也可勾选「显示全部」展开。
+   conf: {rootId, name, cands:[{id,display_name,department}], base:[常用id], def, ph} */
+window.initApproverPicker = function(conf){
+  function esc(s){ const d=document.createElement('div'); d.textContent=s==null?'':String(s); return d.innerHTML; }
+  var root = document.getElementById(conf.rootId);
+  if(!root) return null;
+  var cands = conf.cands || [];
+  var byId = {};
+  cands.forEach(function(c){ byId[c.id] = c; });
+  var pickerId = 'ap-picker-' + Math.random().toString(36).slice(2, 8);
+  var modalId = pickerId + '-modal';
+  root.innerHTML =
+    '<input class="f-input ap-display" readonly style="min-width:170px;cursor:pointer" placeholder="'+esc(conf.ph||TR('点击选择…'))+'" value="">'
+    + '<input type="hidden" class="ap-hidden" name="'+esc(conf.name)+'">';
+  var display = root.querySelector('.ap-display');
+  var hidden = root.querySelector('.ap-hidden');
+  // 弹窗HTML
+  var modal = document.createElement('div');
+  modal.className = 'modal-mask';
+  modal.id = modalId;
+  modal.style.display = 'none';
+  modal.onclick = function(e){ if(e.target===this) this.style.display='none'; };
+  modal.innerHTML =
+    '<div class="modal" style="width:360px">'
+    + '<div class="modal-head"><span>'+TR('选择人员')+'</span><button class="modal-x" onclick="document.getElementById(\''+modalId+'\').style.display=\'none\'">✕</button></div>'
+    + '<div class="modal-body">'
+    + '<input class="f-input ap-search" placeholder="'+TR('搜索姓名/部门…')+'" style="margin-bottom:10px">'
+    + '<div class="ap-list" style="max-height:260px;overflow-y:auto;border:1px solid #e4e3dd;border-radius:6px"></div>'
+    + '</div>'
+    + '</div>';
+  document.body.appendChild(modal);
+  var search = modal.querySelector('.ap-search');
+  var list = modal.querySelector('.ap-list');
+  function renderList(filter){
+    filter = (filter||'').trim().toLowerCase();
+    var h = '';
+    if(conf.allowBlank !== false){ h += '<div class="ap-item" data-id="" style="padding:8px 12px;cursor:pointer;border-bottom:1px solid #f0f0f0">'+TR('不指定')+'</div>'; }
+    cands.forEach(function(c){
+      if(!filter || (c.display_name||'').toLowerCase().indexOf(filter)>=0 || (c.department||'').toLowerCase().indexOf(filter)>=0){
+        h += '<div class="ap-item" data-id="'+c.id+'" style="padding:8px 12px;cursor:pointer;border-bottom:1px solid #f0f0f0">'
+          + esc(c.display_name) + ' <span style="color:#888;font-size:12px">'+esc(c.department||TR('未分部门'))+'</span>'
+          + '</div>';
+      }
+    });
+    list.innerHTML = h;
+    // 绑定点击事件
+    list.querySelectorAll('.ap-item').forEach(function(item){
+      item.onclick = function(){
+        var id = this.getAttribute('data-id');
+        setById(id);
+        modal.style.display = 'none';
+      };
+      item.onmouseover = function(){ this.style.background = '#f5f5f5'; };
+      item.onmouseout = function(){ this.style.background = ''; };
+    });
+  }
+  function setById(id){
+    if(!id || !byId[id]){ display.value=''; hidden.value=''; root.dataset.v=''; return; }
+    var c = byId[id];
+    display.value = c.display_name + '（' + (c.department||TR('未分部门')) + '）';
+    hidden.value = String(id);
+    root.dataset.v = String(id);
+  }
+  display.onclick = function(){
+    search.value = '';
+    renderList('');
+    modal.style.display = 'flex';
+    search.focus();
+  };
+  search.oninput = function(){ renderList(this.value); };
+  if(conf.def) setById(conf.def);
+  return {
+    get: function(){ return root.dataset.v || ''; },
+    set: function(id){ setById(id); },
+    show: function(flag){ root.style.display = flag ? '' : 'none'; },
+    root: root
+  };
+};
+</script>
+<script>
+/* 导航待办动态提示：DOM加载完成后立即查询，每 60 秒轮询；新增待办时浏览器桌面通知 */
+(function(){
+  function start(){
+    var KEYS = ['approval', 'apply', 'inout', 'borrow', 'stocktake'];
+    /* 标签用服务端 tr() 直接落成字符串：TR() 只认当前页面的词条分片，
+       导航栏是每页都渲染的公共组件，用 TR() 会在某些页面漏译。 */
+    var LABELS = {approval: {{ tr('nav_approval')|tojson }}, apply: {{ tr('我的待办申请')|tojson }},
+                  inout: {{ tr('待执行申请')|tojson }}, borrow: {{ tr('ui.badge_borrow_open')|tojson }},
+                  stocktake: {{ tr('盘点审批')|tojson }}};
+    var NOTIF_T = {{ tr('您有新的待办：{label}')|tojson }};
+    var NOTIF_B = {{ tr('当前待处理 {n} 项，请登录系统处理')|tojson }};
+    /* 系统设置里的浏览器通知开关：关掉后既不申请授权，也不弹桌面通知。 */
+    var NOTIFY_BROWSER = {{ 'true' if notify_browser else 'false' }};
+    var prevTotal = -1;
+    function upd(){
+      fetch('/api/pending_counts', {headers:{'X-Requested-With':'XMLHttpRequest'}})
+        .then(function(r){ return r.json().catch(function(){ return null; }); })
+        .then(function(d){
+          if(!d || !d.ok || !d.counts) return;
+          var total = 0;
+          for(var i=0;i<KEYS.length;i++){
+            var k = KEYS[i];
+            var n = d.counts[k] || 0;
+            total += n;
+            var el = document.getElementById('badge-' + k);
+            if(!el) continue;
+            if(n > 0){ el.textContent = n > 99 ? '99+' : n; el.style.display = ''; }
+            else{ el.style.display = 'none'; }
+          }
+          if(NOTIFY_BROWSER && prevTotal >= 0 && total > prevTotal && 'Notification' in window && Notification.permission === 'granted'){
+            for(var i=0;i<KEYS.length;i++){
+              var k = KEYS[i], n = d.counts[k] || 0;
+              if(n > 0){
+                var t1 = NOTIF_T.replace('{label}', LABELS[k]);
+                var t2 = NOTIF_B.replace('{n}', n);
+                new Notification(t1, {body: t2});
+              }
+            }
+          }
+          prevTotal = total;
+        })
+        .catch(function(){});
+    }
+    if(NOTIFY_BROWSER && 'Notification' in window && Notification.permission === 'default'){
+      setTimeout(function(){ Notification.requestPermission(); }, 3000);
+    }
+    upd();
+    setInterval(upd, 60000);
+  }
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', start);
+  } else {
+    start();
+  }
+})();
 /* 通用：AJAX 无刷新保存（settings / screen_config 等使用 form.ajax-form） */
-function smtToast(msg, ok){
+function smtToast(msg, kind){
+  /* kind 既可能是布尔（d.ok），也可能是类别字符串（'success' / 'danger'）。
+     以前写成 (ok ? ...)，传 'danger' 也是真值，于是「保存失败」一直是绿条。 */
+  var ok = (kind === undefined || kind === true || kind === 'success' || kind === 'info');
   var area = document.querySelector('.flash-area');
   if(!area){ area = document.createElement('div'); area.className = 'flash-area'; document.body.appendChild(area); }
+  if(ok){
+    /* 成功/普通提示只留一条：连点「保存」时不要堆成一列（截图里连点 7 次 = 7 条）。
+       新的直接顶掉旧的，旧的那条连计时器一起作废。 */
+    Array.prototype.forEach.call(area.querySelectorAll('.flash'), function(old){
+      if(old.classList.contains('flash-danger') || old.classList.contains('flash-warning')) return;
+      if(old._smtTimer){ clearTimeout(old._smtTimer); old._smtTimer = null; }
+      old.remove();
+    });
+  }else{
+    /* 同一条错误重复弹没有意义（业务里常常一个动作报两次），已经挂着就不再叠加 */
+    var dup = Array.prototype.filter.call(area.children, function(x){
+      return x.classList.contains('flash-danger') && x.textContent === msg;
+    })[0];
+    if(dup) return;
+  }
   var el = document.createElement('div');
   el.className = 'flash ' + (ok ? 'flash-success' : 'flash-danger');
   el.textContent = msg;
   area.appendChild(el);
-  setTimeout(function(){ el.remove(); }, 4500);
+  smtAutoClose(el, ok ? 3000 : 0);
 }
+/* 提示条自动淡出：只让「成功/提示」自己消失（3 秒，够看清一行字）。
+   错误与警告一律常驻，点 × 才关 —— 导入结果这类带行号的长文本，3 秒根本读不完。 */
+function smtAutoClose(el, ms){
+  if(!el || el.dataset.ac) return;
+  el.dataset.ac = '1';
+  if(!el.title) el.title = '{{ tr('关闭') }}';
+  function hide(){
+    if(el._smtTimer){ clearTimeout(el._smtTimer); el._smtTimer = null; }
+    el.classList.add('flash-out');
+    setTimeout(function(){
+      el.remove();
+      var a = el.parentNode;
+      if(a && a.classList && a.classList.contains('flash-area') && !a.children.length) a.remove();
+    }, 380);
+  }
+  function arm(ms2){ clearTimeout(el._smtTimer); el._smtTimer = setTimeout(hide, ms2); }
+  if(ms > 0) arm(ms);
+  el.addEventListener('mouseenter', function(){ if(ms > 0) clearTimeout(el._smtTimer); });
+  el.addEventListener('mouseleave', function(){ if(ms > 0) arm(2200); });
+  el.addEventListener('click', function(){
+    /* 想把错误信息复制下来时，拖选文字不该把气泡关掉 */
+    var sel = window.getSelection && String(window.getSelection());
+    if(sel) return;
+    hide();
+  });
+}
+/* 服务端 flash（页面跳转后渲染出来的那种）同样按类别决定去留 */
+(function(){
+  function init(){
+    var area = document.querySelector('.flash-area');
+    if(!area) return;
+    var seen = {};
+    Array.prototype.forEach.call(area.querySelectorAll('.flash'), function(el){
+      var sticky = el.classList.contains('flash-danger') || el.classList.contains('flash-warning');
+      if(!sticky){
+        /* 同一条成功提示在重定向链上可能 flash 两次，只留一条，避免又堆成一列 */
+        var k = el.textContent;
+        if(seen[k]){ el.remove(); return; }
+        seen[k] = 1;
+      }
+      smtAutoClose(el, sticky ? 0 : 3000);
+    });
+  }
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
+})();
 function applyTheme(t, nav){
   var s = document.documentElement.style;
   if(t){
@@ -150,28 +618,102 @@ function applyTheme(t, nav){
     if(nav.menu_width) s.setProperty('--sidebar-width', nav.menu_width + 'px');
   }
 }
-document.querySelectorAll('form.ajax-form').forEach(function(f){
-  f.addEventListener('submit', function(ev){
-    ev.preventDefault();
-    var btn = ev.submitter || f.querySelector('button[type=submit], input[type=submit]');
-    if(btn) btn.disabled = true;
-    var url = f.getAttribute('action') || location.pathname;
-    var fd = new FormData(f);
-    /* 补上被点击的提交按钮（new FormData 不会自动带 submitter） */
-    if(btn && btn.name){ fd.append(btn.name, btn.value || '1'); }
-    fetch(url, {method:'POST', body:fd, headers:{'X-Requested-With':'XMLHttpRequest'}})
-      .then(function(r){ return r.json().catch(function(){ return {ok:false, msg:TR('响应格式异常')}; }); })
-      .then(function(d){
-        if(btn) btn.disabled = false;
-        smtToast(d.msg || (d.ok ? TR('已保存') : TR('保存失败')), d.ok);
-        if(d.backups_html && document.getElementById('backups-box')){ document.getElementById('backups-box').innerHTML = d.backups_html; }
-        if(d.theme){ applyTheme(d.theme, d.nav); }
-        if(d.db_path){ var ip = document.querySelector('input[name=db_path]'); if(ip) ip.value = d.db_path; }
-        if(d.msg && d.msg.indexOf(TR('重启')) >= 0){ setTimeout(function(){ location.reload(); }, 3500); }
-      })
-      .catch(function(){ if(btn) btn.disabled = false; smtToast('{{ tr('网络错误') }}{{ tr('，') }}{{ tr('保存失败') }}', false); });
-  });
+/* 备份列表刷新后重建「申请恢复」下拉（文件刚生成时能立刻选中） */
+function refreshBackupSelect(list){
+  var sel = document.getElementById('restore-backup-select');
+  if(!sel || !list) return;
+  var keep = sel.value, html = '';
+  if(!list.length){
+    html = '<option value="">' + TR('暂无可用备份') + TR('（请先在系统设置中创建备份）') + '</option>';
+  }else{
+    list.forEach(function(b){
+      html += '<option value="' + String(b.name).replace(/"/g, '&quot;') + '">'
+            + b.name + MK_O + (b.size / 1024 / 1024).toFixed(1) + 'MB / ' + b.mtime + MK_C + '</option>';
+    });
+  }
+  sel.innerHTML = html;
+  if(keep){
+    for(var i = 0; i < sel.options.length; i++){
+      if(sel.options[i].value === keep){ sel.selectedIndex = i; break; }
+    }
+  }
+  var hidden = document.querySelector('input[name=backup_dir]');
+  if(hidden && list.length) hidden.value = list[0].dir || '';
+}
+/* 通用：AJAX 无刷新保存（任何带 form.ajax-form 的表单）
+   用事件委托挂在 document 上，而不是 querySelectorAll 一次性绑定：
+   ① 不依赖脚本执行的先后；② 后来用 innerHTML 换进来的表单（比如刷新出来的
+   备份列表里的删除按钮）同样有效。以前是静态绑定，列表一刷新，新按钮就退化成
+   普通提交 —— 点一下整页跳走，看着像「按钮把我甩到别的页面」。 */
+document.addEventListener('submit', function(ev){
+  var f = ev.target;
+  if(!f || !f.classList || !f.classList.contains('ajax-form')) return;
+  ev.preventDefault();
+  var btn = ev.submitter || f.querySelector('button[type=submit], input[type=submit]');
+  if(btn) btn.disabled = true;
+  var url = f.getAttribute('action') || location.pathname;
+  var fd = new FormData(f);
+  /* 补上被点击的提交按钮（new FormData 不会自动带 submitter） */
+  if(btn && btn.name){ fd.append(btn.name, btn.value || '1'); }
+  fetch(url, {method:'POST', body:fd, headers:{'X-Requested-With':'XMLHttpRequest'}})
+    .then(function(r){ return r.json().catch(function(){ return {ok:false, msg:TR('响应格式异常')}; }); })
+    .then(function(d){
+      if(btn) btn.disabled = false;
+      smtToast(d.msg || (d.ok ? TR('已保存') : TR('保存失败')), d.ok);
+      if(d.backups_html && document.getElementById('backups-box')){ document.getElementById('backups-box').innerHTML = d.backups_html; }
+      if(d.backups){ refreshBackupSelect(d.backups); }
+      if(d.theme){ applyTheme(d.theme, d.nav); }
+      if(d.db_path){ var ip = document.querySelector('input[name=db_path]'); if(ip) ip.value = d.db_path; }
+      if(d.msg && d.msg.indexOf(TR('重启')) >= 0){ setTimeout(function(){ location.reload(); }, 3500); }
+    })
+    .catch(function(){ if(btn) btn.disabled = false; smtToast('{{ tr('网络错误') }}，{{ tr('保存失败') }}', false); });
 });
+// 公共审批人选择组件
+function initApproverPicker(opt){
+  const root = document.getElementById(opt.rootId);
+  if(!root) return;
+  let html = '<select class="f-input" name="'+opt.name+'" style="width:100%">';
+  html += '<option value="">'+opt.ph+'</option>';
+  (opt.cands||[]).forEach(function(u){
+    const sel = String(u.id) === String(opt.def) ? 'selected' : '';
+    // 括号也是翻译的一部分：中文用（）英文用 ()，不能让中文全角括号漏进英文界面
+    const roleTxt = (u.role === 'admin') ? TR('最高管理员') : TR('部门经理');
+    html += '<option value="'+u.id+'" '+sel+'>'+TRP('{name}（{role} / {dept}）', {name: u.display_name, role: roleTxt, dept: u.department})+'</option>';
+  });
+  html += '</select>';
+  root.innerHTML = html;
+}
+</script>
+
+<script>
+function closeModal(id){ var el = document.getElementById(id); if(el) el.style.display = 'none'; }
+</script>
+
+<!-- v1.0.26 共享盘状态横幅：断网/维护/大导入时给出明确提示。
+     文案由 /api/share_status 的 tip 字段下发，模板内不新增任何中文词条；
+     颜色用 CSS 系统色关键字，跟随深浅主题，不写死主题色。 -->
+<div id="spms-share-banner" style="display:none;position:fixed;left:0;right:0;top:0;z-index:99999;padding:10px 16px;text-align:center;font-weight:600;background:Canvas;color:CanvasText;border-bottom:3px solid currentColor"></div>
+<script>
+(function(){
+  var box = document.getElementById('spms-share-banner');
+  if(!box) return;
+  var lastEpoch = null;
+  function poll(){
+    fetch('/api/share_status', {cache:'no-store'})
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if(!d || !d.enabled) return;
+        // 库被恢复替换 / 断网恢复后重连：epoch 变化让所有客户端丢弃旧页面重载
+        if(lastEpoch !== null && d.epoch !== lastEpoch){ location.reload(); return; }
+        lastEpoch = d.epoch;
+        if(d.tip){ box.textContent = d.tip; box.style.display = 'block'; }
+        else { box.style.display = 'none'; }
+      })
+      .catch(function(){});
+  }
+  poll();
+  setInterval(poll, 5000);
+})();
 </script>
 </body>
 </html>

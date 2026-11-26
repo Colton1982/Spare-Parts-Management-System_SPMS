@@ -1,19 +1,45 @@
+{# SPMS 备件辅料仓管系统 | 作者：菜鸟大叔 (@rookie-uncle / @Colton1982) | 邮箱：510658927@qq.com | QQ：510658927 | Gitee：https://gitee.com/rookie-uncle | GitHub：https://github.com/Colton1982 | Copyright (c) 2026 rookie-uncle. All rights reserved. | Apache-2.0 #}
 {% extends "base.html" %}
-{% block title %}{{ tr('操作记录') }} - Spare Parts Management System{% endblock %}
-{% block page_title %}>{{ tr('操作记录') }}{% endblock %}
+{% block title %}{{ tr('操作记录') }} - Inventory Management System{% endblock %}
+{% block page_title %}{{ tr('操作记录') }}{% endblock %}
 {% block content %}
 
+{% set back_url = url_for('parts_manage_page') if t=='part' else (url_for('locations_page') if t=='rack' else url_for('stocktakes_page')) %}
 <div class="card">
   <div class="card-title" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
     <span style="display:flex;align-items:center;gap:8px">
-      <a class="btn btn-xs" href="{{ url_for('parts_manage_page') if t=='part' else url_for('locations_page') }}">← {{ tr('返回') }}</a>
-      <span>{{ tr('操作记录') }}{{ tr('（') }}{{ tr('备件信息维护 / 货架管理的增加、删除、编辑等操作') }}{{ tr('）') }}</span>
+      <a class="btn btn-xs" href="{{ back_url }}">← {{ tr('返回') }}</a>
+      <span>{{ tr('操作记录') }}</span>
     </span>
-    <span style="display:flex;gap:6px">
-      <a class="btn {{ 'btn-primary' if t=='part' }}" href="{{ url_for('audit_page', type='part') }}">{{ tr('备件') }}</a>
+    <span style="display:flex;gap:6px;flex-wrap:wrap">
+      <a class="btn {{ 'btn-primary' if t=='part' }}" href="{{ url_for('audit_page', type='part') }}">{{ tr('物料') }}</a>
       <a class="btn {{ 'btn-primary' if t=='rack' }}" href="{{ url_for('audit_page', type='rack') }}">{{ tr('货架位置') }}</a>
+      <a class="btn {{ 'btn-primary' if t=='stocktake' }}" href="{{ url_for('audit_page', type='stocktake') }}">{{ tr('盘点') }}</a>
     </span>
   </div>
+  {# 口径写清楚：这里是「主数据变更」审计。出入库、申请单、借用有自己的流水页，
+     不重复记在这，否则同一件事两处都能查到、两处口径还可能对不上。 #}
+  <div class="muted small ui-hint" style="margin:-6px 0 12px">
+    {% if t=='part' %}{{ tr('信息维护') }}{{ mk('：') }}{{ tr('新增') }}{{ mk('、') }}{{ tr('编辑') }}{{ mk('、') }}{{ tr('删除') }}{{ mk('、') }}{{ tr('恢复') }}{{ mk('、') }}{{ tr('彻底清除') }}{{ mk('、') }}{{ tr('上传图片') }}{{ mk('、') }}{{ tr('删除图片') }}
+    {% elif t=='rack' %}{{ tr('货架位置') }}{{ mk('：') }}{{ tr('新增') }}{{ mk('、') }}{{ tr('删除') }}{{ mk('、') }}{{ tr('恢复') }}{{ mk('、') }}{{ tr('彻底清除') }}
+    {% else %}{{ tr('盘点') }}{{ mk('：') }}{{ tr('创建') }}{{ mk('、') }}{{ tr('提交') }}{{ mk('、') }}{{ tr('审批') }}{{ mk('、') }}{{ tr('调整') }}{{ mk('、') }}{{ tr('取消') }}{% endif %}
+    <span style="margin-left:6px">{{ tr('出入库、申请单、借用请到各自的流水页查看') }}</span>
+  </div>
+  {% if cur_user and cur_user.role == 'admin' %}
+  {# 管理员：操作记录占用统计 + 保留天数（0=永久保留）+ 立即清理 #}
+  <div class="card" style="margin:-2px 0 12px;padding:10px 12px">
+    <form class="inline-form" method="post" action="{{ url_for('audit_settings') }}" style="margin:0;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <input type="hidden" name="type" value="{{ t }}">
+      <span class="muted small">{{ tr('共 {0} 条记录，占用约 {1}').format(audit_total, audit_size) }}</span>
+      <span style="flex:1"></span>
+      <label class="muted small">{{ tr('保留天数') }}{{ mk('：') }}</label>
+      <input class="f-input" type="number" name="days" value="{{ audit_days }}" min="0" max="3650" style="max-width:90px">
+      <button class="btn btn-xs" type="submit">{{ tr('btn_save') }}</button>
+      <button class="btn btn-xs" type="submit" name="do" value="clean">{{ tr('立即清理') }}</button>
+    </form>
+    <div class="muted small ui-hint" style="margin-top:4px">{{ tr('0 表示永久保留；超过保留天数的记录会自动清理并压缩数据库') }}</div>
+  </div>
+  {% endif %}
   <div class="table-wrap">
     <table class="table">
       <thead><tr>
@@ -29,27 +55,51 @@
         <tr>
           <td class="mono" style="white-space:nowrap">{{ r.created_at }}</td>
           <td>{{ r.operator_name }}</td>
-          <td>
+          <td style="white-space:nowrap">
             {% if r.action=='add' %}<span class="tag tag-green">{{ tr('新增') }}</span>
             {% elif r.action=='edit' %}<span class="tag tag-blue">{{ tr('编辑') }}</span>
             {% elif r.action=='delete' %}<span class="tag tag-red">{{ tr('删除') }}</span>
             {% elif r.action=='restore' %}<span class="tag tag-green">{{ tr('恢复') }}</span>
             {% elif r.action=='purge' %}<span class="tag tag-red">{{ tr('彻底清除') }}</span>
+            {% elif r.action=='submit' %}<span class="tag tag-blue">{{ tr('提交') }}</span>
+            {% elif r.action=='approve1' %}<span class="tag tag-green">{{ tr('一级审批') }}</span>
+            {% elif r.action=='approve2' %}<span class="tag tag-green">{{ tr('二级审批') }}</span>
+            {% elif r.action=='reject' %}<span class="tag tag-red">{{ tr('驳回') }}</span>
+            {% elif r.action=='cancel' %}<span class="tag tag-red">{{ tr('取消') }}</span>
+            {% elif r.action=='reassign' %}<span class="tag tag-blue">{{ tr('改派') }}</span>
+            {% elif r.action=='adjust' %}<span class="tag tag-blue">{{ tr('调整') }}</span>
+            {% elif r.action=='analyze' %}<span class="tag tag-blue">{{ tr('分析') }}</span>
+            {% elif r.action=='image' %}<span class="tag tag-blue">{{ tr('上传图片') }}</span>
+            {% elif r.action=='image_del' %}<span class="tag tag-red">{{ tr('删除图片') }}</span>
             {% else %}{{ r.action }}{% endif %}
           </td>
           <td class="mono">{{ r.obj_code }}</td>
           <td style="max-width:520px">
             {% if d.get('f') %}
+              {# 物料编辑：只列真正变了的字段，「旧值 → 新值」 #}
               <div style="display:flex;flex-direction:column;gap:2px;font-size:12px">
                 {% for k, pair in d.f.items() %}
                   <div>
-                    {% if t=='part' %}<b>{{ tr(PART_FIELD_NAMES.get(k, k)) }}</b>
+                    {# 自定义表头的标签由管理员自己起名，原样显示；其余走词条 #}
+                    {% if t=='part' %}{% if k.startswith('extra.') %}<b>{{ (d.labels or {}).get(k, k[6:]) }}</b>{% else %}<b>{{ tr(PART_FIELD_NAMES.get(k, k)) }}</b>{% endif %}
                     {% else %}<b>{{ k }}</b>{% endif %}：
-                    {% if pair[0] %}<span class="muted"><s>{{ tr(pair[0]) }}</s></span> → {% endif %}<span>{{ tr(pair[1]) }}</span>
+                    {% set rawv = k.startswith('extra.') or k == 'apps' %}
+                    {% if pair[0] %}<span class="muted"><s>{% if rawv %}{{ pair[0] }}{% else %}{{ tr(pair[0]) }}{% endif %}</s></span> → {% endif %}<span>{% if rawv %}{{ pair[1] }}{% else %}{{ tr(pair[1]) }}{% endif %}</span>
                   </div>
                 {% endfor %}
               </div>
-            {% elif d.get('note') %}<span class="muted">{{ d.note }}</span>
+            {% elif t=='stocktake' and d %}
+              {# 盘点：detail 是扁平字典，按固定顺序取；认不出的键不显示，免得露出英文键名 #}
+              <div style="display:flex;flex-direction:column;gap:2px;font-size:12px">
+                {% for k, label in STK_FIELD_NAMES.items() %}
+                  {% if d.get(k) is not none and d.get(k) != '' and d.get(k) != [] %}
+                    {% set v = d.get(k) %}
+                    {# 只有文本才过 tr()：数量/金额是数字，塞进取词函数会直接报错 #}
+                    <div><b>{{ tr(label) }}</b>：<span>{% if v is string %}{{ tr(v) }}{% else %}{{ v }}{% endif %}</span></div>
+                  {% endif %}
+                {% endfor %}
+              </div>
+            {% elif d.get('note') %}<span class="muted">{{ tr(d.note) }}</span>
             {% else %}<span class="muted">—</span>{% endif %}
           </td>
         </tr>

@@ -1,0 +1,59 @@
+{# SPMS 备件辅料仓管系统 | 作者：菜鸟大叔 (@rookie-uncle / @Colton1982) | 邮箱：510658927@qq.com | QQ：510658927 | Gitee：https://gitee.com/rookie-uncle | GitHub：https://github.com/Colton1982 | Copyright (c) 2026 rookie-uncle. All rights reserved. | Apache-2.0 #}
+<!DOCTYPE html>
+<html lang="{{ cur_lang }}" dir="{{ cur_dir or 'ltr' }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{ tr('库位码打印') }} · Inventory Management System</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'PingFang SC','Microsoft YaHei',Arial,sans-serif;background:#fff;padding:16px}
+.head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+.head h1{font-size:18px}
+.head .btn{font-size:13px;padding:8px 14px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;cursor:pointer}
+.grid{display:flex;flex-wrap:wrap;gap:10px}
+.cell{width:130px;border:1px dashed #cbd5e1;border-radius:8px;padding:8px;text-align:center;break-inside:avoid}
+.cell canvas{width:110px!important;height:110px!important}
+.cell .code{font-family:Consolas,monospace;font-size:10px;color:#334155;margin-top:4px;word-break:break-all}
+.cell .wh{font-size:11px;color:#64748b;margin-top:2px}
+@media print{
+  .no-print{display:none}
+  body{padding:6mm}
+  .cell{width:26mm;border:1px solid #ccc;padding:2mm;border-radius:0}
+  .cell canvas{width:22mm!important;height:22mm!important}
+  .cell .code{font-size:2.6mm}
+  .grid{gap:2mm}
+}
+</style>
+</head>
+<body>
+<div class="head no-print">
+  <h1>{{ tr('库位码打印') }}<span style="font-size:14px;font-weight:400;opacity:.65;margin-left:8px">{{ codes|length }} {{ tr('个库位') }}</span></h1>
+  <div>
+    <button class="btn" onclick="window.print()">{{ tr('打印') }}</button>
+    <button class="btn" onclick="history.back()">{{ tr('返回') }}</button>
+  </div>
+</div>
+<div class="grid" id="grid">
+  {% for c in codes %}
+  <div class="cell" data-code="{{ c.loc_code }}">
+    <canvas></canvas>
+    <div class="code">{{ c.loc_code }}</div>
+    <div class="wh">{{ c.warehouse }}-{{ c.rack }}-{{ c.shelf }}{% if c.bin %}-{{ c.bin }}{% endif %}</div>
+  </div>
+  {% endfor %}
+</div>
+<script src="{{ url_for('static', filename='vendor/qrcode.min.js') }}"></script>
+<script>
+(function(){
+  try{
+    document.querySelectorAll('#grid .cell').forEach(function(cell){
+      var code = cell.getAttribute('data-code');
+      if(!code || typeof QRCode === 'undefined') return;
+      new QRCode(cell.querySelector('canvas'), {text: code, width: 110, height: 110, correctLevel: QRCode.CorrectLevel.M});
+    });
+  }catch(e){}
+})();
+</script>
+</body>
+</html>

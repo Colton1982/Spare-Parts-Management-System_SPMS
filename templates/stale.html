@@ -1,10 +1,12 @@
+{# SPMS 备件辅料仓管系统 | 作者：菜鸟大叔 (@rookie-uncle / @Colton1982) | 邮箱：510658927@qq.com | QQ：510658927 | Gitee：https://gitee.com/rookie-uncle | GitHub：https://github.com/Colton1982 | Copyright (c) 2026 rookie-uncle. All rights reserved. | Apache-2.0 #}
 {% extends "base.html" %}
-{% block title %}{{ tr('page_stale') }} - Spare Parts Management System{% endblock %}
-{% block page_title %}>{{ tr('page_stale') }}{% endblock %}
+{% block title %}{{ tr('page_stale') }} - Inventory Management System{% endblock %}
+{% block page_title %}{{ tr('page_stale') }}{% endblock %}
 {% block content %}
 
 <div class="card">
-  <div class="card-title">{{ tr('呆滞物料清单') }}<span class="muted">{{ tr('（') }}{{ tr('以料号为锚点') }}{{ tr('，') }}{{ tr('超过') }} {{ stale_days }} {{ tr('天未领用即判定为呆滞') }}{{ tr('；') }}{{ tr('可在') }}{{ tr('「') }}{{ tr('系统设置') }}{{ tr('」') }}{{ tr('中调整天数') }}{{ tr('）') }}</span>
+  <div class="card-title">{{ tr('呆滞物料清单') }}</div>
+  <div class="muted small ui-hint" style="margin:-6px 0 12px">{{ tr('超过') }} {{ stale_days }} {{ tr('天未领用即判定为呆滞') }}{% if ignore_borrowed %}{{ mk('；') }}{{ tr('stale.borrow_on') }}{% endif %}{{ mk('；') }}{{ tr('可在') }}{{ mk('「') }}{{ tr('系统设置') }}{{ mk('」') }}{{ tr('中调整天数') }}
     {% if can('stale', 'export') %}<a class="btn btn-xs" style="float:right" href="{{ url_for('stale_export', q=q, f_stale=f_stale) }}">📥 {{ tr('导出 Excel') }}</a>{% endif %}
   </div>
   <form class="inline-form" method="get" action="{{ url_for('stale_page') }}" style="margin-bottom:10px">
@@ -16,13 +18,13 @@
     </select>
     <button class="btn" type="submit">{{ tr('btn_search') }}</button>
     <a class="btn" href="{{ url_for('stale_page') }}">{{ tr('btn_reset') }}</a>
-    <span class="muted small">{{ tr('共') }} {{ rows|length }} {{ tr('条') }}</span>
+    <span class="muted small">{{ tn('stale.count_records', rows|length) }}</span>
   </form>
-  <div class="table-wrap">
+  <div class="table-wrap table-sticky" style="overflow:auto;max-height:clamp(360px, calc(100vh - 320px), 900px)">
     <table class="table">
       <thead><tr>
         <th>{{ tr('th_code') }}</th><th>{{ tr('th_name') }}</th><th>{{ tr('单位') }}</th><th>{{ tr('当前库存') }}</th><th>{{ tr('库位分布') }}</th>
-        <th>{{ tr('最后领用日期') }}</th><th>{{ tr('未领用天数') }}</th><th>{{ tr('th_status') }}</th>{% if can('price') %}<th>{{ tr('单价(元)') }}</th><th>{{ tr('库存金额(元)') }}</th>{% endif %}
+        <th>{{ tr('最后领用日期') }}</th><th>{{ tr('stale.last_borrow') }}</th><th>{{ tr('未领用天数') }}</th><th>{{ tr('th_status') }}</th>{% if can('price') %}<th>{{ tr('单价(元)') }}</th><th>{{ tr('库存金额(元)') }}</th>{% endif %}
       </tr></thead>
       <tbody>
         {% for r in rows %}
@@ -32,7 +34,8 @@
           <td>{{ r.unit }}</td>
           <td class="num">{{ r.total_stock }}</td>
           <td class="mono small">{{ r.locs or '-' }}</td>
-          <td class="mono">{{ tr(r.last_out or '从未出库') }} }}</td>
+          <td class="mono">{{ r.last_out or tr('从未出库') }}</td>
+          <td class="mono">{% if r.last_borrow %}{{ r.last_borrow }}{% else %}<span class="muted">{{ tr('从未借用') }}</span>{% endif %}</td>
           <td class="num">{{ r.days }}</td>
           <td>
             {% if r.stale %}<span class="badge badge-danger">{{ tr('呆滞') }} {{ r.days }} {{ tr('天') }}</span>
@@ -41,10 +44,10 @@
           {% if can('price') %}<td class="num">{{ '%.2f'|format(r.unit_price or 0) }}</td>
           <td class="num">{{ '%.2f'|format(r.amount) }}</td>{% endif %}
         </tr>
-        {% else %}<tr><td colspan="{{ 10 if can('price') else 8 }}" class="muted center">{{ tr('没有符合条件的备件') }}</td></tr>{% endfor %}
+        {% else %}<tr><td colspan="{{ 11 if can('price') else 9 }}" class="muted center">{{ tr('没有符合条件的物料') }}</td></tr>{% endfor %}
       </tbody>
     </table>
   </div>
-  <div class="muted small" style="margin-top:8px">{{ tr('说明') }}{{ tr('：') }}{{ tr('最后领用日期取该料号最近一次') }}{{ tr('「') }}{{ tr('出库') }}{{ tr('」') }}{{ tr('流水时间') }}{{ tr('；') }}{{ tr('从未出库过的备件按建档日期起算') }}{{ tr('。') }}</div>
+  <div class="muted small ui-hint" style="margin-top:8px">{{ tr('说明') }}{{ mk('：') }}{{ tr('最后领用日期取该料号最近一次') }}{{ mk('「') }}{{ tr('出库') }}{{ mk('」') }}{{ tr('流水时间') }}{{ mk('；') }}{{ tr('从未出库过的物料按建档日期起算') }}{{ mk('。') }}{% if ignore_borrowed %}{{ tr('stale.ref_hint') }}{{ mk('。') }}{% endif %}</div>
 </div>
 {% endblock %}

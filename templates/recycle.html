@@ -1,17 +1,18 @@
+{# SPMS 备件辅料仓管系统 | 作者：菜鸟大叔 (@rookie-uncle / @Colton1982) | 邮箱：510658927@qq.com | QQ：510658927 | Gitee：https://gitee.com/rookie-uncle | GitHub：https://github.com/Colton1982 | Copyright (c) 2026 rookie-uncle. All rights reserved. | Apache-2.0 #}
 {% extends "base.html" %}
-{% block title %}{{ tr('page_recycle') }} - Spare Parts Management System{% endblock %}
-{% block page_title %}>{{ tr('page_recycle') }}{% endblock %}
+{% block title %}{{ tr('page_recycle') }} - Inventory Management System{% endblock %}
+{% block page_title %}{{ tr('page_recycle') }}{% endblock %}
 {% block content %}
 
 <div class="card">
   <div class="card-title">
-    {{ tr('回收站') }}{{ tr('（') }}{{ tr('仅管理员可见') }}{{ tr('）') }}
-    <span class="muted">{{ tr('删除的备件') }}/{{ tr('货架位置') }}/{{ tr('部门') }}/{{ tr('用户') }}{{ tr('：') }}{{ tr('进入回收站，超保留期自动彻底清除；恢复或彻底删除由管理员操作') }}</span>
+    {{ tr('回收站') }}
+    <span class="muted ui-hint">{{ tr('有权限的用户可见') }}{{ mk('；') }}{{ tr('删除的物料') }}/{{ tr('货架位置') }}/{{ tr('部门') }}/{{ tr('用户') }}{{ mk('：') }}{{ tr('进入回收站，超保留期自动彻底清除；恢复或彻底删除由有权限的用户操作') }}</span>
   </div>
 
   <div class="card" style="margin-bottom:12px;padding:12px">
     <form class="inline-form" method="post" action="{{ url_for('recycle_settings') }}" style="margin:0">
-      <label class="muted">{{ tr('保留天数') }}{{ tr('（超期自动彻底清除）') }}{{ tr('：') }}</label>
+      <label class="muted">{{ tr('保留天数') }}{{ tr('（超期自动彻底清除）') }}{{ mk('：') }}</label>
       <input class="f-input" type="number" name="days" value="{{ days }}" min="1" max="365"
              style="max-width:90px" required>
       <button class="btn btn-xs" type="submit">{{ tr('btn_save') }}</button>
@@ -21,10 +22,10 @@
 
   {% if cover_pending and cover_pending.item_type %}
   <div class="card" style="margin-bottom:12px;padding:12px;border:1px solid #FAAD14;background:#FFFBE6">
-    <b>⚠ {{ tr('有相同信息已存在，恢复时会覆盖已有信息') }}{{ tr('，') }}{{ tr('请确认') }}</b>
-    <div class="muted small" style="margin-top:4px">
-      {{ tr('正在恢复的') }}{{ {'location': tr('货架位置'), 'department': tr('部门'), 'user': tr('用户')}[cover_pending.item_type] }}{{ tr('与现存记录信息相同') }}{{ tr('。') }}
-      {{ tr('确认覆盖后将删除现有同名信息，恢复回收站中的旧记录') }}{{ tr('。') }}
+    <b>⚠ {{ tr('有相同信息已存在，恢复时会覆盖已有信息') }}{{ mk('，') }}{{ tr('请确认') }}</b>
+    <div class="muted small ui-hint" style="margin-top:4px">
+      {{ tr('正在恢复的') }}{{ {'location': tr('货架位置'), 'department': tr('部门'), 'user': tr('用户')}[cover_pending.item_type] }}{{ tr('与现存记录信息相同') }}{{ mk('。') }}
+      {{ tr('确认覆盖后将删除现有同名信息，恢复回收站中的旧记录') }}{{ mk('。') }}
     </div>
     <div style="margin-top:8px">
       <form method="post" action="{{ url_for('recycle_cover_confirm') }}" style="display:inline">
@@ -40,10 +41,10 @@
   {% for g in groups %}
   <div class="card" style="margin-bottom:14px">
     <div class="card-title" style="font-size:14px">{{ g.label }}
-      <span class="muted">{{ tr('（') }}{{ g.rows|length }} {{ tr('条') }}{{ tr('）') }}</span>
+      <span class="muted">{{ g.rows|length }} {{ tr('条') }}</span>
       {% if g.rows %}
       <form method="post" action="{{ url_for('recycle_purge_all_other') }}" style="float:right;margin-left:8px"
-            onsubmit="return confirm(TR('确定清空') + {{ g.label }} + TR('回收站？所有记录将彻底删除{{ tr('，') }}不可恢复') + '！')">
+            onsubmit="return confirm(TR('确定清空') + {{ g.label }} + TR('回收站？所有记录将彻底删除，不可恢复') + '！')">
         <input type="hidden" name="type" value="{{ g.type }}">
         <button class="btn btn-xs btn-danger" type="submit">{{ tr('清空本类') }}</button>
       </form>
@@ -70,7 +71,7 @@
               {% if r.expired %}<span class="badge badge-danger">{{ tr('已到期') }}</span>
               {% else %}{{ r.expire or '-' }}{% endif %}
             </td>
-            <td class="mono small">{{ tr(r.location_text or '待定') }} }}</td>
+            <td class="mono small">{{ r.location_text or tr('待定') }}</td>
             <td style="white-space:nowrap">
               <form method="post" action="{{ url_for('recycle_restore') }}" style="display:inline">
                 <input type="hidden" name="pid" value="{{ r.id }}">
@@ -87,8 +88,8 @@
         </tbody>
       </table>
     </div>
-    <div class="muted small" style="margin-top:8px">
-      {{ tr('说明') }}{{ tr('：') }}{{ tr('恢复时若原固定库位已被其他备件占用，该备件位置将置为') }}{{ tr('「') }}{{ tr('待定') }}{{ tr('」') }}{{ tr('；') }}{{ tr('请恢复后在') }}{{ tr('「') }}{{ tr('备件信息维护') }}{{ tr('」') }}{{ tr('中重新指定库位') }}{{ tr('。') }}
+    <div class="muted small ui-hint" style="margin-top:8px">
+      {{ tr('说明') }}{{ mk('：') }}{{ tr('恢复时若原固定库位已被其他物料占用，该物料位置将置为') }}{{ mk('「') }}{{ tr('待定') }}{{ mk('」') }}{{ mk('；') }}{{ tr('请恢复后在') }}{{ mk('「') }}{{ tr('信息维护') }}{{ mk('」') }}{{ tr('中重新指定库位') }}{{ mk('。') }}
     </div>
 
     {% elif g.type == 'location' %}

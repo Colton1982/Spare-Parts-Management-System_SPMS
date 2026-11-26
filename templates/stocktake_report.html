@@ -1,0 +1,311 @@
+{# SPMS 备件辅料仓管系统 | 作者：菜鸟大叔 (@rookie-uncle / @Colton1982) | 邮箱：510658927@qq.com | QQ：510658927 | Gitee：https://gitee.com/rookie-uncle | GitHub：https://github.com/Colton1982 | Copyright (c) 2026 rookie-uncle. All rights reserved. | Apache-2.0 #}
+{% extends "base.html" %}
+{% block title %}{{ tr('盘点报告') }} - Inventory Management System{% endblock %}
+{% block page_title %}{{ tr('盘点报告') }}{% endblock %}
+{% block content %}
+{% set s = st.summary|fromjson if st.summary else {} %}
+<div class="card">
+  <div class="card-title no-print" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+    <span style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <a class="btn btn-xs" href="{{ url_for('stocktake_detail', sid=st.id) }}">← {{ tr('返回') }}</a>
+      <span class="mono" style="font-size:15px">{{ st.no }}</span>
+      <span class="badge badge-ok">{{ tr('已完成') }}</span>
+    </span>
+    <span style="display:flex;gap:6px;align-items:center">
+      <label class="f-check small" style="margin-right:6px"><input type="checkbox" id="only-diff" onchange="toggleDiff(this.checked)">{{ tr('仅看差异') }}</label>
+      <a class="btn" href="{{ url_for('stocktake_reports') }}">{{ tr('盘点记录') }}</a>
+      <a class="btn btn-primary" href="{{ url_for('stocktake_export', sid=st.id) }}">{{ tr('导出 Excel') }}</a>
+      <button class="btn" onclick="window.print()">{{ tr('打印') }}</button>
+    </span>
+  </div>
+
+  {# ── 报告头：屏幕上是个抬头，打印出来就是一张纸质盘点报告 ── #}
+  <div class="rpt-head">
+    <div>
+      <span class="rpt-title">{{ tr('盘点报告') }}</span>
+      <span class="rpt-sub" style="margin-left:10px">{{ st.no }}</span>
+    </div>
+    <div class="rpt-sub">{{ tr('制表时间') }}{{ mk('：') }}{{ printed_at }}</div>
+  </div>
+
+  <table class="rpt-meta">
+    <tbody>
+      <tr>
+        <th>{{ tr('盘点单号') }}</th><td class="mono">{{ st.no }}</td>
+        <th>{{ tr('盘点范围') }}</th><td>{{ scope_disp }}</td>
+      </tr>
+      <tr>
+        <th>{{ tr('创建人') }}</th><td>{{ st.created_by_name or '—' }}</td>
+        <th>{{ tr('创建时间') }}</th><td class="mono">{{ st.created_at }}</td>
+      </tr>
+      <tr>
+        <th>{{ tr('完成时间') }}</th><td class="mono">{{ st.updated_at or '—' }}</td>
+        <th>{{ tr('审批人') }}</th>
+        <td>{% if ap1 %}{{ tr('一级') }} {{ ap1 }}{% endif %}{% if ap1 and ap2 %} / {% endif %}{% if ap2 %}{{ tr('二级') }} {{ ap2 }}{% endif %}{% if not ap1 and not ap2 %}—{% endif %}</td>
+      </tr>
+      <tr>
+        <th>{{ tr('盘点进度') }}</th><td>{{ stats.done }} / {{ stats.total }} {{ tr('条') }}</td>
+        <th>{{ tr('审批级别') }}</th><td>{{ tr('两级审批') if st.review_level|int == 2 else tr('一级审批') }}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  {# ── 结论指标 ── #}
+  <div class="sub-h">{{ tr('盘点结论') }}</div>
+  <div class="stat-row">
+    <div class="stat-card"><div class="stat-label">{{ tr('账面总数') }}</div><div class="stat-num">{{ '%.2f'|format(s.get('book',0)) if s.get('book',0)|string|float % 1 else s.get('book',0) }}</div></div>
+    <div class="stat-card"><div class="stat-label">{{ tr('实盘总数') }}</div><div class="stat-num">{{ '%.2f'|format(s.get('actual',0)) if s.get('actual',0)|string|float % 1 else s.get('actual',0) }}</div></div>
+    <div class="stat-card"><div class="stat-label">{{ tr('差异总数') }}</div><div class="stat-num" style="color:{{ 'var(--green)' if s.get('diff',0)>=0 else 'var(--red)' }}">{{ s.get('diff',0) }}</div></div>
+    <div class="stat-card"><div class="stat-label">{{ tr('差异金额(元)') }}</div><div class="stat-num">{{ '%.2f'|format(s.get('amount',0)) }}</div></div>
+    <div class="stat-card"><div class="stat-label">{{ tr('贵重差异条数') }}</div><div class="stat-num">{{ s.get('v_count',0) }}</div></div>
+    <div class="stat-card"><div class="stat-label">{{ tr('异常条数') }}</div><div class="stat-num" style="color:{{ 'var(--red)' if stats.abnormal else 'inherit' }}">{{ stats.abnormal }}</div></div>
+  </div>
+
+  {# ── 差异构成：一眼看出是盘盈多还是盘亏多、有没有错料 ── #}
+  <div class="stat-row">
+    <div class="stat-card">
+      <div class="stat-label">{{ tr('盘盈') }}</div>
+      <div class="stat-num">{{ stats.gain }}</div>
+      <div class="muted small">+{{ '%g'|format(stats.gain_qty) }} · {{ '%.2f'|format(stats.gain_amt) }} {{ tr('元') }}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">{{ tr('盘亏') }}</div>
+      <div class="stat-num">{{ stats.loss }}</div>
+      <div class="muted small">-{{ '%g'|format(stats.loss_qty) }} · {{ '%.2f'|format(stats.loss_amt|abs) }} {{ tr('元') }}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">{{ tr('错料') }}</div>
+      <div class="stat-num">{{ stats.mismatch }}</div>
+      <div class="muted small">{{ tr('实盘料号与账面不符') }}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">{{ tr('无差异') }}</div>
+      <div class="stat-num">{{ stats.same }}</div>
+      <div class="muted small">{{ tr('账实相符') }}</div>
+    </div>
+  </div>
+
+  {# ── 按原因归因：差异有多少、值多少钱，各归到哪一类原因 ── #}
+  <div class="sub-h">{{ tr('按原因汇总') }}</div>
+  {% if reason_rows %}
+  <table class="rpt-meta" style="margin:6px 0 12px">
+    <thead>
+      <tr>
+        <th style="width:auto">{{ tr('原因') }}</th>
+        <th style="width:110px;text-align:right">{{ tr('差异条数') }}</th>
+        <th style="width:110px;text-align:right">{{ tr('数量合计') }}</th>
+        <th style="width:130px;text-align:right">{{ tr('差异金额') }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in reason_rows %}
+      <tr>
+        <td>{{ r.label }}</td>
+        <td style="text-align:right">{{ r.cnt }}</td>
+        <td style="text-align:right">{{ '%g'|format(r.qty) }}</td>
+        <td style="text-align:right">{{ '%.2f'|format(r.amt) }}</td>
+      </tr>
+      {% endfor %}
+      {% if stats.no_reason %}
+      <tr>
+        <td class="muted">{{ tr('未标注') }}</td>
+        <td style="text-align:right">{{ stats.no_reason }}</td>
+        <td style="text-align:right">—</td>
+        <td style="text-align:right">—</td>
+      </tr>
+      {% endif %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="muted small" style="margin:6px 0 12px">
+    {% if stats.diff_cnt %}{{ tr('差异还没标注原因') }}{{ mk('：') }}{{ tr('可在下方明细表里逐行选择') }}{% else %}{{ tr('本次盘点无差异，无需归因') }}{% endif %}
+  </div>
+  {% endif %}
+
+  {# 明细与分析同在一个表单里：一次保存，避免「明细标了原因、结论没存上」 ── #}
+  <form method="post" action="{{ url_for('stocktake_analysis', sid=st.id) }}" id="ana-form">
+  {# ── 明细 ── #}
+  <div class="sub-h">{{ tr('盘点明细') }}</div>
+  <div class="table-wrap">
+    <table class="table" id="rpt-items">
+      <thead><tr>
+        <th style="width:44px">#</th>
+        <th style="white-space:nowrap">{{ tr('料号') }}</th><th>{{ tr('名称') }}</th><th>{{ tr('库位') }}</th>
+        <th style="text-align:right">{{ tr('账面数量') }}</th><th style="text-align:right">{{ tr('实盘数量') }}</th>
+        <th style="text-align:right">{{ tr('差异') }}</th><th style="width:56px">{{ tr('状态') }}</th><th>{{ tr('实盘料号') }}</th>
+        <th style="text-align:right">{{ tr('单价(元)') }}</th>
+        <th style="text-align:right">{{ tr('差异金额') }}</th>
+        <th style="width:126px">{{ tr('差异原因') }}</th><th>{{ tr('贵重') }}</th>
+      </tr></thead>
+      <tbody>
+        {% for it in items %}
+        {% set has_diff = 1 if it.abnormal else 0 %}
+        <tr class="{{ 'row-val' if it.is_valuable and it.abnormal }}" data-diff="{{ has_diff }}">
+          <td class="muted small">{{ loop.index }}</td>
+          <td class="mono" style="white-space:nowrap">{{ it.part_code }}</td>
+          <td>{{ it.part_name }}</td>
+          <td>{{ it.location or '—' }}</td>
+          <td style="text-align:right">{{ it.book_qty }}</td>
+          <td style="text-align:right">{{ it.actual_qty if it.actual_qty is not none else '—' }}</td>
+          <td style="text-align:right;color:{{ 'var(--green)' if (it.diff or 0)>0 else ('var(--red)' if (it.diff or 0)<0 else 'inherit') }}">{{ it.diff or 0 }}</td>
+          <td>{% if it.abnormal %}<span class="tag tag-orange">{{ tr('异常') }}</span>{% else %}{{ tr('正常') }}{% endif %}</td>
+          <td>{% if it.is_wrong %}<span class="tag tag-orange">{{ tr('错料') }} → {{ it.actual_part_code }}</span>{% else %}—{% endif %}</td>
+          <td style="text-align:right">{{ it.unit_price or 0 }}</td>
+          <td style="text-align:right">{{ '%.2f'|format(it.diff_amt) }}</td>
+          <td>
+            {# v1.0.18：报告页是已审批单据，逐行差异原因码一律只读，不再渲染下拉 #}
+            {% if has_diff %}{{ it.reason_label or '—' }}{% else %}—{% endif %}
+          </td>
+          <td>{% if it.is_valuable %}<span class="badge badge-val">{{ tr('贵重') }}</span>{% else %}—{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr>
+          <th colspan="4" style="text-align:right">{{ tr('合计') }}</th>
+          <th style="text-align:right">{{ '%g'|format(s.get('book',0)) }}</th>
+          <th style="text-align:right">{{ '%g'|format(s.get('actual',0)) }}</th>
+          <th style="text-align:right">{{ '%g'|format(s.get('diff',0)) }}</th>
+          <th></th><th></th><th></th>
+          <th style="text-align:right">{{ '%.2f'|format(s.get('amount',0)) }}</th>
+          <th></th><th>{{ s.get('v_count',0) }}</th>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+
+  {# v1.0.74：差异分析全报告只此一处——明细表只列账实数量，超期原因另有专门页面。#}
+  <div class="sub-h">{{ tr('差异原因分析汇总') }}</div>
+  <div class="muted small ui-hint no-print" style="margin:-2px 0 8px">
+    {{ tr('差异原因、原因分析、改善处理与任务状态集中在此；未结束的改善任务，责任人可直接在本表改写。') }}
+  </div>
+  <div class="table-wrap">
+    <table class="table" id="rpt-analysis-summary">
+      <thead><tr>
+        <th>{{ tr('料号') }}</th><th>{{ tr('库位') }}</th>
+        <th style="text-align:right">{{ tr('差异') }}</th>
+        <th style="width:56px">{{ tr('状态') }}</th>
+        <th style="min-width:110px">{{ tr('盘点过程') }}</th>
+        <th>{{ tr('差异原因') }}</th>
+        <th style="min-width:150px">{{ tr('原因分析') }}</th>
+        <th style="min-width:150px">{{ tr('改善处理') }}</th>
+        <th>{{ tr('责任人') }}</th><th>{{ tr('计划完成日期') }}</th>
+        <th>{{ tr('单据编号') }}</th>
+      </tr></thead>
+      <tbody>
+        {% set _diff_items = [] %}
+        {% for it in items %}
+          {% if it.abnormal %}{% set _ = _diff_items.append(it) %}{% endif %}
+        {% endfor %}
+        {% for it in _diff_items %}
+        {% set can_edit = it.id in item_edit_ids %}
+        <tr>
+          <td class="mono" style="white-space:nowrap">{{ it.part_code }}</td>
+          <td>{{ it.location or '—' }}</td>
+          <td style="text-align:right;color:{{ 'var(--green)' if (it.diff or 0)>0 else ('var(--red)' if (it.diff or 0)<0 else 'inherit') }}">{{ it.diff or 0 }}</td>
+          <td><span class="tag tag-orange">{{ tr('异常') }}</span></td>
+          <td class="small">{{ tr('单次盘点') }}</td>
+          <td>{{ it.reason_label or tr('未标注') }}</td>
+          <td style="white-space:pre-wrap">
+            {% if can_edit %}<textarea class="f-input no-print" name="icause_{{ it.id }}" rows="3" maxlength="2000" placeholder="{{ tr('请说明差异发生的原因') }}">{{ it.cause or '' }}</textarea>
+            {% else %}{{ it.cause or '—' }}{% endif %}</td>
+          <td style="white-space:pre-wrap">
+            {% if can_edit %}<textarea class="f-input no-print" name="iaction_{{ it.id }}" rows="3" maxlength="2000" placeholder="{{ tr('请填写改善措施') }}">{{ it.action or '' }}</textarea>
+            {% else %}{{ it.action or '—' }}{% endif %}
+            {% if it.action %}
+            <div class="no-print small" style="white-space:nowrap;margin-top:4px">
+              <span class="muted small">{{ tr('改善行动状态') }}{{ mk('：') }}</span>
+              {% if it.action_status == 'done' %}
+              <span class="badge badge-ok">{{ tr('已完成') }}</span>
+              <button type="button" class="btn btn-xs" onclick="stkTaskDone({{ it.id }}, true)">{{ tr('撤销完成') }}</button>
+              {% else %}
+              <span class="badge badge-warn">{{ tr('未完成') }}</span>
+              <button type="button" class="btn btn-xs btn-primary" onclick="stkTaskDone({{ it.id }}, false)">{{ tr('标记完成') }}</button>
+              {% endif %}
+            </div>{% endif %}</td>
+          <td>{{ it.action_owner or '—' }}</td>
+          <td style="white-space:nowrap">{{ it.action_due or '—' }}</td>
+          <td class="mono small">{{ st.no }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="11" style="text-align:center;color:#94a3b8">{{ tr('本次盘点无差异') }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if item_edit_ids %}
+  <div class="no-print" style="margin:-4px 0 12px">
+    <button type="submit" class="btn btn-primary">{{ tr('保存原因与改善行动') }}</button>
+    <span class="muted small">{{ tr('任务未结束时可反复修改，完成后自动锁定。') }}</span>
+  </div>
+  {% endif %}
+  </form>
+
+  {% if approvals %}
+  <div class="sub-h">{{ tr('审批记录') }}</div>
+  <div class="table-wrap">
+    <table class="table">
+      <thead><tr><th>{{ tr('时间') }}</th><th>{{ tr('操作人') }}</th><th>{{ tr('环节') }}</th><th>{{ tr('意见') }}</th></tr></thead>
+      <tbody>
+        {% for a in approvals %}
+        <tr>
+          <td class="mono" style="white-space:nowrap">{{ a.created_at }}</td>
+          <td>{{ a.operator_name }}</td>
+          <td>
+            {% if a.action=='submit' %}<span class="tag tag-blue">{{ tr('提交') }}</span>
+            {% elif a.action=='approve1' %}<span class="tag tag-green">{{ tr('一级审批通过') }}</span>
+            {% elif a.action=='approve2' %}<span class="tag tag-green">{{ tr('二级审批通过') }}</span>
+            {% else %}<span class="tag tag-red">{{ tr('驳回') }}</span>{% endif %}
+          </td>
+          <td class="small">{{ a.text }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  {# ── 签署栏：打印后手签归档，这是盘点报告能进审计的凭证 ── #}
+  <div class="sub-h">{{ tr('签署确认') }}</div>
+  <table class="rpt-sign">
+    <tbody>
+      <tr>
+        <th>{{ tr('盘点人') }}</th><td></td>
+        <th>{{ tr('复核人') }}</th><td></td>
+        <th>{{ tr('审批人') }}</th><td></td>
+        <th>{{ tr('日期') }}</th><td></td>
+      </tr>
+    </tbody>
+  </table>
+  <div class="muted small rpt-foot">
+    {{ tr('本报告由系统在盘点审批通过、库存自动调整完成后生成，明细与库存流水一一对应，可导出 Excel 备查。') }}
+  </div>
+</div>
+
+<script>
+/* v1.0.40：改善行动完成/撤销——报告页是唯一操作入口（盘点管理页那张监控表只读）。
+   报告内容整页在一个 ana-form 里，HTML 不许嵌表单，所以这里现建一个表单提交。 */
+function stkTaskDone(iid, undo){
+  var f = document.createElement('form');
+  f.method = 'post';
+  f.action = '/stocktakes/action-tasks/' + iid;
+  var add = function(k, v){
+    var i = document.createElement('input');
+    i.type = 'hidden'; i.name = k; i.value = v; f.appendChild(i);
+  };
+  add('from', 'report');
+  add('sid', '{{ st.id }}');
+  if(undo) add('undo', '1');
+  document.body.appendChild(f);
+  f.submit();
+}
+/* 仅看差异：打印前常要只出差异页给主管签字 */
+function toggleDiff(on){
+  document.querySelectorAll('#rpt-items tbody tr[data-diff]').forEach(function(tr){
+    tr.style.display = (on && tr.getAttribute('data-diff') === '0') ? 'none' : '';
+  });
+}
+/* v1.0.43：差异分析默认只列出有问题的行，勾选框可临时取消看全量 */
+toggleDiff(document.getElementById('only-diff').checked);
+</script>
+{% endblock %}

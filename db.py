@@ -1,4 +1,12 @@
 # -*- coding: utf-8 -*-
+# SPMS 备件辅料仓管系统 (Spare Parts Management System)
+# 作者：菜鸟大叔 (@rookie-uncle / @Colton1982)
+# 邮箱：510658927@qq.com
+# QQ：510658927
+# Gitee：https://gitee.com/rookie-uncle
+# GitHub：https://github.com/Colton1982
+# Copyright (c) 2026 rookie-uncle. All rights reserved.
+# 开源协议：Apache-2.0
 """
 多数据库抽象层：统一连接、SQL 方言转换、通用辅助
 支持数据库类型（开源 + 闭源）：
@@ -14,6 +22,8 @@ import os
 import re
 import threading
 import sqlite3
+
+import config
 
 # 连接 → 方言映射（sqlite3/pymysql 等连接对象可能不允许自定义属性）
 _DIALECTS = {}
@@ -101,10 +111,51 @@ def connect(cfg):
 
 
 def _init_sqlite(conn):
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA synchronous=NORMAL")
-    conn.execute("PRAGMA busy_timeout=30000")
+    """连接级 PRAGMA（每个新连接都会跑）。
+
+    v1.0.26：journal_mode 是【库级持久】设置，绝不能在这里每连接重复设——
+    100 个客户端各开一个连接去 PRAGMA journal_mode=... 会互相抢独占锁，
+    反而制造 "database is locked"。库级切换只在启动 init_db 时由
+    apply_journal_mode() 做一次。
+    """
+    # 延迟导入：share_guard 依赖 config，不依赖 db，避免循环
+    import share_guard
+    if share_guard.enabled():
+        # 共享盘多机：FULL 保证掉电/断连时日志完整；60s 忙等适应网络抖动
+        conn.execute("PRAGMA synchronous=FULL")
+        conn.execute("PRAGMA busy_timeout=60000")
+    else:
+        # 本地单机 / 服务器库：保持 v1.0.25 原行为，零影响
+        conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA busy_timeout=30000")
     conn.execute("PRAGMA foreign_keys=ON")
+
+
+def apply_journal_mode(conn):
+    """库级日志模式切换，只在启动 init_db 时调用一次。
+
+    - sqlite_smb（共享盘多机）→ DELETE 回滚日志。SQLite 官方明确 WAL
+      不适用于网络文件系统（依赖 -shm 共享内存 + 同主机字节范围锁），
+      WAL-over-SMB 才是结构性损坏 database disk image is malformed 的根源。
+    - 其余（本地单机 SQLite）→ 保持 WAL，原行为不变。
+    - db_type != sqlite → 直接跳过，后期换 MySQL 不会走到这里。
+    """
+    if config.DB_TYPE != "sqlite":
+        return "skipped"
+    import share_guard
+    want = "DELETE" if share_guard.enabled() else "WAL"
+    try:
+        cur = conn.execute("PRAGMA journal_mode").fetchone()
+        now = str(cur[0]).lower() if cur else ""
+        if now == want.lower():
+            # 已是目标模式：绝不重复设置，避免 100 台启动时互相抢独占锁
+            return now
+        row = conn.execute("PRAGMA journal_mode=%s" % want).fetchone()
+        return str(row[0]) if row else want
+    except sqlite3.OperationalError as e:
+        # 有其他连接正在写时切不动；模式是库级持久的，下次启动会再切。
+        # 这里不抛异常，避免 100 台里某台启动失败。
+        return "unchanged(%s)" % e
 
 
 # ---------------------------------------------------------------------------

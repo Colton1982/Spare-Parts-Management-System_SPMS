@@ -1,0 +1,22 @@
+{# SPMS 备件辅料仓管系统 | 作者：菜鸟大叔 (@rookie-uncle / @Colton1982) | 邮箱：510658927@qq.com | QQ：510658927 | Gitee：https://gitee.com/rookie-uncle | GitHub：https://github.com/Colton1982 | Copyright (c) 2026 rookie-uncle. All rights reserved. | Apache-2.0 #}
+{# 分类选择器（自绘下拉）：原生 <select> 的弹出层高度由浏览器定，分类一多就铺满半屏。
+   用法：{% from "_catpick.html" import cat_picker %} → {{ cat_picker('c-category', 'category', '', tr('不指定')) }}
+   需要页面同时引入 static/js/catpick.js。 #}
+{% macro cat_picker(id, name, value, empty_label) -%}
+<div class="cat-pick" data-empty="{{ empty_label }}">
+  <input type="hidden" name="{{ name }}" id="{{ id }}" value="{{ value or '' }}">
+  <button type="button" class="f-input cat-btn" title="{{ value or empty_label }}" onclick="catOpen(this)">
+    <span class="cat-txt">{{ value or empty_label }}</span><span class="cat-caret">▾</span>
+  </button>
+  <div class="cat-pop" hidden>
+    <input class="f-input cat-q" type="text" placeholder="{{ tr('搜索分类') }}" oninput="catFilter(this)">
+    <div class="cat-opts">
+      <div class="cat-opt{{ ' on' if not value }}" data-v="" onclick="catPick(this)">{{ empty_label }}</div>
+{% for c in categories %}
+      <div class="cat-opt{{ ' on' if value == c }}" data-v="{{ c }}" title="{{ c }}" onclick="catPick(this)">{{ c }}</div>
+{% endfor %}
+      <div class="cat-none" hidden>{{ tr('没有匹配的分类') }}</div>
+    </div>
+  </div>
+</div>
+{%- endmacro %}

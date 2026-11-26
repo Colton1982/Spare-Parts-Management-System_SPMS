@@ -1,216 +1,148 @@
+{# SPMS 备件辅料仓管系统 | 作者：菜鸟大叔 (@rookie-uncle / @Colton1982) | 邮箱：510658927@qq.com | QQ：510658927 | Gitee：https://gitee.com/rookie-uncle | GitHub：https://github.com/Colton1982 | Copyright (c) 2026 rookie-uncle. All rights reserved. | Apache-2.0 #}
 ﻿{% extends "base.html" %}
-{% block title %}{{ tr('page_settings') }} - Spare Parts Management System{% endblock %}
-{% block page_title %}>{{ tr('page_settings') }}{% endblock %}
+{% block title %}{{ tr('page_settings') }} - Inventory Management System{% endblock %}
+{% block page_title %}{{ tr('page_settings') }}{% endblock %}
 {% block content %}
-<div class="card-grid settings-grid" style="max-width:1380px;margin:0 auto">
-<div class="card" id="card-language">
-  <div class="card-title">{{ tr('界面语言') }}{{ tr('（') }}{{ tr('多国语言') }}{{ tr('：') }}{{ tr('中/英/日/韩/泰/越/俄/法/德') }}{{ tr('）') }}</div>
-  <form method="post"><!-- 语言切换全局生效 -->
-    <label class="f-label">{{ tr('界面语言') }}<select class="f-input" name="language">
-        {% for code, name in LANGUAGES.items() %}
-        <option value="{{ code }}" {{ 'selected' if cur_lang==code }}>{{ name }}</option>
-        {% endfor %}
-      </select>
+<div class="card-grid settings-grid" style="width:100%;margin:0">
+<div class="card" id="card-language" style="flex:0 0 100%;width:100%">
+  <div class="card-title">{{ tr('语言管理') }}</div>
+  <div class="muted small ui-hint" style="margin:-2px 0 12px">
+    {{ tr('切换界面语言在右上角，这里管的是系统提供哪些语言、翻译进度，以及界面漏翻的扫描与补翻') }}
+  </div>
+
+  <div class="sub-h">{{ tr('已安装的语言') }}</div>
+  <div style="overflow-x:auto">
+    <table class="table" style="width:100%;table-layout:fixed">
+      <thead><tr>
+        <th style="width:110px">{{ tr('语言代码') }}</th>
+        <th>{{ tr('名称') }}</th>
+        <th style="width:250px">{{ tr('翻译进度') }}</th>
+        <th style="width:190px">{{ tr('操作') }}</th>
+      </tr></thead>
+      <tbody id="langRows">
+        <tr><td colspan="4" class="muted">{{ tr('加载中') }}…</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="sub-h" style="margin-top:16px">{{ tr('添加语言') }}</div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+    <label class="f-label" style="margin:0;flex:0 0 260px">{{ tr('选择语言') }}
+      {# 语言自称是数据不是文案：ISO 639-1 全量表由路由下发，避免被漏翻扫描误报成裸中文 #}
+      <select class="f-input" id="langPreset" data-presets="{{ iso_presets }}"></select>
     </label>
-    <div class="muted small" style="margin:8px 0">
-      {{ tr('保存后刷新页面全局生效（') }}{{ tr('导航') }}{{ tr('、') }}{{ tr('页面标题') }}{{ tr('、') }}{{ tr('按钮、状态等公共界面文案跟随切换；业务数据内容保持原文') }}{{ tr('）') }}{{ tr('。') }}
+    {# 代码/自称/英文名由下拉带出，不再手填；隐藏域保持提交逻辑不变 #}
+    <input type="hidden" id="newLangCode"><input type="hidden" id="newLangNative"><input type="hidden" id="newLangEn">
+    <div id="langPicked" class="muted small" style="flex:1 1 220px;display:flex;align-items:center;min-height:32px"></div>
+    <button class="btn btn-primary" type="button" onclick="langAddNew()">{{ tr('添加') }}</button>
+  </div>
+  <div class="muted small ui-hint" style="margin-top:6px">
+    {{ tr('中文与英文是基准语言，不可删除。其它语言可随时增删，删除时语言包会备份到 locale/_removed') }}
+  </div>
+
+  <div class="sub-h" style="margin-top:18px">{{ tr('翻译引擎') }}</div>
+  <div class="muted small ui-hint">
+    {{ tr('补翻译与新增语言的译文都由它生成。四种引擎任选一种，填好密钥后可先测连通') }}
+  </div>
+  <div style="display:flex;gap:18px;margin:10px 0;flex-wrap:wrap">
+    <label class="f-check" style="margin:0"><input type="radio" name="langProvider" value="ai"> {{ tr('AI 大模型') }}</label>
+    <label class="f-check" style="margin:0"><input type="radio" name="langProvider" value="google"> Google</label>
+    <label class="f-check" style="margin:0"><input type="radio" name="langProvider" value="deepl"> DeepL</label>
+    <label class="f-check" style="margin:0"><input type="radio" name="langProvider" value="mymemory"> MyMemory{{ mk('（') }}{{ tr('免 Key') }}{{ mk('）') }}</label>
+  </div>
+
+  <div class="eng-pane" data-p="ai">
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <label class="f-label" style="flex:1 1 280px;margin:0">{{ tr('接口地址') }}
+        <input class="f-input" id="ai_base_url" placeholder="https://api.openai.com/v1"></label>
+      <label class="f-label" style="flex:1 1 200px;margin:0">{{ tr('模型') }}
+        <input class="f-input" id="ai_model" placeholder="gpt-4o-mini"></label>
     </div>
-    <button class="btn btn-primary" type="submit" name="language_save" value="1">{{ tr('保存语言') }}</button>
-  </form>
+    <label class="f-label">{{ tr('API 密钥') }}
+      <input class="f-input" id="ai_api_key" type="password" autocomplete="new-password"
+             placeholder="{{ tr('留空表示不修改') }}"></label>
+    <div class="muted small ui-hint">{{ tr('可填内网自建模型地址（Ollama / vLLM 的 /v1），此时不需要外网') }}</div>
+  </div>
+
+  <div class="eng-pane" data-p="google" style="display:none">
+    <label class="f-label" style="margin-top:0">{{ tr('API 密钥') }}
+      <input class="f-input" id="google_api_key" type="password" autocomplete="new-password"
+             placeholder="{{ tr('留空表示不修改') }}"></label>
+    <label class="f-label">{{ tr('接口地址') }}
+      <input class="f-input" id="google_endpoint" placeholder="https://translation.googleapis.com/language/translate/v2"></label>
+    <div class="muted small ui-hint">{{ tr('用的是 Google Cloud Translation 的 v2 接口密钥') }}</div>
+  </div>
+
+  <div class="eng-pane" data-p="deepl" style="display:none">
+    <label class="f-label" style="margin-top:0">{{ tr('API 密钥') }}
+      <input class="f-input" id="deepl_api_key" type="password" autocomplete="new-password"
+             placeholder="{{ tr('留空表示不修改') }}"></label>
+    <label class="f-label">{{ tr('接口地址') }}
+      <input class="f-input" id="deepl_endpoint" placeholder="{{ tr('留空自动判断（密钥以 :fx 结尾为免费版）') }}"></label>
+    <div class="muted small ui-hint">{{ tr('DeepL 对欧洲语言质量最好，中文译日韩明显弱于大模型') }}</div>
+  </div>
+
+  <div class="eng-pane" data-p="mymemory" style="display:none">
+    <label class="f-label" style="margin-top:0">{{ tr('邮箱（可选）') }}
+      <input class="f-input" id="mymemory_email" placeholder="you@example.com"></label>
+    <div class="muted small ui-hint">{{ tr('公共免费引擎，无需注册任何密钥。匿名每天约 1000 词，填邮箱可提高额度；质量一般，适合试翻和小批量补翻') }}</div>
+  </div>
+
+  <div style="display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap">
+    <button class="btn btn-primary" type="button" onclick="langSaveEngine(false)">{{ tr('保存引擎设置') }}</button>
+    <button class="btn" type="button" onclick="langSaveEngine(true)">{{ tr('测试连通') }}</button>
+    <span id="engMsg" class="small"></span>
+  </div>
+
+  <div class="sub-h" style="margin-top:18px">{{ tr('补翻译') }}</div>
+  <div class="muted small ui-hint">
+    {{ tr('把还没翻译的条目批量翻好，写入语言包后立刻生效，不用重启') }}
+  </div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-top:8px">
+    <label class="f-label" style="margin:0;flex:0 0 190px">{{ tr('目标语言') }}
+      <select class="f-input" id="trLang"></select></label>
+    <label class="f-label" style="margin:0;flex:0 0 130px">{{ tr('本次最多') }}
+      <input class="f-input" id="trLimit" type="number" value="0" min="0" step="50"></label>
+    <button class="btn btn-primary" type="button" onclick="langTranslate()">{{ tr('开始补翻译') }}</button>
+    <span class="muted small">{{ tr('0 表示全部') }}</span>
+  </div>
+  <div id="jobBox" style="display:none;margin-top:10px">
+    <div class="lang-bar"><i id="jobBar" style="width:0%"></i></div>
+    <div class="muted small" id="jobTxt" style="margin-top:4px"></div>
+  </div>
+
+  <div class="sub-h" style="margin-top:18px">{{ tr('漏翻扫描') }}</div>
+  <div class="muted small ui-hint">
+    {{ tr('扫一遍源码，找出界面上不会跟着语言变的地方。三类问题成因不同，分开列出并给出改法') }}
+  </div>
+  <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">
+    <button class="btn btn-primary" type="button" onclick="langScan()">{{ tr('开始扫描') }}</button>
+    <span class="muted small" id="scanMsg"></span>
+  </div>
+  <div id="scanBox" style="margin-top:10px"></div>
 </div>
+
 
 
 <div class="sec-title">{{ tr('基础与部署') }}</div>
-<div class="card" id="card-db">
-  <div class="card-title">{{ tr('数据库与图片位置') }}{{ tr('（') }}{{ tr('数据库类型') }}{{ tr('：') }}SQLite / MySQL / MariaDB / PostgreSQL / SQL Server / Oracle{{ tr('）') }}</div>
-  <form method="post" class="ajax-form">
-    <label class="f-label">{{ tr('当前数据库') }}</label>
-    <div class="muted mono small" style="margin-bottom:8px">{{ db_cfg.db_type|upper }} · {{ db_path or tr('未配置') }}</div>
-    <label class="f-label">{{ tr('数据库类型') }}<select class="f-input" name="db_type" id="db_type_sel" onchange="dbTypeSwitch()">
-        {% for t in DB_DIALECTS %}
-        <option value="{{ t }}" {{ 'selected' if db_cfg.db_type==t }}>{{ t|upper }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <div id="db_sqlite_row">
-      <label class="f-label">{{ tr('数据库文件路径') }}{{ tr('（') }}{{ tr('所有用户共享时填内网公共盘路径') }}{{ tr('）') }}
-        <input class="f-input" name="db_path" value="{{ db_path or default_db }}"></label>
-    </div>
-    <div id="db_server_rows" style="display:none">
-      <div class="grid2">
-        <label class="f-label">{{ tr('服务器地址') }}<input class="f-input" name="db_host" value="{{ db_cfg.host }}" placeholder="127.0.0.1"></label>
-        <label class="f-label">{{ tr('端口') }}<input class="f-input" type="number" name="db_port" value="{{ db_cfg.port or '' }}" placeholder="3306/5432/1433/1521"></label>
-      </div>
-      <div class="grid2">
-        <label class="f-label">{{ tr('用户名') }}<input class="f-input" name="db_user" value="{{ db_cfg.user }}" placeholder="root/sa"></label>
-        <label class="f-label">{{ tr('密码') }}<input class="f-input" type="password" name="db_password" value="{{ db_cfg.password }}" placeholder="******"></label>
-      </div>
-      <label class="f-label">{{ tr('数据库名') }}<input class="f-input" name="db_database" value="{{ db_cfg.database }}" placeholder="smt_parts"></label>
-      <label class="f-label" id="db_svc_row" style="display:none">{{ tr('Oracle 服务名') }}<input class="f-input" name="db_service_name" value="{{ db_cfg.service_name }}" placeholder="XE"></label>
-    </div>
-    <div class="muted small" style="margin:8px 0">
-      {{ tr('数据库类型说明') }}{{ tr('：') }}SQLite {{ tr('为内置单文件库（默认）') }}{{ tr('；') }}MySQL/MariaDB/PostgreSQL/SQL Server/Oracle {{ tr('需在服务器安装对应数据库并创建库') }}{{ tr('。') }}
-      {{ tr('切换类型后保存，重启软件生效；新库首次连接时自动建表（') }}{{ tr('含默认管理员') }}{{ tr('）') }}{{ tr('。') }}
-      {{ tr('备份恢复仅支持SQLite') }}{{ tr('；') }}{{ tr('其他数据库请使用自带备份工具') }}{{ tr('（') }}{{ tr('例如') }} mysqldump / pg_dump{{ tr('）') }}{{ tr('。') }}
-    </div>
-    <div class="btn-row" style="margin:10px 0">
-      <button class="btn btn-primary" type="submit" name="db_save" value="1">{{ tr('保存数据库配置') }}</button>
-      <button class="btn btn-plain" type="button" onclick="dbTest()">{{ tr('测试连接') }}</button>
-      <span id="db_test_msg" class="muted small"></span>
-    </div>
-    <label class="f-check"><input type="checkbox" name="db_init" value="1"> {{ tr('保存并初始化新库') }}{{ tr('（') }}{{ tr('立即建表并创建默认管理员') }}{{ tr('）') }}</label>
-
-    <div class="sub-h" style="margin:16px 0 8px">{{ tr('旧图片目录') }}{{ tr('（') }}{{ tr('仅兼容读取历史图片') }}{{ tr('，') }}{{ tr('可留空') }}{{ tr('）') }}
-    <input class="f-input" name="upload_dir" value="{{ upload_dir }}" placeholder="{{ tr('留空即可') }}{{ tr('，') }}{{ tr('图片已统一存入数据库') }}"></div>
-    <div class="muted small" style="margin:8px 0">
-      {{ tr('说明') }}{{ tr('：') }}{{ tr('备件图片与品牌') }} LOGO {{ tr('均以二进制直接存入主数据库（') }}images {{ tr('表），随数据库文件一起拷贝') }}/{{ tr('备份') }}{{ tr('，') }}{{ tr('单文件带走') }}{{ tr('。') }}
-      {{ tr('请确保该路径所在目录存在且当前电脑有读写权限（首次连接时会做写入测试）') }}{{ tr('。') }}
-    </div>
-
-    <div class="sub-h" style="margin:16px 0 8px">{{ tr('上传图片自动压缩') }}</div>
-    <label class="f-label">{{ tr('压缩阈值') }}{{ tr('（') }}KB{{ tr('，') }}0={{ tr('不压缩') }}{{ tr('；') }}{{ tr('备件图片与品牌') }} LOGO {{ tr('超过即自动压到阈值以内）') }}
-      <input class="f-input" type="number" name="upload_compress_kb" min="0" max="10240" step="10" value="{{ upload_compress_kb }}" style="max-width:200px">
-    </label>
-    <div class="muted small" style="margin:6px 0">{{ tr('质量优先') }}{{ tr('仍超阈值时再降低分辨率') }}{{ tr('。') }}{{ tr('默认') }} 400KB{{ tr('保存随数据库生效') }}{{ tr('。') }}</div>
-    <button class="btn btn-primary" type="submit" name="upload_cfg_save" value="1">{{ tr('保存压缩设置') }}</button>
-  </form>
-  <script>
-  function dbTypeSwitch(){
-    var s = document.getElementById('db_type_sel');
-    var t = s ? s.value : 'sqlite';
-    document.getElementById('db_sqlite_row').style.display = (t === 'sqlite') ? '' : 'none';
-    document.getElementById('db_server_rows').style.display = (t === 'sqlite') ? 'none' : '';
-    document.getElementById('db_svc_row').style.display = (t === 'oracle') ? '' : 'none';
-  }
-  function dbTest(){
-    var f = document.getElementById('card-db').querySelector('form');
-    var fd = new FormData(f); fd.set('db_test', '1');
-    var msg = document.getElementById('db_test_msg');
-    msg.textContent = '...';
-    fetch(window.location.pathname, {method:'POST', body:fd, headers:{'X-Requested-With':'XMLHttpRequest'}})
-      .then(function(r){ return r.json(); })
-      .then(function(d){ msg.textContent = d.ok ? ('OK: ' + d.msg) : ('FAIL: ' + d.msg);
-                          msg.style.color = d.ok ? '#16a34a' : '#dc2626'; })
-      .catch(function(e){ msg.textContent = 'FAIL: ' + e; msg.style.color = '#dc2626'; });
-  }
-  dbTypeSwitch();
-  </script>
-</div>
-
-</div>
-
-
-<div class="card" id="card-lan">
-  <div class="card-title">{{ tr('局域网部署') }}{{ tr('（部署后其他电脑可在浏览器直接访问）') }}</div>
-  <form method="post"><!-- 部署需重启服务，保持整页提交 -->
-    <label class="f-check"><input type="checkbox" name="lan_enabled" value="1" {{ 'checked' if lan_enabled }}> {{ tr('启用局域网访问') }}{{ tr('（') }}{{ tr('本机监听所有网卡') }}{{ tr('）') }}</label>
-    <label class="f-label">{{ tr('服务端口') }}<input class="f-input" type="number" name="lan_port" value="{{ lan_port }}" min="1024" max="65535" style="max-width:180px">
-    </label>
-    <div class="muted small" style="margin:8px 0">
-      {{ tr('部署完成后') }}{{ tr('同一局域网内的电脑在浏览器输入') }} <span class="mono">http://{{ lan_ip }}:{{ lan_port }}</span> {{ tr('即可访问本系统') }}
-      {{ tr('（所有电脑共用数据库，请确保各电脑的系统设置中数据库指向同一公共盘路径）') }}{{ tr('。') }}
-      {{ tr('保存将自动重启服务使部署生效；如其他电脑无法访问') }}{{ tr('，') }}{{ tr('请检查') }} Windows {{ tr('防火墙是否放行该端口') }}{{ tr('。') }}
-    </div>
-    <button class="btn btn-primary" type="submit" name="deploy_save" value="1">{{ tr('保存并重启') }}{{ tr('（') }}{{ tr('部署生效') }}{{ tr('）') }}</button>
-  </form>
-</div>
-
-<div class="card" id="card-ad">
-  <div class="card-title">{{ tr('AD 域登录配置（公司总登录系统验证；验证通过后按用户名匹配白名单，不在则自动以访客身份进入）') }}</div>
-  <form method="post">
-    <div class="grid2">
-      <label class="f-check"><input type="checkbox" name="ad_enabled" value="1" {{ 'checked' if ad_cfg.get('enabled') }}> {{ tr('启用 AD 域登录（登录页显示「AD 域账号」入口）') }}</label>
-      <label class="f-label">{{ tr('AD 服务器地址') }}<input class="f-input" type="text" name="ad_server" value="{{ ad_cfg.get('server','') }}" placeholder="{{ tr('如 192.168.1.10 或 ad.company.com') }}">
-      </label>
-      <label class="f-label">{{ tr('AD 端口') }}<input class="f-input" type="number" name="ad_port" value="{{ ad_cfg.get('port',389) }}" min="1" max="65535" style="max-width:180px">
-        <span class="muted small">{{ tr('默认 389 / LDAPS 636 / 全局编录 3268、3269；支持 1-65535 任意自定义端口') }}</span>
-      </label>
-      <label class="f-label">{{ tr('加密方式') }}<select class="f-input" name="ad_enc">
-          {% set enc = ad_cfg.get('enc') or ('ldaps' if ad_cfg.get('ssl') else 'none') %}
-          <option value="none" {{ 'selected' if enc=='none' }}>{{ tr('无加密（389 明文，内网建议慎用）') }}</option>
-          <option value="ldaps" {{ 'selected' if enc=='ldaps' }}>{{ tr('LDAPS 加密（636 端口，推荐）') }}</option>
-          <option value="starttls" {{ 'selected' if enc=='starttls' }}>{{ tr('StartTLS（389 端口升级加密）') }}</option>
-        </select>
-      </label>
-      <label class="f-label">{{ tr('公司域名') }}{{ tr('（') }}{{ tr('AD 域') }}{{ tr('）') }}
-        <input class="f-input" type="text" name="ad_domain" value="{{ ad_cfg.get('domain','') }}" placeholder="{{ tr('如 company.com 或 company.local') }}">
-      </label>
-      <label class="f-label">{{ tr('用户名格式') }}<select class="f-input" name="ad_name_format">
-          <option value="upn" {{ 'selected' if ad_cfg.get('name_format','upn')=='upn' }}>{{ tr('user@域名（例如 zhangsan@company.com）') }}</option>
-          <option value="ntdomain" {{ 'selected' if ad_cfg.get('name_format')=='ntdomain' }}>{{ tr('域名') }}\{{ tr('用户名') }}{{ tr('（例如 company\zhangsan）') }}</option>
-        </select>
-      </label>
-      <label class="f-label">{{ tr('连接超时（秒）') }}<input class="f-input" type="number" name="ad_timeout" value="{{ ad_cfg.get('timeout',10) }}" min="3" max="60" style="max-width:180px">
-        <span class="muted small">{{ tr('3-60 秒，默认 10；网络慢的域控可适当调大') }}</span>
-      </label>
-    </div>
-    <div class="sub-h" style="margin:10px 0 6px">{{ tr('绑定方式（对方 AD 策略不同，二选一）') }}</div>
-    <div class="grid2">
-      <label class="f-label">{{ tr('绑定方式') }}<select class="f-input" name="ad_bind_mode" id="ad-bind-mode">
-          <option value="direct" {{ 'selected' if ad_cfg.get('bind_mode','direct')=='direct' }}>{{ tr('直接绑定（用户账号直接验证，多数公司适用）') }}</option>
-          <option value="search" {{ 'selected' if ad_cfg.get('bind_mode')=='search' }}>{{ tr('服务账号搜索（禁止用户直绑的公司，需 IT 提供参数）') }}</option>
-        </select>
-      </label>
-      <label class="f-check"><input type="checkbox" name="ad_strip_upn_suffix" value="1" {{ 'checked' if ad_cfg.get('strip_upn_suffix',1) }}> {{ tr('匹配本地用户名时剥离 @域名后缀') }}
-        <span class="muted small" style="display:block">{{ tr('AD 登录输入 zhangsan@company.com 时，用 zhangsan 匹配本系统白名单（推荐勾选）') }}</span>
-      </label>
-      <label class="f-label" id="ad-svc-dn-lbl">{{ tr('服务账号') }} DN{{ tr('（') }}{{ tr('搜索模式') }}{{ tr('）') }}
-        <input class="f-input" type="text" name="ad_svc_dn" value="{{ ad_cfg.get('svc_dn','') }}" placeholder="{{ tr('如 CN=svc-scan,OU=IT,DC=company,DC=com') }}">
-      </label>
-      <label class="f-label" id="ad-svc-pwd-lbl">{{ tr('服务账号密码') }}{{ tr('（') }}{{ tr('搜索模式') }}{{ tr('）') }}
-        <input class="f-input" type="password" name="ad_svc_pwd" value="{{ ad_cfg.get('svc_pwd','') }}" placeholder="{{ tr('服务账号密码') }}">
-      </label>
-      <label class="f-label" id="ad-base-dn-lbl">{{ tr('Base DN（搜索范围，搜索模式）') }}
-        <input class="f-input" type="text" name="ad_base_dn" value="{{ ad_cfg.get('base_dn','') }}" placeholder="{{ tr('如 OU=员工,DC=company,DC=com') }}">
-      </label>
-      <label class="f-label" id="ad-attr-lbl">{{ tr('搜索属性') }}{{ tr('（') }}{{ tr('搜索模式') }}{{ tr('）') }}
-        <select class="f-input" name="ad_search_attr">
-          <option value="sAMAccountName" {{ 'selected' if ad_cfg.get('search_attr','sAMAccountName')=='sAMAccountName' }}>{{ tr('sAMAccountName（域登录名，常用）') }}</option>
-          <option value="userPrincipalName" {{ 'selected' if ad_cfg.get('search_attr')=='userPrincipalName' }}>{{ tr('userPrincipalName（UPN 完整账号）') }}</option>
-        </select>
-      </label>
-      <label class="f-check"><input type="checkbox" name="login_case_sensitive" value="1" {{ 'checked' if login_case_sensitive }}>{{ tr('用户名区分大小写') }}<span class="muted small" style="display:block">{{ tr('不勾选=不区分大小写（ZHANGSAN 可匹配 zhangsan，推荐）；勾选=精确匹配，普通登录与 AD 登录均生效。') }}</span>
-      </label>
-    </div>
-    <div class="muted small" style="margin:8px 0">
-      {{ tr('登录流程：用户输入域账号与域密码（支持 zhangsan 或 zhangsan@company.com 两种输法）→ 本系统连接 AD 验证 → 通过后按用户名查找本系统用户（白名单）；在白名单 → 正常登录；不在白名单 → 自动以访客身份进入，仅可查阅备件与呆滞物料。') }}
-      {{ tr('需要公司 IT 放行本机访问域控端口，并告知：服务器地址、域名、端口、加密要求；若为搜索模式还需服务账号 DN/密码、Base DN、搜索属性。') }}
-    </div>
-    <button class="btn btn-primary" type="submit" name="ad_save" value="1">{{ tr('保存 AD 配置') }}</button>
-  </form>
-  <script>
-  (function(){
-    function adMode(){
-      var v = document.getElementById('ad-bind-mode').value;
-      ['ad-svc-dn-lbl','ad-svc-pwd-lbl','ad-base-dn-lbl','ad-attr-lbl'].forEach(function(id){
-        var el = document.getElementById(id);
-        if(el) el.style.display = (v === 'search' ? '' : 'none');
-      });
-    }
-    var sel = document.getElementById('ad-bind-mode');
-    if(sel){ sel.addEventListener('change', adMode); adMode(); }
-  })();
-  </script>
-</div>
-
-<div class="sec-title">{{ tr('界面风格') }}</div>
 <div class="card" id="card-theme">
-  <div class="card-title">{{ tr('界面主题与外观') }}{{ tr('（') }}{{ tr('色系') }} + {{ tr('左侧菜单样式') }} + {{ tr('侧栏品牌') }}{{ tr('，') }}{{ tr('一次保存') }}{{ tr('，') }}{{ tr('全局生效') }}{{ tr('）') }}</div>
+  <div class="card-title">{{ tr('界面主题与外观') }}</div>
   <form method="post" enctype="multipart/form-data" class="ajax-form">
-    <div class="sub-h" style="margin:6px 0 10px">{{ tr('界面风格') }}{{ tr('（') }}{{ tr('一键套用预设') }}{{ tr('，') }}{{ tr('套用后仍可手动微调') }}{{ tr('；') }}{{ tr('保存后全局生效') }}{{ tr('）') }}</div>
+    <div class="sub-h" style="margin:6px 0 10px">{{ tr('界面风格') }}</div>
+  <div class="muted small ui-hint" style="margin:-4px 0 10px">{{ tr('一键套用预设') }}{{ mk('，') }}{{ tr('套用后仍可手动微调') }}</div>
     <div class="ui-style-pick" style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px">
-      <div class="ui-style-card" onclick="applyUiStyle(0)"><span class="ui-swatch" style="background:linear-gradient(135deg,#14304f,#0e1e33)"><i style="background:#2563eb"></i></span><span class="ui-name">{{ tr('科技蓝') }}</span></div>
-      <div class="ui-style-card" onclick="applyUiStyle(1)"><span class="ui-swatch" style="background:linear-gradient(135deg,#0c3f3a,#062623)"><i style="background:#0e9384"></i></span><span class="ui-name">{{ tr('墨绿商务') }}</span></div>
-      <div class="ui-style-card" onclick="applyUiStyle(2)"><span class="ui-swatch" style="background:linear-gradient(135deg,#fbf8ee,#f5ecd6)"><i style="background:#d9a441"></i></span><span class="ui-name">{{ tr('曜石金') }}</span></div>
-      <div class="ui-style-card" onclick="applyUiStyle(3)"><span class="ui-swatch" style="background:linear-gradient(135deg,#f7fafd,#e8f1fa)"><i style="background:#3d8bf5"></i></span><span class="ui-name">{{ tr('云白现代') }}</span></div>
-      <div class="ui-style-card" onclick="applyUiStyle(4)"><span class="ui-swatch" style="background:linear-gradient(135deg,#fef6ec,#fae8d2)"><i style="background:#ef8a2c"></i></span><span class="ui-name">{{ tr('琥珀暖橙') }}</span></div>
-      <div class="ui-style-card" onclick="applyUiStyle(5)"><span class="ui-swatch" style="background:linear-gradient(135deg,#f7f6ff,#e9e6ff)"><i style="background:#8a7cf0"></i></span><span class="ui-name">{{ tr('典雅紫') }}</span></div>
+      <div class="ui-style-card" id="ui-card-0" onclick="applyUiStyle(0)"><span class="ui-swatch" style="background:linear-gradient(135deg,#14304f,#0e1e33)"><i style="background:#2563eb"></i></span><span class="ui-name">{{ tr('科技蓝') }}</span></div>
+      <div class="ui-style-card" id="ui-card-1" onclick="applyUiStyle(1)"><span class="ui-swatch" style="background:linear-gradient(135deg,#0c3f3a,#062623)"><i style="background:#0e9384"></i></span><span class="ui-name">{{ tr('墨绿商务') }}</span></div>
+      <div class="ui-style-card" id="ui-card-2" onclick="applyUiStyle(2)"><span class="ui-swatch" style="background:linear-gradient(135deg,#fdfaf1,#f6eed8)"><i style="background:#d9ad4f"></i></span><span class="ui-name">{{ tr('曜石金') }}</span></div>
+      <div class="ui-style-card" id="ui-card-3" onclick="applyUiStyle(3)"><span class="ui-swatch" style="background:linear-gradient(135deg,#f3f9ff,#e2effc)"><i style="background:#38a3ff"></i></span><span class="ui-name">{{ tr('云白现代') }}</span></div>
+      <div class="ui-style-card" id="ui-card-4" onclick="applyUiStyle(4)"><span class="ui-swatch" style="background:linear-gradient(135deg,#ffffff,#f0f4fb)"><i style="background:#1668dc"></i></span><span class="ui-name">{{ tr('典雅白') }}</span></div>
+      <div class="ui-style-card" id="ui-card-5" onclick="applyUiStyle(5)"><span class="ui-swatch" style="background:linear-gradient(135deg,#f7f5ff,#ebe8fd)"><i style="background:#9d8cf5"></i></span><span class="ui-name">{{ tr('典雅紫') }}</span></div>
     </div>
     <div class="ui-style-card manual" onclick="applyUiCustom()" style="display:inline-block;margin:8px 0">
       <span class="ui-swatch custom">🎨</span>
-      <span class="ui-name">{{ tr('自定义') }}{{ tr('（') }}{{ tr('手动配色') }}{{ tr('）') }}</span>
+      <span class="ui-name">{{ tr('自定义') }}</span>
     </div>
-    <div class="muted small" style="margin:6px 0 10px">{{ tr('点击色卡立即预览') }}{{ tr('；') }}{{ tr('点') }}{{ tr('「') }}{{ tr('保存主题与外观') }}{{ tr('」') }}{{ tr('后所有用户生效') }}{{ tr('；') }}{{ tr('「') }}{{ tr('自定义') }}{{ tr('」') }}{{ tr('可手动配色') }}{{ tr('。') }}</div>
+    <div class="muted small ui-hint" style="margin:6px 0 10px">{{ tr('点击色卡立即预览') }}{{ mk('；') }}{{ tr('点') }}{{ mk('「') }}{{ tr('保存主题与外观') }}{{ mk('」') }}{{ tr('后所有用户生效') }}{{ mk('；') }}{{ mk('「') }}{{ tr('自定义') }}{{ mk('」') }}{{ tr('可手动配色') }}{{ mk('。') }}</div>
     <div id="ui-custom-colors" style="display:block">
     <div class="sub-h" style="margin:6px 0 10px">{{ tr('主题色') }}</div>
     <div class="grid2">
@@ -251,15 +183,11 @@
         </select>
       </label>
     </div>
-    <div class="sub-h" style="margin:14px 0 10px">{{ tr('侧栏品牌') }}{{ tr('（') }}LOGO {{ tr('图片与文字') }}{{ tr('）') }}</div>
+    <div class="sub-h" style="margin:14px 0 10px">{{ tr('侧栏品牌') }}</div>
     <div class="grid2">
-      <label class="f-label">{{ tr('标题文字') }}<input class="f-input" name="brand_title" value="{{ brand.title }}" maxlength="30">
+      <label class="f-label">{{ tr('标题文字') }}<input class="f-input" name="brand_title" value="{{ brand_raw.title }}" maxlength="30">
       </label>
-      <label class="f-label">{{ tr('副标题文字') }}<input class="f-input" name="brand_subtitle" value="{{ brand.subtitle }}" maxlength="50">
-      </label>
-      <label class="f-label">LOGO {{ tr('图片') }}{{ tr('（') }}jpg/png/gif/bmp/webp{{ tr('，') }}≤5MB{{ tr('）') }}
-        <label class="btn btn-xs" style="margin:4px 0">{{ tr('选择文件') }}<input type="file" name="brand_logo" accept="image/*" style="display:none" onchange="lgoName(this)"></label>
-        <span class="muted small" id="lgo-name"></span>
+      <label class="f-label">{{ tr('副标题文字') }}<input class="f-input" name="brand_subtitle" value="{{ brand_raw.subtitle }}" maxlength="50">
       </label>
       <label class="f-label">{{ tr('图片高度(px)') }}<input class="f-input" type="number" name="brand_logo_height" value="{{ brand.logo_height }}" min="12" max="160" step="2">
       </label>
@@ -270,7 +198,7 @@
       </label>
       <label class="f-label">{{ tr('标题字色') }}<input class="f-input color-pick" type="color" name="brand_title_color" value="{{ brand.title_color or theme.sidebar_text }}">
       </label>
-      <label class="f-label">{{ tr('副标题字色') }}<input class="f-input color-pick" type="color" name="brand_subtitle_color" value="{{ brand.subtitle_color or '#9db4cc' }}">
+      <label class="f-label">{{ tr('副标题字色') }}<input class="f-input color-pick" type="color" name="brand_subtitle_color" value="{{ brand.subtitle_color or theme.sidebar_text }}">
       </label>
       <label class="f-label">{{ tr('品牌区字体') }}<select class="f-input" name="brand_font_family">
           <option value="" {{ 'selected' if not brand.font_family }}>{{ tr('默认（跟随系统）') }}</option>
@@ -280,19 +208,31 @@
           <option value="'SimHei',sans-serif" {{ 'selected' if brand.font_family and 'SimHei' in brand.font_family }}>{{ tr('黑体') }}</option>
         </select>
       </label>
-    </div>
-    <div class="brand-prev" style="display:flex;align-items:center;gap:10px;margin:10px 0;padding:10px 14px;border-radius:10px;background:linear-gradient(135deg,{{ nav_style.sidebar_top }},{{ nav_style.sidebar_bottom }})">
-      {% if brand.logo_file %}
-      <img src="{{ url_for('media', fname=brand.logo_file) }}" style="height:{{ brand.logo_height }}px;width:auto" alt="logo">
-      {% else %}<div style="color:#fff;font-size:20px">⚙</div>{% endif %}
-      <div>
-        <div style="font-size:{{ brand.title_size }}px;font-weight:700;color:{{ brand.title_color or theme.sidebar_text }}{% if brand.font_family %};font-family:{{ brand.font_family }}{% endif %}">{{ brand.title or 'Spare Parts Management System' }}</div>
-        <div style="font-size:{{ brand.subtitle_size }}px;color:{{ brand.subtitle_color or '#9db4cc' }}">{{ brand.subtitle or 'Spare Parts System' }}</div>
+      <div style="margin:10px 0;display:flex;align-items:center;gap:16px;">
+        <span style="font-size:13.5px;color:#374151;">LOGO {{ tr('图片') }}{{ mk('（') }}jpg/png/gif/bmp/webp{{ mk('，') }}≤5MB{{ mk('）') }}</span>
+        <label class="btn">{{ tr('选择文件') }}<input type="file" name="brand_logo" accept="image/*" style="display:none" onchange="lgoName(this)"></label>
+        <span class="muted small" id="lgo-name"></span>
+        <label class="f-check" style="margin:0;"><input type="checkbox" name="brand_remove_logo" value="1"> {{ tr('移除当前') }} LOGO{{ mk('（') }}{{ tr('恢复齿轮图标') }}{{ mk('）') }}</label>
       </div>
+      <label class="f-check" style="margin:10px 0;grid-column:1/-1;">
+        <input type="checkbox" name="brand_i18n" value="1" {{ 'checked' if brand_raw and brand_raw.get('i18n') }}>
+        {{ tr('品牌名随界面语言翻译（不勾选时按你填的原样显示）') }}
+      </label>
     </div>
-    <label class="f-check"><input type="checkbox" name="brand_remove_logo" value="1"> {{ tr('移除当前') }} LOGO{{ tr('（') }}{{ tr('恢复齿轮图标') }}{{ tr('）') }}</label>
-    <div class="muted small" style="margin:8px 0">
-      {{ tr('说明') }}{{ tr('侧栏品牌区显示在左侧菜单顶部，保存后所有用户刷新页面立即生效。字色留空则使用侧栏文字色') }}/{{ tr('默认色') }}{{ tr('。') }}
+    <div class="ui-hint" style="margin:10px 0;color:#6b7280;font-size:13px">
+      {{ tr('修改标题、字号、颜色后保存，刷新页面即可在左侧菜单顶部看到效果。') }}
+    </div>
+    <div class="muted small ui-hint" style="margin:8px 0">
+      {{ tr('说明') }}{{ mk('：') }}{{ tr('侧栏品牌区显示在左侧菜单顶部，保存后所有用户刷新页面立即生效。字色留空则使用侧栏文字色') }}/{{ tr('默认色') }}{{ mk('。') }}
+    </div>
+    <div class="sub-h" style="margin:16px 0 8px">{{ tr('界面显示') }}</div>
+    <input type="hidden" name="ui_hints_present" value="1">
+    <label class="f-check" style="margin:6px 0;display:block">
+      <input type="checkbox" name="ui_hints" value="1" {{ 'checked' if ui_hints }}>
+      {{ tr('显示界面说明提示') }}
+    </label>
+    <div class="muted small ui-hint" style="margin:2px 0 12px 22px">
+      {{ tr('取消勾选后，各页面标题下的说明文字、操作提示会隐藏，界面更清爽；表单里的字段名、必填标记不受影响') }}
     </div>
     <button class="btn btn-primary" type="submit" name="appearance_save" value="1">{{ tr('保存主题与外观') }}</button>
     <button class="btn" type="submit" name="appearance_reset" value="1">{{ tr('恢复默认') }}</button>
@@ -301,102 +241,693 @@
 </div>
 
 <div class="card" id="card-ef">
-  <div class="card-title">{{ tr('自定义表头') }}{{ tr('（') }}{{ tr('备件列表额外列') }}{{ tr('，') }}{{ tr('数量可配置') }}{{ tr('，') }}{{ tr('最多') }} 8 {{ tr('列') }}{{ tr('）') }}</div>
-  <form method="post" class="ajax-form">
-    <div id="ef-rows" class="grid2">
-{% for i in range(8) %}
-      <label class="f-label">{{ tr('第') }} {{ i + 1 }} {{ tr('列') }}<input class="f-input" name="ef_label_{{ i }}" value="{{ extra_fields[i].label if extra_fields|length > i else '' }}" maxlength="30" placeholder="{{ tr('留空则不显示') }}"></label>
+  <div class="card-title">{{ tr('表头与字典设置') }}</div>
+  <div class="head-grid">
+    <form method="post" class="ajax-form head-form">
+      <div class="head-block hg-std">
+        <div class="hb-title">{{ tr('标准表头') }}</div>
+        <div class="std-grid">
+{% for k, label in std_text_cols %}
+          <label class="std-cell">
+            <span class="h-name" title="{{ tr(label) }}">{{ tr(label) }}</span>
+            <input class="f-input h-clip" name="clip_std_{{ k }}" type="number" min="{{ head_min }}" max="{{ head_max }}" step="1" value="{{ head_clip.std[k] }}">
+            <span class="f-note">{{ tr('字符') }}</span>
+          </label>
 {% endfor %}
+        </div>
+        <div class="muted small ui-hint hb-hint">
+          {{ tr('每个文本列最多可录入多少个字符，超出上限的新建、编辑与导入会被拒绝') }}{{ mk('。') }}
+          {{ tr('列表按该宽度截断显示，鼠标悬停可看全文') }}{{ mk('。') }}
+        </div>
+      </div>
+
+      <div class="head-block hg-custom">
+        <div class="hb-title">{{ tr('自定义表头') }}<span class="f-note">{{ mk('（') }}{{ tr('最多 8 列') }}{{ mk('）') }}</span></div>
+        <table class="ef-table">
+          <thead>
+            <tr>
+              <th class="ef-i">#</th>
+              <th class="ef-n">{{ tr('名称') }}</th>
+              <th class="ef-c">{{ tr('字符') }}</th>
+              <th class="ef-t">{{ tr('类型') }}</th>
+            </tr>
+          </thead>
+          <tbody>
+{% for i in range(8) %}
+{% set eft = extra_fields[i].type if extra_fields|length > i else 'text' %}
+            <tr>
+              <td class="ef-i">{{ i + 1 }}</td>
+              <td class="ef-n"><input class="f-input ef-name" name="ef_label_{{ i }}" value="{{ extra_fields[i].label if extra_fields|length > i else '' }}" maxlength="30" placeholder="{{ tr('留空则不显示') }}"></td>
+              <td class="ef-c"><input class="f-input ef-clip h-clip{{ ' is-off' if eft != 'text' }}" name="ef_clip_{{ i }}" type="number" min="{{ head_min }}" max="{{ head_max }}" step="1" value="{{ extra_fields[i].clip if extra_fields|length > i else head_default }}"{{ ' readonly' if eft != 'text' }}></td>
+              <td><select class="f-input h-type" name="ef_type_{{ i }}" title="{{ tr('类型') }}">
+                {% for tv, tn in extra_types %}<option value="{{ tv }}"{{ ' selected' if eft == tv }}>{{ tn }}</option>{% endfor %}
+              </select></td>
+            </tr>
+{% endfor %}
+          </tbody>
+        </table>
+        <div class="muted small ui-hint hb-hint" style="margin:8px 0 0">
+          {{ tr('填写自定义列的名称') }}{{ mk('（') }}{{ tr('例如') }}{{ mk('「') }}{{ tr('用途') }}{{ mk('、') }}{{ tr('责任人') }}{{ mk('、') }}{{ tr('货架备注') }}{{ mk('」') }}{{ mk('）') }}{{ tr('，保存后物料列表与编辑弹窗会自动增加这些列') }}{{ mk('；') }}
+          {{ tr('列名称留空的列不显示') }}{{ mk('。') }}
+          {{ tr('字段长度') }}{{ mk('：') }}{{ tr('该列最多可录入几个字符') }}{{ mk('，') }}{{ tr('默认 60 个字符') }}{{ mk('。') }}
+        </div>
+        <div class="muted small ui-hint hb-hint">
+          {{ tr('类型决定建档与编辑时的录入方式') }}{{ mk('：') }}{{ tr('整数只接受整数') }}{{ mk('、') }}{{ tr('小数可带小数') }}{{ mk('、') }}{{ tr('日期用日期选择器') }}{{ mk('；') }}{{ tr('列表里仍按填写的原文显示') }}{{ mk('。') }}
+        </div>
+        <button class="btn btn-primary" type="submit" name="head_save" value="1">{{ tr('保存表头设置') }}</button>
+      </div>
+    </form>
+
+    {# v1.0.19：右列上半 2/3 物料分类，下半 1/3 维修品类型二级分类 #}
+    <div class="head-side hg-cat">
+      <form method="post" class="ajax-form cat-form">
+        <div class="hb-title">{{ tr('物料分类') }}</div>
+        <div class="muted small ui-hint hb-hint" style="margin:0 0 8px">{{ tr('每行一个分类，同一行也可用分号分隔多个') }}{{ mk('，') }}{{ tr('建档、编辑与筛选的下拉都从这里取') }}{{ mk('。') }}</div>
+        <textarea class="f-input cat-area" name="part_categories" rows="5">{{ part_categories|join('\n') }}</textarea>
+        <div class="muted small ui-hint hb-hint">
+          {{ cat_hint }}{{ mk('。') }}
+          {{ tr('删掉某个分类不会改动已用了它的物料，那些物料保留原分类并出现在筛选列表末尾') }}{{ mk('。') }}
+          {{ tr('Excel 导入时出现字典外的新分类会自动补进来') }}{{ mk('。') }}
+        </div>
+        <button class="btn btn-primary" type="submit" name="category_save" value="1">{{ tr('保存分类字典') }}</button>
+      </form>
+
+      <form method="post" class="ajax-form repair-form" id="repair-cats-form"
+            onsubmit="document.getElementById('repair-cats-json').value=JSON.stringify(repairCats)">
+        <div class="hb-title">{{ tr('维修品类型分类') }}<span class="f-note">{{ mk('（') }}{{ tr('一级类目 + 二级词条') }}{{ mk('）') }}</span></div>
+        <div class="repair-cat-pane" id="repair-cats-list"></div>
+        <div class="repair-cat-add">
+          <input class="f-input" type="text" id="repair-group-input" placeholder="{{ tr('新增一级类目…') }}">
+          <button class="btn btn-xs" type="button" onclick="addRepairGroup()">＋ {{ tr('添加类目') }}</button>
+          <button class="btn btn-primary btn-xs" type="submit" name="repair_save" value="1">{{ tr('保存维修品类型') }}</button>
+        </div>
+        <input type="hidden" name="repair_categories" id="repair-cats-json" value="">
+        <div class="muted small ui-hint hb-hint" style="margin:0">{{ tr('维修子类型下拉按一级类目分组展开；未配置时显示出厂字典') }}{{ mk('。') }}</div>
+      </form>
     </div>
-    <div class="muted small" style="margin:8px 0">
-      {{ tr('说明') }}{{ tr('：') }}{{ tr('填写自定义列的名称') }}{{ tr('（') }}{{ tr('例如') }}{{ tr('「') }}{{ tr('用途') }}{{ tr('、') }}{{ tr('责任人') }}{{ tr('、') }}{{ tr('货架备注') }}{{ tr('」') }}{{ tr('）') }}{{ tr('，保存后备件列表与编辑弹窗会自动增加这些列') }}{{ tr('；') }}
-      {{ tr('列名称留空的列不显示') }}{{ tr('。') }}
+  </div>
+</div>
+
+<div class="card" id="card-stocktake">
+  <div class="card-title">{{ tr('审批与业务策略') }}</div>
+  <form method="post">
+    <div class="grid2">
+      <label class="f-label">{{ tr('盘点差异审批级别') }}
+        <select class="f-input" name="stocktake_approval_level">
+          <option value="0" {{ 'selected' if settings.get('stocktake_approval_level','1')|string=='0' }}>{{ tr('不审批（提交即按结果校准库存）') }}</option>
+          <option value="1" {{ 'selected' if settings.get('stocktake_approval_level','1')|string=='1' }}>{{ tr('仅一级审批（主管）') }}</option>
+          <option value="2" {{ 'selected' if settings.get('stocktake_approval_level','1')|string=='2' }}>{{ tr('两级审批（主管一级 + 经理二级）') }}</option>
+        </select>
+      </label>
+      <label class="f-label">{{ tr('贵重件审批级别') }}
+        <select class="f-input" name="valuable_approval_level">
+          <option value="0" {{ 'selected' if settings.get('valuable_approval_level','1')|string=='0' }}>{{ tr('不审批（直接出库）') }}</option>
+          <option value="1" {{ 'selected' if settings.get('valuable_approval_level','1')|string=='1' }}>{{ tr('仅一级审批（主管，默认）') }}</option>
+          <option value="2" {{ 'selected' if settings.get('valuable_approval_level','1')|string=='2' }}>{{ tr('两级审批（主管一级 + 经理二级）') }}</option>
+        </select>
+      </label>
+      <label class="f-label">{{ tr('退货出库审批级别') }}
+        <select class="f-input" name="return_approval_level">
+          <option value="0" {{ 'selected' if settings.get('return_approval_level','1')|string=='0' }}>{{ tr('不审批（直接出库）') }}</option>
+          <option value="1" {{ 'selected' if settings.get('return_approval_level','1')|string=='1' }}>{{ tr('仅一级审批（主管，默认）') }}</option>
+          <option value="2" {{ 'selected' if settings.get('return_approval_level','1')|string=='2' }}>{{ tr('两级审批（主管一级 + 经理二级）') }}</option>
+        </select>
+      </label>
+      <label class="f-label">{{ tr('换货出库审批级别') }}
+        <select class="f-input" name="exchange_approval_level">
+          <option value="0" {{ 'selected' if settings.get('exchange_approval_level','1')|string=='0' }}>{{ tr('不审批（直接出库）') }}</option>
+          <option value="1" {{ 'selected' if settings.get('exchange_approval_level','1')|string=='1' }}>{{ tr('仅一级审批（主管，默认）') }}</option>
+          <option value="2" {{ 'selected' if settings.get('exchange_approval_level','1')|string=='2' }}>{{ tr('两级审批（主管一级 + 经理二级）') }}</option>
+        </select>
+      </label>
+      <label class="f-label">{{ tr('内部转移审批级别') }}
+        <select class="f-input" name="internal_approval_level">
+          <option value="0" {{ 'selected' if settings.get('internal_approval_level','1')|string=='0' }}>{{ tr('不审批（直接出库）') }}</option>
+          <option value="1" {{ 'selected' if settings.get('internal_approval_level','1')|string=='1' }}>{{ tr('仅一级审批（主管，默认）') }}</option>
+          <option value="2" {{ 'selected' if settings.get('internal_approval_level','1')|string=='2' }}>{{ tr('两级审批（主管一级 + 经理二级）') }}</option>
+        </select>
+      </label>
+      <label class="f-label">{{ tr('返还出库审批级别') }}
+        <select class="f-input" name="giveback_approval_level">
+          <option value="0" {{ 'selected' if settings.get('giveback_approval_level','1')|string=='0' }}>{{ tr('不审批（直接出库）') }}</option>
+          <option value="1" {{ 'selected' if settings.get('giveback_approval_level','1')|string=='1' }}>{{ tr('仅一级审批（主管，默认）') }}</option>
+          <option value="2" {{ 'selected' if settings.get('giveback_approval_level','1')|string=='2' }}>{{ tr('两级审批（主管一级 + 经理二级）') }}</option>
+        </select>
+      </label>
+      <label class="f-label">{{ tr('报废出库审批级别') }}
+        <select class="f-input" name="scrap_approval_level">
+          <option value="1" {{ 'selected' if settings.get('scrap_approval_level','1')|string in ('0','1') }}>{{ tr('仅一级审批（主管，默认）') }}</option>
+          <option value="2" {{ 'selected' if settings.get('scrap_approval_level','1')|string=='2' }}>{{ tr('两级审批（主管一级 + 经理二级）') }}</option>
+        </select>
+      </label>
+      {# v1.0.47：报废审批两模式（去掉批量模块，落到普通出库报废单） #}
+      <label class="f-label">{{ tr('报废审批模式') }}
+        <select class="f-input" name="scrap_approval_mode">
+          <option value="1" {{ 'selected' if settings.get('scrap_approval_mode',1)|string=='1' }}>{{ tr('系统审批（审批通过自动扣库）') }}</option>
+          <option value="2" {{ 'selected' if settings.get('scrap_approval_mode',1)|string=='2' }}>{{ tr('系统+纸档审批（打印签字单上传后审批）') }}</option>
+        </select>
+      </label>
     </div>
-    <button class="btn btn-primary" type="submit" name="extra_fields_save" value="1">{{ tr('保存自定义表头') }}</button>
+    {# v1.0.18：盘点周期（天）——盘点管理页按此间隔生成节点，做应盘/实盘/漏盘对比 #}
+    <div class="sub-h" style="margin:14px 0 6px">{{ tr('盘点周期') }}</div>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <label class="f-label" style="margin:0;max-width:220px">{{ tr('盘点周期（天）') }}
+        <input class="f-input" type="number" name="stocktake_cycle_days" min="1" max="365" step="1"
+               value="{{ settings.get('stocktake_cycle_days', 30) }}">
+      </label>
+      <label class="f-label" style="margin:0;max-width:220px">{{ tr('节点容差（±%）') }}
+        <input class="f-input" type="number" name="stocktake_cycle_tolerance_pct" min="0" max="50" step="1"
+               value="{{ ((settings.get('stocktake_cycle_tolerance', 0.2) or 0) * 100)|round|int }}">
+      </label>
+      <label class="f-label" style="margin:0;max-width:220px">{{ tr('盘点启始日') }}
+        {# v1.0.47：日历选择日期；提交时后端只取月/日存 M/D（周期口径仍是每年同月同日） #}
+        <input class="f-input" type="date" name="stocktake_start_md"
+               value="{{ settings.get('stk_start_date', '2026-01-01') }}">
+      </label>
+    </div>
+    <div class="muted small ui-hint" style="margin:4px 0 0">
+      {{ tr('每 {n} 天一个盘点节点；下次应盘日 = 上期应盘日 + 周期，前后各 {p}% 内完成都算按期。', n=settings.get('stocktake_cycle_days', 30), p=((settings.get('stocktake_cycle_tolerance', 0.2) or 0) * 100)|round|int) }}
+      {{ tr('盘点启始日用日历选择日期，系统按该日期的月/日每年重复计算周期；留空默认 1/1。') }}
+    </div>
+    <div class="sub-h" style="margin:14px 0 6px">{{ tr('出库策略') }}</div>
+    <label class="f-check" style="margin:6px 0 10px">
+      <input type="hidden" name="fifo_enabled" value="0">
+      <input type="checkbox" name="fifo_enabled" value="1" {{ 'checked' if settings.get('fifo_enabled',1) else '' }}>
+      {{ tr('出库先进先出（FIFO）：出库自动从最早入库批次扣减，默认开启') }}
+    </label>
+    {# v1.0.78：入库摆放提示，仓库执行入库时展示；留空=不提示 #}
+    <div style="margin:6px 0 10px">
+      <label class="f-label" for="fifo-in-tip">{{ tr('先进先出(FIFO)入库提示信息') }}</label>
+      <textarea class="f-input" id="fifo-in-tip" name="fifo_in_tip" rows="3" style="width:100%;max-width:680px;resize:vertical" placeholder="{{ tr('留空表示不显示提示') }}">{{ settings.get('fifo_in_tip', '') }}</textarea>
+      <div class="muted small ui-hint">{{ tr('提示会显示在批量出入库的入库明细信息栏中，以及执行入库窗口中；关闭先进先出或留空则不显示。') }}</div>
+    </div>
+    <p class="muted small ui-hint" style="line-height:1.6;margin:6px 0 10px">
+      {{ tr('审批级别适用于申请单出库：盘点差异、贵重件、退货、换货、内部转移、返还与报废；除报废外，0 表示不审批，1 为一级，2 为两级；报废固定至少一级审批。') }}
+      {{ tr('仓管直接办理的换货、维修、校验/测试会立刻登记借·换·检·修台账并出库，不走审批；报废出库仍按报废审批级别执行。') }}
+      {{ tr('审批人由申请人所在部门的配置自动带出（一级为部门主管，二级为部门经理），普通员工没有审批权限。') }}
+    </p>
+    <button class="btn btn-primary" type="submit" name="stocktake_save" value="1">{{ tr('保存审批与策略设置') }}</button>
   </form>
 </div>
 
+{# v1.0.19：维修品类型配置已并入「表头设置」右列下半，这里只留渲染脚本 #}
+<script>
+(function(){
+  function esc(s){ var d=document.createElement('div'); d.textContent=s==null?'':String(s); return d.innerHTML; }
+  var PH_ITEM = {{ tr('新增词条…') | tojson }};
+  var TIP_DEL_GROUP = {{ tr('删除该类目') | tojson }};
+  var TIP_DEL_ITEM = {{ tr('删除该词条') | tojson }};
+  var EMPTY = {{ tr('暂无二级词条') | tojson }};
+  var REPAIR_CATS_INIT = {{ repair_categories | tojson }};
+  var repairCats = (REPAIR_CATS_INIT || []).map(function(g){
+    return {group:String(g.group||''), items:(g.items||[]).slice()};
+  });
+  function sync(){ var h=document.getElementById('repair-cats-json'); if(h) h.value=JSON.stringify(repairCats); }
+  // v1.0.20：类目默认折叠，展开才渲染该类目词条，且单次最多画 100 个胶囊。
+  // 旧实现每次改动都重建全部词条（3000 条 = 3000 个 span + 3000 个 ✕ 按钮，改一个卡 200~500ms）。
+  var OPEN = {};
+  var CHIP_LIMIT = 100;
+  var MORE_TIP = {{ tr('还有 {n} 条未显示') | tojson }};
+  function render(){
+    var box=document.getElementById('repair-cats-list'); if(!box) return;
+    box.innerHTML = repairCats.map(function(g,gi){
+      var open = !!OPEN[g.group];
+      var chips = '';
+      if(open){
+        var list = g.items.slice(0, CHIP_LIMIT);
+        chips = list.length ? list.map(function(it,ii){
+          return '<span class="rcg-chip">' + esc(it) +
+                 '<button type="button" title="' + esc(TIP_DEL_ITEM) + '" onclick="delRepairItem('+gi+','+ii+')">✕</button></span>';
+        }).join('') : '<span class="muted small">'+esc(EMPTY)+'</span>';
+        if(g.items.length > CHIP_LIMIT){
+          chips += '<span class="muted small">' + esc(MORE_TIP.replace('{n}', g.items.length - CHIP_LIMIT)) + '</span>';
+        }
+        chips += '<input class="f-input rcg-new" placeholder="' + esc(PH_ITEM) + '" title="' + esc(PH_ITEM) + '"' +
+          ' onkeydown="if(event.key===\'Enter\'){event.preventDefault();addRepairItem('+gi+',this.value);this.value=\'\';}">';
+      } else {
+        chips = '<span class="muted small">' +
+          (g.items.length ? esc(g.items.slice(0, 8).join('、')) + (g.items.length > 8 ? ' …' : '') : esc(EMPTY)) +
+          '</span>';
+      }
+      return '<div class="rcg">' +
+        '<div class="rcg-head">' +
+          '<button class="btn btn-xs" type="button" onclick="toggleRepairGroup('+gi+')">' + (open ? '▾' : '▸') + '</button>' +
+          '<input class="f-input rcg-name" value="' + esc(g.group) + '" onchange="setRepairGroup('+gi+',this.value)">' +
+          '<span class="muted small" style="white-space:nowrap">' + g.items.length + '</span>' +
+          '<button class="btn btn-xs btn-danger" type="button" title="' + esc(TIP_DEL_GROUP) + '" onclick="delRepairGroup('+gi+')">✕</button>' +
+        '</div>' +
+        '<div class="rcg-items">' + chips + '</div></div>';
+    }).join('');
+    sync();
+  }
+  window.toggleRepairGroup=function(i){
+    var g = repairCats[i]; if(!g) return;
+    OPEN[g.group] = !OPEN[g.group];
+    render();
+  };
+  window.setRepairGroup=function(i,v){ if(repairCats[i]){ repairCats[i].group=(v||'').trim(); render(); } };
+  window.delRepairGroup=function(i){ repairCats.splice(i,1); render(); };
+  window.delRepairItem=function(gi,ii){ if(repairCats[gi]){ repairCats[gi].items.splice(ii,1); render(); } };
+  window.addRepairItem=function(gi,v){
+    v=(v||'').trim(); if(!v || !repairCats[gi]) return;
+    if(repairCats[gi].items.indexOf(v)<0) repairCats[gi].items.push(v);
+    render();
+  };
+  window.addRepairGroup=function(){
+    var el=document.getElementById('repair-group-input'); var v=(el.value||'').trim();
+    if(!v) return;
+    if(!repairCats.some(function(g){return g.group===v;})) repairCats.push({group:v,items:[]});
+    el.value=''; render();
+  };
+  render();
+})();
+</script>
+
+<div class="card" id="card-auto-stock">
+  <div class="card-title">{{ tr('自动上下限管理') }}</div>
+  <div class="muted small ui-hint" style="margin:-6px 0 12px">{{ tr('按历史消耗动态计算安全库存') }}</div>
+  <form method="post">
+    <label class="f-check" style="margin:6px 0 10px">
+      <input type="checkbox" name="auto_stock_enabled" value="1" {{ 'checked' if auto_stock.get('enabled',0) else '' }}>
+      {{ tr('启用自动上下限（开启后，在物料配置里勾选"自动上下限"的物料将按下方参数自动算建议值，手动上下限保留但不生效）') }}
+    </label>
+    <div class="grid2">
+      <label class="f-label">{{ tr('采购周期（天）') }}
+        <input class="f-input" type="number" name="auto_stock_lead" min="1" max="180" value="{{ auto_stock.get('lead_days',45) }}">
+      </label>
+      <label class="f-label">{{ tr('安全系数（波动放大倍数）') }}
+        <input class="f-input" type="number" name="auto_stock_safety" step="0.1" min="1" max="3" value="{{ auto_stock.get('safety_factor',1.5) }}">
+      </label>
+      <label class="f-label">{{ tr('消耗统计周期（天）') }}
+        <input class="f-input" type="number" name="auto_stock_consume" min="7" max="365" value="{{ auto_stock.get('consume_days',120) }}">
+      </label>
+    </div>
+    <p class="muted small ui-hint" style="line-height:1.6;margin:6px 0 10px">
+      {{ tr('启用后，勾选"自动上下限"的物料将按历史出库数据自动计算安全库存，计算公式：') }}<br>
+      {{ tr('1. 统计最近N天内有出库的月份，取近3个月平均月消耗量；') }}<br>
+      {{ tr('2. 日均消耗 = 月均消耗 ÷ 30；') }}<br>
+      {{ tr('3. 动态安全系数 = 基础安全系数 ×（1 + 消耗波动系数）：消耗越稳定的料系数越低，波动大的料自动放大备货量；') }}<br>
+      {{ tr('4. 最小库存（下限）= 日均消耗 × 采购周期天数 × 动态安全系数；') }}<br>
+      {{ tr('5. 最大库存（上限）= 最小库存 × 1.5。') }}<br>
+      {{ tr('新物料无历史出库数据时，不自动计算，保留手动设置的上下限。') }}
+    </p>
+    <button class="btn btn-primary" type="submit" name="auto_stock_save" value="1">{{ tr('保存自动上下限设置') }}</button>
+  </form>
+</div>
+
+<div class="card" id="card-stale">
+  <div class="card-title">{{ tr('呆滞物料管理') }}</div>
+  <div class="muted small ui-hint" style="margin:-6px 0 12px">{{ tr('以料号为锚点') }}</div>
+  <form method="post" class="ajax-form">
+    <label class="f-label">{{ tr('呆滞判定天数') }}<span class="f-note">{{ mk('（') }}{{ tr('物料超过该天数未领用即判定为呆滞') }}{{ mk('）') }}</span>
+      <input class="f-input" type="number" name="stale_days" value="{{ stale_days }}" min="1" max="3650" style="max-width:160px">
+    </label>
+    <label class="f-check" style="margin:12px 0 4px">
+      <input type="checkbox" name="stale_ignore_borrowed" value="1" {{ 'checked' if stale_ignore_borrowed else '' }}>
+      {{ tr('stale.ignore_borrowed') }}
+    </label>
+    <p class="muted small ui-hint" style="margin:0 0 10px;line-height:1.6">
+      {{ tr('stale.ignore_borrowed_hint') }}
+    </p>
+    <div class="muted small ui-hint" style="margin:8px 0">
+      {{ tr('说明') }}{{ mk('：') }}{{ tr('stale.rule_hint') }}
+    </div>
+    <button class="btn btn-primary" type="submit" name="stale_save" value="1">{{ tr('settings.save_stale_settings') }}</button>
+  </form>
+</div>
+
+<div class="card" id="card-pending">
+  <div class="card-title">{{ tr('待出库超时管理') }}</div>
+  <div class="muted small ui-hint" style="margin:-6px 0 12px">{{ tr('审批通过后未及时领用自动处理') }}</div>
+  <form method="post" class="ajax-form">
+    <div class="grid2">
+      <label class="f-label">{{ tr('提醒时长（小时）') }}{{ mk('：') }}
+        <input class="f-input" type="number" name="pending_remind_hours" value="{{ settings.get('pending_remind_hours', 24) }}" min="1" max="720" style="max-width:160px">
+      </label>
+      <label class="f-label">{{ tr('自动取消时长（小时）') }}{{ mk('：') }}
+        <input class="f-input" type="number" name="pending_release_hours" value="{{ settings.get('pending_release_hours', 36) }}" min="1" max="720" style="max-width:160px">
+      </label>
+    </div>
+    <div class="muted small ui-hint" style="margin:8px 0">
+      {{ tr('说明') }}{{ mk('：') }}{{ tr('出库申请审批通过后，系统自动锁定库存；超过「提醒时长」未出库，系统提醒申请人尽快领货；超过「自动取消时长」未出库，系统自动取消该申请单并释放锁定库存，避免长期占用。') }}
+    </div>
+    <button class="btn btn-primary" type="submit" name="pending_save" value="1">{{ tr('保存超时配置') }}</button>
+  </form>
+</div>
+
+<div class="card" id="card-notify">
+  <div class="card-title">{{ tr('消息通知配置') }}</div>
+  <div class="muted small ui-hint" style="margin:-6px 0 12px">{{ tr('待审批申请单按下方配置推送给审批人') }}</div>
+  <form method="post">
+    <label class="f-check" style="margin:6px 0 10px">
+      <input type="checkbox" name="notify_browser" value="1" {{ 'checked' if settings.get('notify_browser',1) else '' }}>
+      {{ tr('浏览器桌面通知（登录后右下角弹出系统通知，需浏览器授权）') }}
+    </label>
+    <label class="f-check" style="margin:6px 0 10px">
+      <input type="checkbox" name="notify_email_enabled" value="1" {{ 'checked' if settings.get('notify_email_enabled') else '' }}>
+      {{ tr('邮件通知：新待审批单时邮件提醒审批人') }}
+    </label>
+    <div class="grid2" style="margin-left:16px">
+      <label class="f-label">{{ tr('SMTP 服务器') }}<input class="f-input" type="text" name="smtp_host" value="{{ settings.get('smtp_host','') }}" placeholder="smtp.qq.com"></label>
+      <label class="f-label">{{ tr('SMTP 端口') }}<input class="f-input" type="number" name="smtp_port" value="{{ settings.get('smtp_port',465) }}" style="max-width:120px"></label>
+      <label class="f-label">{{ tr('发件邮箱账号') }}<input class="f-input" type="text" name="smtp_user" value="{{ settings.get('smtp_user','') }}" placeholder="you@company.com"></label>
+      <label class="f-label">{{ tr('邮箱授权码/密码') }}<input class="f-input" type="password" name="smtp_pass" value="{{ settings.get('smtp_pass','') }}" placeholder="{{ tr('授权码') }}"></label>
+    </div>
+    <label class="f-check" style="margin:10px 0 6px">
+      <input type="checkbox" name="notify_imp_enabled" value="1" {{ 'checked' if settings.get('notify_imp_enabled') else '' }}>
+      {{ tr('企业私信通知：新待审批单时直接私信给审批人（企业微信/钉钉/飞书自建应用）') }}
+    </label>
+    <div class="grid2" style="margin-left:16px">
+      <label class="f-label">{{ tr('企业平台') }}
+        <select class="f-input" name="imp_platform" id="imp_plat_sel" onchange="impPlatSwitch()">
+          {% for pv, pl in [('wecom', tr('企业微信')),('dingtalk', tr('钉钉')),('feishu', tr('飞书')),('webhook', tr('通用 Webhook（Slack / Teams / Discord / 自建）'))] %}
+          <option value="{{ pv }}" {{ 'selected' if settings.get('imp_platform','wecom')==pv }}>{{ pl }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="f-label" id="imp-agent">{{ tr('企业微信 AgentId（钉钉/飞书可空）') }}<input class="f-input" type="text" name="imp_agentid" value="{{ settings.get('imp_agentid','') }}"></label>
+      <label class="f-label" id="imp-corp">CorpID / AppKey / App ID<input class="f-input" type="text" name="imp_corpid" value="{{ settings.get('imp_corpid','') }}"></label>
+      <label class="f-label" id="imp-secret">{{ tr('应用 Secret / AppSecret') }}<input class="f-input" type="password" name="imp_secret" value="{{ settings.get('imp_secret','') }}"></label>
+      <label class="f-label" id="imp-hook" style="display:none">{{ tr('Webhook 地址') }}<input class="f-input" type="text" name="imp_webhook" value="{{ settings.get('imp_webhook','') }}" placeholder="https://hooks.slack.com/services/..."></label>
+      <label class="f-label" id="imp-hook-style" style="display:none">{{ tr('Webhook 消息格式') }}
+        <select class="f-input" name="imp_webhook_style">
+          {% for sv, sl in [('slack', tr('Slack')),('teams', tr('Microsoft Teams')),('discord', tr('Discord')),('plain', tr('自定义 JSON（text 字段）'))] %}
+          <option value="{{ sv }}" {{ 'selected' if settings.get('imp_webhook_style','slack')==sv }}>{{ sl }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+    <p class="muted small ui-hint" style="margin:8px 0">{{ tr('审批人在【用户管理】里填写「企业账号ID」后，私信才能发到本人；不填则只发邮件/浏览器通知') }}。</p>
+    <p class="muted small ui-hint" style="margin:0 0 8px">{{ tr('国外企业没有企业微信/钉钉/飞书时选「通用 Webhook」：消息直接发到 Slack / Teams / Discord 的频道，或任何能接 JSON 的自建系统，审批人无需填写企业账号ID') }}。</p>
+    <script>
+    function impPlatSwitch(){
+      var v = document.getElementById('imp_plat_sel').value, hook = (v === 'webhook');
+      ['imp-hook','imp-hook-style'].forEach(function(id){
+        var el = document.getElementById(id); if(el) el.style.display = hook ? '' : 'none';
+      });
+      ['imp-corp','imp-secret','imp-agent'].forEach(function(id){
+        var el = document.getElementById(id); if(el) el.style.display = hook ? 'none' : '';
+      });
+    }
+    if(document.readyState === 'loading'){ document.addEventListener('DOMContentLoaded', impPlatSwitch); }
+    else { impPlatSwitch(); }
+    </script>
+    <label class="f-label" style="margin-left:16px">{{ tr('系统访问地址') }}<input class="f-input" type="text" name="base_url" value="{{ settings.get('base_url','') }}" placeholder="http://192.168.1.10:5000"></label>
+    <div class="grid2" style="margin-left:16px;margin-top:8px;margin-bottom:8px">
+      <label class="f-label">{{ tr('提交后首次催办（小时）') }}<input class="f-input" type="number" name="remind_first_hours" value="{{ settings.get('remind_first_hours',4) }}" min="0.5" step="0.5" style="max-width:140px"></label>
+      <label class="f-label">{{ tr('之后每隔多久再催（小时）') }}<input class="f-input" type="number" name="remind_interval_hours" value="{{ settings.get('remind_interval_hours',24) }}" min="1" step="1" style="max-width:140px"></label>
+    </div>
+    <button class="btn btn-primary" type="submit" name="notify_save" value="1">{{ tr('保存通知设置') }}</button>
+  </form>
+</div>
+
+<div class="card" id="card-db">
+  <div class="card-title">{{ tr('数据库、图片与压缩设置') }}</div>
+  <form method="post" class="ajax-form">
+    <label class="f-label">{{ tr('当前数据库') }}</label>
+    <div class="muted mono small" style="margin-bottom:8px">{{ db_cfg.db_type|upper }} · {{ db_path or tr('未配置') }}</div>
+    <label class="f-label">{{ tr('数据库类型') }}<select class="f-input" name="db_type" id="db_type_sel" onchange="dbTypeSwitch()">
+        {% for t in DB_DIALECTS %}
+        <option value="{{ t }}" {{ 'selected' if db_cfg.db_type==t }}>{{ t|upper }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <div id="db_sqlite_row">
+      <label class="f-label">{{ tr('数据库文件路径') }}<span class="f-note">{{ mk('（') }}{{ tr('所有用户共享时填内网公共盘路径') }}{{ mk('）') }}</span>
+        <input class="f-input" name="db_path" value="{{ db_path or default_db }}"></label>
+    </div>
+    <div id="db_server_rows" style="display:none">
+      <div class="grid2">
+        <label class="f-label">{{ tr('服务器地址') }}<input class="f-input" name="db_host" value="{{ db_cfg.host }}" placeholder="127.0.0.1"></label>
+        <label class="f-label">{{ tr('端口') }}<input class="f-input" type="number" name="db_port" value="{{ db_cfg.port or '' }}" placeholder="3306/5432/1433/1521"></label>
+      </div>
+      <div class="grid2">
+        <label class="f-label">{{ tr('用户名') }}<input class="f-input" name="db_user" value="{{ db_cfg.user }}" placeholder="root/sa"></label>
+        <label class="f-label">{{ tr('密码') }}<input class="f-input" type="password" name="db_password" value="{{ db_cfg.password }}" placeholder="******"></label>
+      </div>
+      <label class="f-label">{{ tr('数据库名') }}<input class="f-input" name="db_database" value="{{ db_cfg.database }}" placeholder="smt_parts"></label>
+      <label class="f-label" id="db_svc_row" style="display:none">{{ tr('Oracle 服务名') }}<input class="f-input" name="db_service_name" value="{{ db_cfg.service_name }}" placeholder="XE"></label>
+    </div>
+    <div class="muted small ui-hint" style="margin:8px 0">
+      {{ tr('数据库类型说明') }}{{ mk('：') }}SQLite {{ tr('为内置单文件库（默认）') }}{{ mk('；') }}MySQL/MariaDB/PostgreSQL/SQL Server/Oracle {{ tr('需在服务器安装对应数据库并创建库') }}{{ mk('。') }}
+      {{ tr('切换类型后保存，重启软件生效；新库首次连接时自动建表（') }}{{ tr('含默认管理员') }}{{ mk('）') }}{{ mk('。') }}
+      {{ tr('备份恢复仅支持SQLite') }}{{ mk('；') }}{{ tr('其他数据库请使用自带备份工具') }}{{ mk('（') }}{{ tr('例如') }} mysqldump / pg_dump{{ mk('）') }}{{ mk('。') }}
+    </div>
+    <div class="btn-row" style="margin:10px 0">
+      <button class="btn btn-primary" type="submit" name="db_save" value="1">{{ tr('保存数据库配置') }}</button>
+      <button class="btn btn-plain" type="button" onclick="dbTest()">{{ tr('测试连接') }}</button>
+      <span id="db_test_msg" class="muted small"></span>
+    </div>
+    <label class="f-check"><input type="checkbox" name="db_init" value="1"> {{ tr('保存并初始化新库') }}{{ mk('（') }}{{ tr('立即建表并创建默认管理员') }}{{ mk('）') }}</label>
+    <div style="margin:10px 0;padding:10px;border:1px dashed var(--line);border-radius:8px;background:#f8fafc">
+      <div class="sub-h" style="margin-bottom:6px">📦 {{ tr('数据迁移') }}</div>
+      <p class="muted small ui-hint" style="margin:0 0 8px">{{ tr('切换数据库前，点「导出当前数据」备份；新库初始化后，点「导入数据」把旧数据搬过去。') }}</p>
+      <button class="btn" type="button" onclick="exportData()">{{ tr('导出当前数据为JSON') }}</button>
+      <button class="btn" type="button" onclick="importData()">{{ tr('从JSON导入数据') }}</button>
+      <input type="file" id="import_file" accept=".json" style="display:none" onchange="doImport(this)">
+      <span id="migrate_msg" class="muted small"></span>
+    </div>
+
+    <div class="muted small ui-hint" style="margin:8px 0">
+      {{ tr('说明') }}{{ mk('：') }}{{ tr('物料图片与品牌') }} LOGO {{ tr('均以二进制直接存入主数据库（') }}images {{ tr('表），随数据库文件一起拷贝') }}/{{ tr('备份') }}{{ mk('，') }}{{ tr('单文件带走') }}{{ tr('，无需单独备份图片文件夹。') }}
+    </div>
+
+    <div class="sub-h" style="margin:16px 0 8px">{{ tr('上传图片自动压缩') }}</div>
+    <label class="f-label">{{ tr('压缩阈值') }}{{ mk('（') }}KB{{ mk('，') }}0={{ tr('不压缩') }}{{ mk('；') }}{{ tr('物料图片与品牌') }} LOGO {{ tr('超过即自动压到阈值以内）') }}
+      <input class="f-input" type="number" name="upload_compress_kb" min="0" max="10240" step="10" value="{{ upload_compress_kb }}" style="max-width:200px">
+    </label>
+    <div class="muted small ui-hint" style="margin:6px 0">{{ tr('质量优先') }}{{ tr('仍超阈值时再降低分辨率') }}{{ mk('。') }}{{ tr('默认') }} 400KB{{ tr('保存随数据库生效') }}{{ mk('。') }}</div>
+    <button class="btn btn-primary" type="submit" name="upload_cfg_save" value="1">{{ tr('保存压缩设置') }}</button>
+  </form>
+  <script>
+  function dbTypeSwitch(){
+    var s = document.getElementById('db_type_sel');
+    var t = s ? s.value : 'sqlite';
+    document.getElementById('db_sqlite_row').style.display = (t === 'sqlite') ? '' : 'none';
+    document.getElementById('db_server_rows').style.display = (t === 'sqlite') ? 'none' : '';
+    document.getElementById('db_svc_row').style.display = (t === 'oracle') ? '' : 'none';
+  }
+  function dbTest(){
+    var f = document.getElementById('card-db').querySelector('form');
+    var fd = new FormData(f); fd.set('db_test', '1');
+    var msg = document.getElementById('db_test_msg');
+    msg.textContent = '...';
+    fetch(window.location.pathname, {method:'POST', body:fd, headers:{'X-Requested-With':'XMLHttpRequest'}})
+      .then(function(r){ return r.json(); })
+      .then(function(d){ msg.textContent = d.ok ? ('OK: ' + d.msg) : ('FAIL: ' + d.msg);
+                          msg.style.color = d.ok ? '#16a34a' : '#dc2626'; })
+      .catch(function(e){ msg.textContent = 'FAIL: ' + e; msg.style.color = '#dc2626'; });
+  }
+  function exportData(){
+    var msg = document.getElementById('migrate_msg');
+    msg.textContent = TR('导出中...');
+    fetch('/settings?action=export_data', {method:'POST', headers:{'X-Requested-With':'XMLHttpRequest'}})
+      .then(function(r){ return r.blob(); })
+      .then(function(blob){
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'spms_data_export.json';
+        a.click();
+        msg.textContent = TR('导出完成');
+      })
+      .catch(function(e){ msg.textContent = TRP('导出失败: {err}', {err: e}); });
+  }
+  function importData(){
+    document.getElementById('import_file').click();
+  }
+  function doImport(input){
+    if(!input.files[0]) return;
+    var fd = new FormData();
+    fd.append('file', input.files[0]);
+    var msg = document.getElementById('migrate_msg');
+    msg.textContent = TR('导入中...');
+    fetch('/settings?action=import_data', {method:'POST', body:fd, headers:{'X-Requested-With':'XMLHttpRequest'}})
+      .then(function(r){ return r.json(); })
+      .then(function(d){ msg.textContent = d.msg || d.ok; })
+      .catch(function(e){ msg.textContent = TRP('导入失败: {err}', {err: e}); });
+  }
+  dbTypeSwitch();
+  </script>
+</div>
+
+</div>
+
+
+<div class="card" id="card-lan">
+  <div class="card-title">{{ tr('局域网部署') }}</div>
+  <div class="muted small ui-hint" style="margin:-6px 0 12px">{{ tr('部署后其他电脑可在浏览器直接访问') }}</div>
+  <form method="post"><!-- 部署需重启服务，保持整页提交 -->
+    <label class="f-check"><input type="checkbox" name="lan_enabled" value="1" {{ 'checked' if lan_enabled }}> {{ tr('启用局域网访问') }}{{ mk('（') }}{{ tr('本机监听所有网卡') }}{{ mk('）') }}</label>
+    <label class="f-label">{{ tr('服务端口') }}<input class="f-input" type="number" name="lan_port" value="{{ lan_port }}" min="1024" max="65535" style="max-width:180px">
+    </label>
+    <div class="muted small ui-hint" style="margin:8px 0">
+      {{ tr('部署完成后') }}{{ tr('同一局域网内的电脑在浏览器输入') }} <span class="mono">http://{{ lan_ip }}:{{ lan_port }}</span> {{ tr('即可访问本系统') }}
+      {{ tr('（所有电脑共用数据库，请确保各电脑的系统设置中数据库指向同一公共盘路径）') }}{{ mk('。') }}
+      {{ tr('保存将自动重启服务使部署生效；如其他电脑无法访问') }}{{ mk('，') }}{{ tr('请检查') }} Windows {{ tr('防火墙是否放行该端口') }}{{ mk('。') }}
+    </div>
+    <button class="btn btn-primary" type="submit" name="deploy_save" value="1">{{ tr('保存并重启') }}{{ mk('（') }}{{ tr('部署生效') }}{{ mk('）') }}</button>
+  </form>
+</div>
+
+<div class="card" id="card-ad">
+  <div class="card-title">{{ tr('AD 域登录配置') }}</div>
+  <div class="muted small ui-hint" style="margin:-6px 0 12px">{{ tr('由公司总登录系统验证，通过后按用户名匹配白名单，未匹配到则以访客身份进入') }}</div>
+  <form method="post">
+    <div class="grid2">
+      <label class="f-check"><input type="checkbox" name="ad_enabled" value="1" {{ 'checked' if ad_cfg.get('enabled') }}> {{ tr('启用 AD 域登录（登录页显示「AD 域账号」入口）') }}</label>
+      <label class="f-label">{{ tr('AD 服务器地址') }}<input class="f-input" type="text" name="ad_server" value="{{ ad_cfg.get('server','') }}" placeholder="{{ tr('如 192.168.1.10 或 ad.company.com') }}">
+      </label>
+      <label class="f-label">{{ tr('AD 端口') }}<input class="f-input" type="number" name="ad_port" value="{{ ad_cfg.get('port',389) }}" min="1" max="65535" style="max-width:180px">
+        <span class="muted small ui-hint">{{ tr('默认 389 / LDAPS 636 / 全局编录 3268、3269；支持 1-65535 任意自定义端口') }}</span>
+      </label>
+      <label class="f-label">{{ tr('加密方式') }}<select class="f-input" name="ad_enc">
+          {% set enc = ad_cfg.get('enc') or ('ldaps' if ad_cfg.get('ssl') else 'none') %}
+          <option value="none" {{ 'selected' if enc=='none' }}>{{ tr('无加密（389 明文，内网建议慎用）') }}</option>
+          <option value="ldaps" {{ 'selected' if enc=='ldaps' }}>{{ tr('LDAPS 加密（636 端口，推荐）') }}</option>
+          <option value="starttls" {{ 'selected' if enc=='starttls' }}>{{ tr('StartTLS（389 端口升级加密）') }}</option>
+        </select>
+      </label>
+      <label class="f-label">{{ tr('公司域名') }}<span class="f-note">{{ mk('（') }}{{ tr('AD 域') }}{{ mk('）') }}</span>
+        <input class="f-input" type="text" name="ad_domain" value="{{ ad_cfg.get('domain','') }}" placeholder="{{ tr('如 company.com 或 company.local') }}">
+      </label>
+      <label class="f-label">{{ tr('用户名格式') }}<select class="f-input" name="ad_name_format">
+          <option value="upn" {{ 'selected' if ad_cfg.get('name_format','upn')=='upn' }}>{{ tr('user@域名（例如 zhangsan@company.com）') }}</option>
+          <option value="ntdomain" {{ 'selected' if ad_cfg.get('name_format')=='ntdomain' }}>{{ tr('域名') }}\{{ tr('用户名') }}{{ tr('（例如 company\zhangsan）') }}</option>
+        </select>
+      </label>
+      <label class="f-label">{{ tr('连接超时（秒）') }}<input class="f-input" type="number" name="ad_timeout" value="{{ ad_cfg.get('timeout',10) }}" min="3" max="60" style="max-width:180px">
+        <span class="muted small ui-hint">{{ tr('3-60 秒，默认 10；网络慢的域控可适当调大') }}</span>
+      </label>
+    </div>
+    <div class="sub-h" style="margin:10px 0 6px">{{ tr('绑定方式') }}</div>
+    <div class="grid2">
+      <label class="f-label">{{ tr('绑定方式') }}<select class="f-input" name="ad_bind_mode" id="ad-bind-mode">
+          <option value="direct" {{ 'selected' if ad_cfg.get('bind_mode','direct')=='direct' }}>{{ tr('直接绑定（用户账号直接验证，多数公司适用）') }}</option>
+          <option value="search" {{ 'selected' if ad_cfg.get('bind_mode')=='search' }}>{{ tr('服务账号搜索（禁止用户直绑的公司，需 IT 提供参数）') }}</option>
+        </select>
+      </label>
+      <label class="f-check"><input type="checkbox" name="ad_strip_upn_suffix" value="1" {{ 'checked' if ad_cfg.get('strip_upn_suffix',1) }}> {{ tr('匹配本地用户名时剥离 @域名后缀') }}
+        <span class="muted small ui-hint" style="display:block">{{ tr('AD 登录输入 zhangsan@company.com 时，用 zhangsan 匹配本系统白名单（推荐勾选）') }}</span>
+      </label>
+      <label class="f-label" id="ad-svc-dn-lbl">{{ tr('服务账号') }} DN<span class="f-note">{{ mk('（') }}{{ tr('搜索模式') }}{{ mk('）') }}</span>
+        <input class="f-input" type="text" name="ad_svc_dn" value="{{ ad_cfg.get('svc_dn','') }}" placeholder="{{ tr('如 CN=svc-scan,OU=IT,DC=company,DC=com') }}">
+      </label>
+      <label class="f-label" id="ad-svc-pwd-lbl">{{ tr('服务账号密码') }}<span class="f-note">{{ mk('（') }}{{ tr('搜索模式') }}{{ mk('）') }}</span>
+        <input class="f-input" type="password" name="ad_svc_pwd" value="{{ ad_cfg.get('svc_pwd','') }}" placeholder="{{ tr('服务账号密码') }}">
+      </label>
+      <label class="f-label" id="ad-base-dn-lbl">{{ tr('Base DN（搜索范围，搜索模式）') }}
+        <input class="f-input" type="text" name="ad_base_dn" value="{{ ad_cfg.get('base_dn','') }}" placeholder="{{ tr('如 OU=员工,DC=company,DC=com') }}">
+      </label>
+      <label class="f-label" id="ad-attr-lbl">{{ tr('搜索属性') }}<span class="f-note">{{ mk('（') }}{{ tr('搜索模式') }}{{ mk('）') }}</span>
+        <select class="f-input" name="ad_search_attr">
+          <option value="sAMAccountName" {{ 'selected' if ad_cfg.get('search_attr','sAMAccountName')=='sAMAccountName' }}>{{ tr('sAMAccountName（域登录名，常用）') }}</option>
+          <option value="userPrincipalName" {{ 'selected' if ad_cfg.get('search_attr')=='userPrincipalName' }}>{{ tr('userPrincipalName（UPN 完整账号）') }}</option>
+        </select>
+      </label>
+      <label class="f-check"><input type="checkbox" name="login_case_sensitive" value="1" {{ 'checked' if login_case_sensitive }}>{{ tr('用户名区分大小写') }}<span class="muted small ui-hint" style="display:block">{{ tr('不勾选=不区分大小写（ZHANGSAN 可匹配 zhangsan，推荐）；勾选=精确匹配，普通登录与 AD 登录均生效。') }}</span>
+      </label>
+    </div>
+    <div class="muted small ui-hint" style="margin:8px 0">
+      {{ tr('登录流程：用户输入域账号与域密码（支持 zhangsan 或 zhangsan@company.com 两种输法）→ 本系统连接 AD 验证 → 通过后按用户名查找本系统用户（白名单）；在白名单 → 正常登录；不在白名单 → 自动以访客身份进入，仅可查阅物料与呆滞物料。') }}
+      {{ tr('需要公司 IT 放行本机访问域控端口，并告知：服务器地址、域名、端口、加密要求；若为搜索模式还需服务账号 DN/密码、Base DN、搜索属性。') }}
+    </div>
+    <button class="btn btn-primary" type="submit" name="ad_save" value="1">{{ tr('保存 AD 配置') }}</button>
+  </form>
+  <script>
+  (function(){
+    function adMode(){
+      var v = document.getElementById('ad-bind-mode').value;
+      ['ad-svc-dn-lbl','ad-svc-pwd-lbl','ad-base-dn-lbl','ad-attr-lbl'].forEach(function(id){
+        var el = document.getElementById(id);
+        if(el) el.style.display = (v === 'search' ? '' : 'none');
+      });
+    }
+    var sel = document.getElementById('ad-bind-mode');
+    if(sel){ sel.addEventListener('change', adMode); adMode(); }
+  })();
+  </script>
+</div>
 
 <div class="card" id="card-api">
-  <div class="card-title">{{ tr('对外数据接口') }}{{ tr('（') }}{{ tr('外系统查询备件库存') }} / {{ tr('提交入库操作') }}{{ tr('）') }}</div>
+  <div class="card-title">{{ tr('对外数据接口') }}</div>
+  <div class="muted small ui-hint" style="margin:-6px 0 12px">{{ tr('外系统查询物料库存') }} / {{ tr('提交入库操作') }}</div>
   <form method="post" class="ajax-form">
-    <label class="f-check"><input type="checkbox" name="open_api_enabled" value="1" {{ 'checked' if open_api.enabled }}> {{ tr('开放') }} WEB API{{ tr('（') }}{{ tr('其他系统可通过接口查询备件库存') }}{{ tr('、') }}{{ tr('提交入库申请') }}{{ tr('）') }}</label>
-    <label class="f-label">{{ tr('接口密钥') }}{{ tr('（') }}{{ tr('调用方请求头需带') }} <span class="mono">X-API-Token</span>{{ tr('与此一致') }}{{ tr('）') }}<input class="f-input" name="open_api_token" value="{{ open_api.token }}" placeholder="{{ tr('例如') }} SMT-API-2026@Key" style="max-width:360px">
+    <label class="f-check"><input type="checkbox" name="open_api_enabled" value="1" {{ 'checked' if open_api.enabled }}> {{ tr('开放') }} WEB API{{ mk('（') }}{{ tr('其他系统可通过接口查询物料库存') }}{{ mk('、') }}{{ tr('提交入库申请') }}{{ mk('）') }}</label>
+    <label class="f-label">{{ tr('接口密钥') }}<span class="f-note">{{ mk('（') }}{{ tr('调用方请求头需带') }} <span class="mono">X-API-Token</span>{{ tr('与此一致') }}{{ mk('）') }}</span><input class="f-input" name="open_api_token" value="{{ open_api.token }}" placeholder="{{ tr('例如') }} SMT-API-2026@Key" style="max-width:360px">
     </label>
-    <div class="muted small" style="margin:8px 0">{{ tr('调用地址均以') }}<span class="mono">http://{{ tr('本机') }}IP:{{ APP_PORT }}</span> {{ tr('开头') }}{{ tr('；') }}{{ tr('接口未启用或密钥错误时返回') }} 401/400 {{ tr('与错误说明') }}{{ tr('。') }}
+    <div class="muted small ui-hint" style="margin:8px 0">{{ tr('调用地址均以') }}<span class="mono">http://{{ tr('本机') }}IP:{{ APP_PORT }}</span> {{ tr('开头') }}{{ mk('；') }}{{ tr('接口未启用或密钥错误时返回') }} 401/400 {{ tr('与错误说明') }}{{ mk('。') }}
     </div>
     <button class="btn btn-primary" type="submit" name="open_api_save" value="1">{{ tr('保存接口设置') }}</button>
     <div class="doc-block" style="margin-top:14px;border:1px solid var(--line);border-radius:8px;padding:10px 12px;background:#f8fafc">
-      <div class="sub-h" style="margin-bottom:6px">{{ tr('接口一') }}{{ tr('：') }}{{ tr('备件库存查询') }}{{ tr('（') }}GET{{ tr('）') }}</div>
+      <div class="sub-h" style="margin-bottom:6px">{{ tr('接口一') }}{{ mk('：') }}{{ tr('物料库存查询') }} <span class="api-chip">GET</span></div>
       <table class="table" style="font-size:12.5px">
         <thead><tr><th style="width:110px">{{ tr('项') }}</th><th>{{ tr('说明') }}</th></tr></thead>
         <tbody>
           <tr><td>{{ tr('地址') }}</td><td><span class="mono">GET http://{{ tr('本机') }}IP:{{ APP_PORT }}/api/inventory/list</span></td></tr>
           <tr><td>{{ tr('请求头') }}</td><td><span class="mono">X-API-Token: {{ tr('接口密钥') }}</span>{{ tr('；可选') }}<span class="mono">?kw={{ tr('料号') }}/{{ tr('名称') }}/{{ tr('规格') }}</span>{{ tr('关键字过滤') }}</td></tr>
-          <tr><td>{{ tr('手动验证') }}</td><td>{{ tr('浏览器直接打开') }}<span class="mono">http://127.0.0.1:{{ APP_PORT }}/api/inventory/list?kw=R-0603</span>{{ tr('（需装浏览器插件自定义请求头）') }}{{ tr('，') }}{{ tr('或用命令行') }}{{ tr('：') }}<br>
+          <tr><td>{{ tr('手动验证') }}</td><td>{{ tr('浏览器直接打开') }}<span class="mono">http://127.0.0.1:{{ APP_PORT }}/api/inventory/list?kw=R-0603</span>{{ tr('（需装浏览器插件自定义请求头）') }}{{ mk('，') }}{{ tr('或用命令行') }}{{ mk('：') }}<br>
             <span class="mono">curl -H "X-API-Token: {{ tr('接口密钥') }}" "http://127.0.0.1:{{ APP_PORT }}/api/inventory/list"</span><br>
             {{ tr('返回') }} JSON {{ tr('中含') }} <span class="mono">"ok":true</span>{{ tr('即验证成功。') }}</td></tr>
           <tr><td>{{ tr('返回') }}</td><td>
-            <span class="mono">{"ok":true,"total":N,"items":[{"part_code":"R-0603-10K","name":"{{ tr('贴片电阻') }}","category":"{{ tr('电阻') }}","spec":"0603","unit":"盘","qty_decimal":0,"stock":120,"min_stock":20,"max_stock":200,"is_valuable":0,"locations":[{"location":"WH-01-R-01-S-01","quantity":100},{"location":"{{ tr('待定') }}","quantity":20}],"apps":["SMT-1线/{{ tr('贴片机') }}1#"]}]}</span><br>{{ tr('说明：') }}<span class="mono">stock</span>{{ tr('=当前库存总量；') }}<span class="mono">locations</span>={{ tr('各库位分布') }}{{ tr('（') }}{{ tr('含待定') }}{{ tr('）') }}{{ tr('；') }}<span class="mono">qty_decimal</span>={{ tr('数量类型') }}{{ tr('（') }}0={{ tr('整数') }}/1={{ tr('小数') }}{{ tr('）') }}{{ tr('。') }}
+            <span class="mono">{"ok":true,"total":N,"items":[{"part_code":"R-0603-10K","name":"{{ tr('贴片电阻') }}","category":"{{ tr('电阻') }}","spec":"0603","unit":"盘","qty_decimal":0,"stock":120,"min_stock":20,"max_stock":200,"is_valuable":0,"locations":[{"location":"WH-01-R-01-S-01","quantity":100},{"location":"{{ tr('待定') }}","quantity":20}],"apps":["SMT-1线/{{ tr('贴片机') }}1#"]}]}</span><br>{{ tr('说明：') }}<span class="mono">stock</span>{{ tr('=当前库存总量；') }}<span class="mono">locations</span>={{ tr('各库位分布') }}{{ mk('（') }}{{ tr('含待定') }}{{ mk('）') }}{{ mk('；') }}<span class="mono">qty_decimal</span>={{ tr('数量类型') }}{{ mk('（') }}0={{ tr('整数') }}/1={{ tr('小数') }}{{ mk('）') }}{{ mk('。') }}
           </td></tr>
         </tbody>
       </table>
-      <div class="sub-h" style="margin:12px 0 6px">{{ tr('接口二') }}{{ tr('：') }}{{ tr('备件入库操作') }}{{ tr('（') }}POST{{ tr('）') }}</div>
+      <div class="sub-h" style="margin:12px 0 6px">{{ tr('接口二') }}{{ mk('：') }}{{ tr('物料入库操作') }} <span class="api-chip">POST</span></div>
       <table class="table" style="font-size:12.5px">
         <thead><tr><th style="width:110px">{{ tr('字段') }}</th><th>{{ tr('必填') }}</th><th>{{ tr('说明') }}</th></tr></thead>
         <tbody>
-          <tr><td class="mono">part_code</td><td>{{ tr('是') }}</td><td>{{ tr('料号') }}{{ tr('：') }}{{ tr('系统中不存在时自动建档，存放库位=待定；存在则按原备件属性校验数量') }}</td></tr>
-          <tr><td class="mono">quantity</td><td>{{ tr('是') }}</td><td>{{ tr('入库数量') }}{{ tr('必须大于') }} 0{{ tr('；') }}{{ tr('整数类备件不允许小数') }}</td></tr>
-          <tr><td class="mono">name</td><td>{{ tr('否') }}</td><td>{{ tr('名称') }}{{ tr('（') }}{{ tr('自动建档时使用') }}{{ tr('，') }}{{ tr('缺省') }}={{ tr('料号') }}{{ tr('）') }}</td></tr>
-          <tr><td class="mono">unit</td><td>{{ tr('否') }}</td><td>{{ tr('单位') }}{{ tr('（') }}{{ tr('自动建档时使用') }}{{ tr('，') }}{{ tr('缺省') }}={{ tr('个') }}{{ tr('）') }}</td></tr>
-          <tr><td class="mono">category</td><td>{{ tr('否') }}</td><td>{{ tr('分类') }}{{ tr('（') }}{{ tr('自动建档时使用') }}{{ tr('，') }}{{ tr('缺省') }}={{ tr('无') }}{{ tr('）') }}</td></tr>
-          <tr><td class="mono">spec</td><td>{{ tr('否') }}</td><td>{{ tr('规格') }}{{ tr('（') }}{{ tr('自动建档时使用') }}{{ tr('，') }}{{ tr('缺省') }}={{ tr('无') }}{{ tr('）') }}</td></tr>
-          <tr><td class="mono">unit_price</td><td>{{ tr('否') }}</td><td>{{ tr('单价') }}{{ tr('（') }}{{ tr('自动建档时使用') }}{{ tr('，') }}{{ tr('缺省') }} 0{{ tr('）') }}</td></tr>
-          <tr><td class="mono">qty_decimal</td><td>{{ tr('否') }}</td><td>{{ tr('数量类型') }}{{ tr('：') }}{{ tr('填') }} float={{ tr('小数') }}{{ tr('，') }}{{ tr('不填或填') }} int={{ tr('整数') }}{{ tr('（') }}{{ tr('自动建档时使用') }}{{ tr('，') }}{{ tr('缺省按单位推断') }}{{ tr('）') }}</td></tr>
+          <tr><td class="mono">part_code</td><td>{{ tr('是') }}</td><td>{{ tr('料号') }}{{ mk('：') }}{{ tr('系统中不存在时自动建档，存放库位=待定；存在则按原物料属性校验数量') }}</td></tr>
+          <tr><td class="mono">quantity</td><td>{{ tr('是') }}</td><td>{{ tr('入库数量') }}{{ tr('必须大于') }} 0{{ mk('；') }}{{ tr('整数类物料不允许小数') }}</td></tr>
+          <tr><td class="mono">name</td><td>{{ tr('否') }}</td><td>{{ tr('名称') }}{{ mk('（') }}{{ tr('自动建档时使用') }}{{ mk('，') }}{{ tr('缺省') }}={{ tr('料号') }}{{ mk('）') }}</td></tr>
+          <tr><td class="mono">unit</td><td>{{ tr('否') }}</td><td>{{ tr('单位') }}{{ mk('（') }}{{ tr('自动建档时使用') }}{{ mk('，') }}{{ tr('缺省') }}={{ tr('个') }}{{ mk('）') }}</td></tr>
+          <tr><td class="mono">category</td><td>{{ tr('否') }}</td><td>{{ tr('分类') }}{{ mk('（') }}{{ tr('自动建档时使用') }}{{ mk('，') }}{{ tr('缺省') }}={{ tr('无') }}{{ mk('）') }}</td></tr>
+          <tr><td class="mono">spec</td><td>{{ tr('否') }}</td><td>{{ tr('规格') }}{{ mk('（') }}{{ tr('自动建档时使用') }}{{ mk('，') }}{{ tr('缺省') }}={{ tr('无') }}{{ mk('）') }}</td></tr>
+          <tr><td class="mono">unit_price</td><td>{{ tr('否') }}</td><td>{{ tr('单价') }}{{ mk('（') }}{{ tr('自动建档时使用') }}{{ mk('，') }}{{ tr('缺省') }} 0{{ mk('）') }}</td></tr>
+          <tr><td class="mono">qty_decimal</td><td>{{ tr('否') }}</td><td>{{ tr('数量类型') }}{{ mk('：') }}{{ tr('填') }} float={{ tr('小数') }}{{ mk('，') }}{{ tr('不填或填') }} int={{ tr('整数') }}{{ mk('（') }}{{ tr('自动建档时使用') }}{{ mk('，') }}{{ tr('缺省按单位推断') }}{{ mk('）') }}</td></tr>
           <tr><td class="mono">remark / note</td><td>{{ tr('否') }}</td><td>{{ tr('备注') }}{{ tr('会写入申请单原因') }}</td></tr>
         </tbody>
       </table>
-      <div style="margin-top:6px">{{ tr('调用示例：') }}<span class="mono">POST http://{{ tr('本机') }}IP:{{ APP_PORT }}/api/inbound</span><br>{{ tr('请求头：') }}<span class="mono">Content-Type: application/json</span>{{ tr('、') }}<span class="mono">X-API-Token: {{ tr('接口密钥') }}</span><br>{{ tr('请求体：') }}<span class="mono">{"part_code":"R-0603-10K","quantity":50,"name":"{{ tr('贴片电阻') }} 0603 10KΩ","unit":"盘","remark":"{{ tr('产线补料') }}"}</span><br>
-        {{ tr('手动验证') }}{{ tr('（') }}Windows {{ tr('命令行') }}{{ tr('）') }}{{ tr('：') }}<br>
+      <div style="margin-top:6px">{{ tr('调用示例：') }}<span class="mono">POST http://{{ tr('本机') }}IP:{{ APP_PORT }}/api/inbound</span><br>{{ tr('请求头：') }}<span class="mono">Content-Type: application/json</span>{{ mk('、') }}<span class="mono">X-API-Token: {{ tr('接口密钥') }}</span><br>{{ tr('请求体：') }}<span class="mono">{"part_code":"R-0603-10K","quantity":50,"name":"{{ tr('贴片电阻') }} 0603 10KΩ","unit":"盘","remark":"{{ tr('产线补料') }}"}</span><br>
+        {{ tr('手动验证') }}{{ mk('（') }}Windows {{ tr('命令行') }}{{ mk('）') }}{{ mk('：') }}<br>
         <span class="mono">curl -X POST "http://127.0.0.1:{{ APP_PORT }}/api/inbound" -H "Content-Type: application/json" -H "X-API-Token: {{ tr('接口密钥') }}" -d "{\"part_code\":\"R-0603-10K\",\"quantity\":10,\"remark\":\"{{ tr('验证') }}\"}"</span><br>{{ tr('返回：') }}<span class="mono">{"ok":true,"app_no":"APP20260924001","part_created":false}</span><br>
-        {{ tr('流程说明') }}{{ tr('：') }}{{ tr('生成的申请单') }}<b>{{ tr('申请人') }}为{{ tr('「') }}{{ tr('系统机器人') }}{{ tr('」') }}</b>{{ tr('，') }}{{ tr('状态为待处理') }}{{ tr('，') }}{{ tr('与网页申请一致') }}{{ tr('——') }}{{ tr('须由') }}<b>{{ tr('仓库管理人员') }}</b>{{ tr('在') }}{{ tr('「') }}{{ tr('出入库管理') }}{{ tr('」') }}{{ tr('中执行后才会实际入库') }}{{ tr('；') }}{{ tr('料号不存在时系统自动建档') }}{{ tr('，') }}{{ tr('备件初始库位为') }}{{ tr('「') }}{{ tr('待定') }}{{ tr('」') }}{{ tr('。') }}
+        {{ tr('流程说明') }}{{ mk('：') }}{{ tr('生成的申请单') }}<b>{{ tr('申请人') }}为{{ mk('「') }}{{ tr('系统机器人') }}{{ mk('」') }}</b>{{ mk('，') }}{{ tr('状态为待处理') }}{{ mk('，') }}{{ tr('与网页申请一致') }}——{{ tr('须由') }}<b>{{ tr('仓库管理人员') }}</b>{{ tr('在') }}{{ mk('「') }}{{ tr('出入库管理') }}{{ mk('」') }}{{ tr('中执行后才会实际入库') }}{{ mk('；') }}{{ tr('料号不存在时系统自动建档') }}{{ mk('，') }}{{ tr('物料初始库位为') }}{{ mk('「') }}{{ tr('待定') }}{{ mk('」') }}{{ mk('。') }}
       </div>
     </div>
   </form>
 </div>
-
-<div class="card" id="card-stale">
-  <div class="card-title">{{ tr('呆滞物料管理') }}{{ tr('（') }}{{ tr('以料号为锚点') }}{{ tr('）') }}</div>
-  <form method="post" class="ajax-form">
-    <label class="f-label">{{ tr('呆滞判定天数') }}{{ tr('（') }}{{ tr('备件超过该天数未领用即判定为呆滞') }}{{ tr('）') }}
-      <input class="f-input" type="number" name="stale_days" value="{{ stale_days }}" min="1" max="3650" style="max-width:160px">
-    </label>
-    <div class="muted small" style="margin:8px 0">
-      {{ tr('说明') }}{{ tr('：') }}{{ tr('按料号统计') }}{{ tr('「') }}{{ tr('最后领用') }}{{ tr('（') }}{{ tr('出库') }}{{ tr('）') }}{{ tr('日期') }}{{ tr('」') }}{{ tr('，超过设定天数未领用即列为呆滞物料') }}{{ tr('；') }}
-   {{ tr('出库') }} {{ tr('从未出库过的备件按建档日期起算') }}{{ tr('。') }}{{ tr('默认') }} 90 {{ tr('天') }}{{ tr('。') }}{{ tr('可在') }}{{ tr('「') }}{{ tr('呆滞物料') }}{{ tr('」') }}{{ tr('页面查看清单并导出') }} Excel{{ tr('。') }}
-    </div>
-    <button class="btn btn-primary" type="submit" name="stale_save" value="1">{{ tr('保存呆滞天数') }}</button>
-  </form>
 </div>
 
-</div>
 {% endblock %}
 {% block scripts %}
 <script>
   const UI_STYLES = [
     {name:TR('科技蓝'), t:{primary:'#2563eb',primary_d:'#1e40af',sidebar_text:'#e2e8f0',bg:'#f1f5f9'}, n:{top:'#14304f',bottom:'#0e1e33',font:15,icon:20,width:200,pad:10,radius:6}},
     {name:TR('墨绿商务'), t:{primary:'#0e9384',primary_d:'#0a756a',sidebar_text:'#e6fbf6',bg:'#f5faf9'}, n:{top:'#0c3f3a',bottom:'#062623',font:15,icon:20,width:200,pad:10,radius:6}},
-    {name:TR('曜石金'), t:{primary:'#d9a441',primary_d:'#b9862f',sidebar_text:'#7a5b1e',bg:'#fffdf7'}, n:{top:'#fbf8ee',bottom:'#f5ecd6',font:15,icon:20,width:200,pad:10,radius:6}},
-    {name:TR('云白现代'), t:{primary:'#3d8bf5',primary_d:'#2f6fd0',sidebar_text:'#24548f',bg:'#ffffff'}, n:{top:'#f7fafd',bottom:'#e8f1fa',font:15,icon:20,width:200,pad:10,radius:6}},
-    {name:TR('琥珀暖橙'), t:{primary:'#ef8a2c',primary_d:'#d9711c',sidebar_text:'#8a4b12',bg:'#fffdfa'}, n:{top:'#fef6ec',bottom:'#fae8d2',font:15,icon:20,width:200,pad:10,radius:6}},
-    {name:TR('典雅紫'), t:{primary:'#8a7cf0',primary_d:'#6d5fe0',sidebar_text:'#5746c9',bg:'#fdfdfe'}, n:{top:'#f7f6ff',bottom:'#e9e6ff',font:15,icon:20,width:200,pad:10,radius:6}}
+    {name:TR('曜石金'), t:{primary:'#d9ad4f',primary_d:'#c19133',sidebar_text:'#7a5b1e',bg:'#fffdf8'}, n:{top:'#fdfaf1',bottom:'#f6eed8',font:15,icon:20,width:200,pad:10,radius:6}},
+    {name:TR('云白现代'), t:{primary:'#38a3ff',primary_d:'#2f7bd9',sidebar_text:'#1e4a7a',bg:'#ffffff'}, n:{top:'#f3f9ff',bottom:'#e2effc',font:15,icon:20,width:200,pad:10,radius:6}},
+    {name:TR('典雅白'), t:{primary:'#1668dc',primary_d:'#0e54b8',sidebar_text:'#1f2329',bg:'#f5f6f7'}, n:{top:'#ffffff',bottom:'#f5f6f7',font:15,icon:20,width:200,pad:10,radius:6}},
+    {name:TR('典雅紫'), t:{primary:'#9d8cf5',primary_d:'#8370e8',sidebar_text:'#5746c9',bg:'#fefdff'}, n:{top:'#f7f5ff',bottom:'#ebe8fd',font:15,icon:20,width:200,pad:10,radius:6}}
   ];
+  // 当前预览/选中的预设卡（-1=手动自定义，不改卡片）；改配色时实时联动卡片色卡
+  let uiCur = -1;
+  function refreshUiSwatch(i){
+    const card = document.getElementById('ui-card-' + i);
+    if(!card) return;
+    const s = UI_STYLES[i];
+    const sw = card.querySelector('.ui-swatch');
+    if(sw) sw.style.background = 'linear-gradient(135deg,' + s.n.top + ',' + s.n.bottom + ')';
+    const dot = card.querySelector('i');
+    if(dot) dot.style.background = s.t.primary;
+  }
   function applyUiCustom(){
+    uiCur = -1;
     document.getElementById('ui-custom-colors').style.display = 'block';
     document.getElementById('ui-custom-colors').scrollIntoView({behavior:'smooth', block:'start'});
   }
   function setV(n, v){ const e = document.querySelector('input[name=' + n + ']'); if(e) e.value = v; }
   function applyUiStyle(i){
+    uiCur = i;
     const s = UI_STYLES[i];
     var cc = document.getElementById('ui-custom-colors'); if(cc) cc.style.display = 'block';
     setV('theme_primary', s.t.primary); setV('theme_primary_d', s.t.primary_d);
@@ -404,11 +935,36 @@
     setV('nav_sidebar_top', s.n.top); setV('nav_sidebar_bottom', s.n.bottom);
     setV('nav_font_size', s.n.font); setV('nav_icon_size', s.n.icon);
     setV('nav_menu_width', s.n.width); setV('nav_item_padding', s.n.pad); setV('nav_item_radius', s.n.radius);
+    refreshUiSwatch(i);
     if(window.applyTheme) applyTheme(
       {primary:s.t.primary, primary_d:s.t.primary_d, bg:s.t.bg, sidebar_text:s.t.sidebar_text},
       {sidebar_top:s.n.top, sidebar_bottom:s.n.bottom, menu_width:s.n.width}
     );
   }
+  // 配色输入框变化 → 实时应用 + 联动当前卡片色卡
+  (function(){
+    var names = ['theme_primary','theme_primary_d','theme_sidebar_text','theme_bg',
+                 'nav_sidebar_top','nav_sidebar_bottom','nav_menu_width'];
+    function live(){
+      if(uiCur >= 0){
+        const s = UI_STYLES[uiCur];
+        const g = n => { const e = document.querySelector('input[name=' + n + ']'); return e ? e.value : ''; };
+        s.t.primary = g('theme_primary'); s.t.primary_d = g('theme_primary_d');
+        s.t.sidebar_text = g('theme_sidebar_text'); s.t.bg = g('theme_bg');
+        s.n.top = g('nav_sidebar_top'); s.n.bottom = g('nav_sidebar_bottom');
+        refreshUiSwatch(uiCur);
+      }
+      if(window.applyTheme) applyTheme(
+        {primary:g2('theme_primary'), primary_d:g2('theme_primary_d'), bg:g2('theme_bg'), sidebar_text:g2('theme_sidebar_text')},
+        {sidebar_top:g2('nav_sidebar_top'), sidebar_bottom:g2('nav_sidebar_bottom'), menu_width:g2('nav_menu_width')}
+      );
+      function g2(n){ const e = document.querySelector('input[name=' + n + ']'); return e ? e.value : ''; }
+    }
+    document.querySelectorAll('input[name^=theme_], input[name^=nav_sidebar], input[name=nav_menu_width]').forEach(el=>{
+      el.addEventListener('input', live);
+      el.addEventListener('change', live);
+    });
+  })();
 </script>
 <style>
 .ui-style-card{cursor:pointer;border:2px solid #e2e8f0;border-radius:10px;padding:8px;text-align:center;background:#fff;transition:border-color .15s}
@@ -423,4 +979,433 @@ function lgoName(input){
   if(n) n.textContent = input.files && input.files[0] ? input.files[0].name : '';
 }
 </script>
+
+<style>
+.lang-bar{height:8px;background:#e2e8f0;border-radius:20px;overflow:hidden}
+.lang-bar i{display:block;height:100%;background:var(--primary);transition:width .3s}
+.pct{display:inline-block;width:96px;height:7px;background:#e2e8f0;border-radius:20px;overflow:hidden;vertical-align:middle;margin-right:8px}
+.pct i{display:block;height:100%;background:#22c55e}
+.pct.warn i{background:#f59e0b}
+.pct.low i{background:#ef4444}
+.issue{border:1px solid var(--line);border-radius:8px;padding:7px 10px;margin:6px 0;font-size:12.5px;background:#fbfdff}
+.issue .loc{color:#64748b;font-size:11.5px}
+.issue code{background:#eef2f7;padding:1px 5px;border-radius:4px;font-size:12px}
+.scan-grp{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:10px 0}
+.scan-grp h4{margin:0 0 4px;font-size:13px;display:flex;align-items:center;gap:8px}
+.scan-grp .tip{font-size:12px;color:#64748b;margin-bottom:6px}
+</style>
+
+<script>
+/* ==================================================================
+   语言管理面板
+   —— 全部数据走 /api/lang/*，页面本身不参与渲染，避免设置页保存时
+      整页刷新把用户填一半的表单冲掉
+   ================================================================== */
+(function(){
+  var LANGS = [], POLL = null, LAST_SCAN = null;
+
+  function el(id){ return document.getElementById(id); }
+  function esc(s){
+    return String(s==null?'':s).replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+  function api(url, body){
+    return fetch(url, {
+      method: body ? 'POST' : 'GET',
+      headers: body ? {'Content-Type':'application/json'} : {},
+      body: body ? JSON.stringify(body) : undefined,
+      credentials: 'same-origin'
+    }).then(function(r){ return r.json(); });
+  }
+  function say(id, msg, bad){
+    var n = el(id);
+    if(!n) return;
+    n.style.color = bad ? '#b91c1c' : '#15803d';
+    n.textContent = msg || '';
+  }
+
+  /* ---------- 语言清单 ---------- */
+  function renderLangs(){
+    var tb = el('langRows');
+    if(!tb) return;
+    if(!LANGS.length){ tb.innerHTML = '<tr><td colspan="4" class="muted">—</td></tr>'; return; }
+    var html = '';
+    LANGS.forEach(function(L){
+      var cls = L.pct >= 99 ? '' : (L.pct >= 60 ? 'warn' : 'low');
+      var act;
+      if(L.locked){
+        act = '<span class="badge badge-muted">{{ tr('基准语言') }}</span>';
+      }else{
+        act = '<button class="btn btn-xs" type="button" onclick="langPick(\'' + L.code + '\')">{{ tr('补翻译') }}</button> '
+            + '<button class="btn btn-xs btn-danger" type="button" onclick="langDel(\'' + L.code + '\')">{{ tr('删除') }}</button>';
+      }
+      // 代码列只放代码，默认标记放到名称列 —— 挤在同一格会在 120px 里折成两行
+      var dft = L.default ? ' <span class="badge badge-info">{{ tr('默认') }}</span>' : '';
+      html += '<tr>'
+        + '<td><code>' + esc(L.code) + '</code></td>'
+        + '<td>' + dft + esc(L.native) + '<span class="muted small"> · ' + esc(L.en) + '</span></td>'
+        + '<td style="white-space:nowrap"><span class="pct ' + cls + '"><i style="width:'
+        + Math.min(100, L.pct) + '%"></i></span>'
+        + '<span style="white-space:nowrap">' + L.pct + '%'
+        + ' <span class="muted small">(' + L.filled + '/' + L.total + ')</span></span></td>'
+        + '<td style="white-space:nowrap">' + act + '</td></tr>';
+    });
+    tb.innerHTML = html;
+
+    var sel = el('trLang');
+    if(sel){
+      var keep = sel.value;
+      sel.innerHTML = LANGS.filter(function(L){ return L.code !== 'zh'; })
+        .map(function(L){
+          return '<option value="' + L.code + '">' + esc(L.native) + ' · ' + L.missing
+               + ' {{ tr('条待翻译') }}</option>';
+        }).join('');
+      if(keep) sel.value = keep;
+    }
+  }
+
+  function renderEngine(e){
+    if(!e) return;
+    var r = document.querySelector('input[name=langProvider][value="' + (e.provider || 'ai') + '"]');
+    if(r) r.checked = true;
+    document.querySelectorAll('.eng-pane').forEach(function(p){
+      p.style.display = (p.getAttribute('data-p') === (e.provider || 'ai')) ? '' : 'none';
+    });
+    ['ai','google','deepl','mymemory'].forEach(function(p){
+      var c = e[p] || {};
+      ['base_url','model','endpoint','email'].forEach(function(f){
+        var n = el(p + '_' + f);
+        if(n && c[f] != null) n.value = c[f];
+      });
+      var k = el(p + '_api_key');
+      if(k){
+        k.value = '';
+        k.placeholder = c.has_key ? '{{ tr('已填写，留空表示不修改') }}' : '{{ tr('还没填') }}';
+      }
+    });
+  }
+
+  function loadLangs(){
+    return api('/api/lang/list').then(function(d){
+      if(!d.ok) return;
+      LANGS = d.languages || [];
+      renderLangs();
+      renderEngine(d.engine);
+      if(d.job) renderJob(d.job);
+    }).catch(function(){});
+  }
+
+  /* ---------- 增删 ---------- */
+  window.langPick = function(code){
+    var sel = el('trLang');
+    if(sel){ sel.value = code; sel.scrollIntoView({block:'center', behavior:'smooth'}); }
+  };
+
+  window.langDel = function(code){
+    if(!confirm(code + ' · {{ tr('确定删除这门语言？语言包会备份到 locale/_removed，可恢复') }}')) return;
+    api('/api/lang/remove', {code: code}).then(function(d){
+      alert(d.msg || (d.ok ? 'ok' : 'fail'));
+      if(d.ok) loadLangs();
+    });
+  };
+
+  window.langAddNew = function(){
+    var code = (el('newLangCode').value || '').trim();
+    var native = (el('newLangNative').value || '').trim();
+    var en = (el('newLangEn').value || '').trim();
+    if(!code || !native){ alert('{{ tr('请先选择语言') }}'); return; }
+    api('/api/lang/add', {code: code, native: native, en: en}).then(function(d){
+      alert(d.msg || (d.ok ? 'ok' : 'fail'));
+      if(d.ok){
+        el('newLangCode').value = '';
+        el('newLangNative').value = '';
+        el('newLangEn').value = '';
+        el('langPreset').value = '';
+        if(el('langPicked')) el('langPicked').textContent = '';
+        loadLangs();
+      }
+    });
+  };
+
+  var preset = el('langPreset');
+  if(preset){
+    // 语言自称从 data 属性渲染：它们是数据不是界面文案，不该进词条表
+    try{
+      var list = JSON.parse(preset.getAttribute('data-presets') || '[]');
+      preset.innerHTML = '<option value="">—</option>' + list.map(function(p){
+        // 第 4 列是中文名（数据非文案）：中文界面显示「西班牙语 / Español」，其余显示自称/英文
+        var label = (window.CURLANG === 'zh' && p[3]) ? (p[3] + ' / ' + p[1]) : (p[1] + ' / ' + p[2]);
+        return '<option value="' + esc(p[0]) + '">' + esc(label) + '</option>';
+      }).join('');
+    }catch(e){}
+    preset.addEventListener('change', function(){
+      var v = preset.value;
+      if(!v) return;
+      var list = JSON.parse(preset.getAttribute('data-presets') || '[]');
+      for(var i = 0; i < list.length; i++){
+        if(list[i][0] === v){
+          el('newLangCode').value = list[i][0] || '';
+          el('newLangNative').value = list[i][1] || '';
+          el('newLangEn').value = list[i][2] || '';
+          // 已选摘要：代码 · 自称 · 英文名，都是数据，不用翻
+          var box = el('langPicked');
+          if(box){
+            box.textContent = list[i][0] + ' · ' + list[i][1] + (list[i][2] && list[i][2] !== list[i][1] ? ' · ' + list[i][2] : '');
+            box.style.color = 'var(--txt)';
+          }
+          break;
+        }
+      }
+    });
+  }
+
+  document.querySelectorAll('input[name=langProvider]').forEach(function(r){
+    r.addEventListener('change', function(){
+      document.querySelectorAll('.eng-pane').forEach(function(p){
+        p.style.display = (p.getAttribute('data-p') === r.value) ? '' : 'none';
+      });
+    });
+  });
+
+  /* ---------- 引擎 ---------- */
+  function collectEngine(){
+    var checked = document.querySelector('input[name=langProvider]:checked');
+    var body = {provider: checked ? checked.value : 'ai'};
+    ['ai','google','deepl','mymemory'].forEach(function(p){
+      ['base_url','api_key','model','endpoint','email'].forEach(function(f){
+        var n = el(p + '_' + f);
+        if(n) body[p + '_' + f] = n.value;
+      });
+    });
+    return body;
+  }
+
+  window.langSaveEngine = function(test){
+    say('engMsg', '{{ tr('处理中') }}…');
+    api('/api/lang/test', collectEngine()).then(function(d){
+      say('engMsg', (test ? '' : '{{ tr('已保存') }} · ') + (d.msg || ''), !d.ok);
+      if(!test && d.ok) loadLangs();
+    }).catch(function(e){ say('engMsg', String(e), true); });
+  };
+
+  /* ---------- 补翻译 ---------- */
+  function renderJob(j){
+    var box = el('jobBox');
+    if(!box) return;
+    if(j.status === 'idle'){ box.style.display = 'none'; return; }
+    box.style.display = '';
+    var pct = j.total ? Math.round(j.done * 100 / j.total) : 0;
+    el('jobBar').style.width = pct + '%';
+    var t;
+    if(j.status === 'running'){
+      t = '{{ tr('翻译中') }} ' + j.done + '/' + j.total
+        + ' · {{ tr('成功') }} ' + j.ok + ' · {{ tr('失败') }} ' + j.failed;
+    }else if(j.status === 'done'){
+      t = '{{ tr('已完成') }} · {{ tr('成功') }} ' + j.ok + ' · {{ tr('失败') }} ' + j.failed
+        + (j.note ? ' · ' + j.note : '');
+    }else{
+      t = '{{ tr('出错') }} · ' + (j.note || '');
+    }
+    if(j.errors && j.errors.length){
+      t += '<br><span style="color:#b91c1c">' + esc(j.errors.slice(0,3).join('；')) + '</span>';
+    }
+    el('jobTxt').innerHTML = t;
+  }
+
+  function pollJob(){
+    if(POLL) clearInterval(POLL);
+    POLL = setInterval(function(){
+      api('/api/lang/job').then(function(d){
+        var j = d.data || {};
+        renderJob(j);
+        if(j.status !== 'running'){
+          clearInterval(POLL); POLL = null;
+          loadLangs();
+        }
+      }).catch(function(){});
+    }, 1500);
+  }
+
+  window.langTranslate = function(){
+    var lang = el('trLang').value;
+    if(!lang || lang === 'zh'){ alert('{{ tr('请选择要补翻译的语言') }}'); return; }
+    var limit = parseInt(el('trLimit').value || '0', 10) || 0;
+    api('/api/lang/translate', {lang: lang, limit: limit}).then(function(d){
+      if(!d.ok){ alert(d.msg || 'fail'); return; }
+      el('jobBox').style.display = '';
+      renderJob(d.data || {});
+      pollJob();
+    });
+  };
+
+  /* ---------- 扫描 ---------- */
+  function issueHtml(it, withBtn, idx){
+    var loc = esc(it.file) + (it.line ? ':' + it.line : '');
+    var h = '<div class="issue"><span class="loc">' + loc + '</span><br>'
+          + '<code>' + esc(it.text) + '</code>';
+    if(it.suggest) h += '<br><span class="muted small">{{ tr('改成') }} '
+          + '<code>' + esc(it.suggest) + '</code></span>';
+    if(withBtn) h += ' <button class="btn btn-xs" type="button" onclick="langReg(' + idx + ')">'
+          + '{{ tr('登记为词条') }}</button>';
+    return h + '</div>';
+  }
+
+  function renderScan(d){
+    LAST_SCAN = d;
+    var box = el('scanBox');
+    var c = d.counts || {};
+    var html = '';
+
+    html += '<div class="scan-grp"><h4>{{ tr('没走取词的中文') }} <span class="badge badge-danger">'
+         + (c.unwrapped || 0) + '</span></h4>'
+         + '<div class="tip">{{ tr('这些是模板或脚本里直接写的中文，翻译表里加多少条都不会生效——必须先把它们包上取词函数') }}</div>';
+    if(!(d.unwrapped || []).length){
+      html += '<div class="muted small">{{ tr('没有发现') }}</div>';
+    }else{
+      (d.unwrapped || []).slice(0, 40).forEach(function(it){ html += issueHtml(it, false, 0); });
+      if((d.unwrapped || []).length > 40){
+        html += '<div class="muted small">{{ tr('还有') }} ' + (d.unwrapped.length - 40) + ' {{ tr('条，未显示') }}</div>';
+      }
+    }
+    html += '</div>';
+
+    html += '<div class="scan-grp"><h4>{{ tr('写了取词但没登记') }} <span class="badge badge-warn">'
+         + (c.unregistered || 0) + '</span></h4>'
+         + '<div class="tip">{{ tr('代码里用了取词函数，但词条表里没有这条，所以永远显示中文。登记之后才能翻译') }}</div>';
+    if(!(d.unregistered || []).length){
+      html += '<div class="muted small">{{ tr('没有发现') }}</div>';
+    }else{
+      (d.unregistered || []).slice(0, 40).forEach(function(it, i){ html += issueHtml(it, true, i); });
+      html += '<button class="btn btn-primary btn-sm" type="button" onclick="langRegAll()">'
+            + '{{ tr('全部登记') }} (' + d.unregistered.length + ')</button>';
+    }
+    html += '</div>';
+
+    html += '<div class="scan-grp"><h4>{{ tr('有词条但没译文') }} <span class="badge badge-info">'
+         + (c.untranslated || 0) + '</span></h4>'
+         + '<div class="tip">{{ tr('这类最好办：直接点上方的补翻译，引擎会批量翻好') }}</div>';
+    if(!(d.untranslated || []).length){
+      html += '<div class="muted small">{{ tr('这门语言已经翻完了') }}</div>';
+    }else{
+      html += '<div class="muted small">' + d.untranslated.slice(0, 8).map(function(it){
+        return '<code>' + esc(it.text) + '</code>';
+      }).join(' · ') + '</div>';
+    }
+    html += '</div>';
+
+    html += '<div class="scan-grp"><h4>{{ tr('已登记但这一页拿不到') }} <span class="badge badge-warn">'
+         + (c.shard_gap || 0) + '</span></h4>'
+         + '<div class="tip">{{ tr('词条在、译文也有，只是这个页面的词表里没登记它，前端取不到就回退中文。点一下补齐即可') }}</div>';
+    if(!(d.shard_gap || []).length){
+      html += '<div class="muted small">{{ tr('没有发现') }}</div>';
+    }else{
+      (d.shard_gap || []).slice(0, 40).forEach(function(it){
+        html += '<div class="issue"><span class="loc">' + esc(it.file) + (it.line ? ':' + it.line : '')
+              + ' · ' + esc(it.page || '') + '</span><br><code>' + esc(it.text) + '</code></div>';
+      });
+      if((d.shard_gap || []).length > 40){
+        html += '<div class="muted small">{{ tr('还有') }} ' + (d.shard_gap.length - 40) + ' {{ tr('条，未显示') }}</div>';
+      }
+      html += '<button class="btn btn-primary btn-sm" type="button" onclick="langFixShard()">'
+            + '{{ tr('补齐分片') }} (' + d.shard_gap.length + ')</button>';
+    }
+    html += '</div>';
+
+    html += '<div class="scan-grp"><h4>{{ tr('运行期捕获的漏词') }} <span class="badge badge-warn">'
+         + (c.runtime_miss || 0) + '</span></h4>'
+         + '<div class="tip">{{ tr('浏览器取词落空时自动上报，能发现拼接出来和数据库里的中文——静态扫描看不到它们。让界面在目标语言下跑一圈，再来点扫描') }}</div>';
+    if(!(d.misses || []).length){
+      html += '<div class="muted small">{{ tr('暂无记录') }}</div>';
+    }else{
+      (d.misses || []).slice(0, 40).forEach(function(it, i){
+        html += '<div class="issue"><span class="loc">' + esc(it.page || '')
+              + (it.count > 1 ? ' · ×' + it.count : '') + '</span><br>'
+              + '<code>' + esc(it.text) + '</code> '
+              + '<button class="btn btn-xs" type="button" onclick="langRegMiss(' + i + ')">'
+              + '{{ tr('登记为词条') }}</button> '
+              + '<button class="btn btn-xs" type="button" onclick="langDropMiss(' + i + ')">'
+              + '{{ tr('忽略') }}</button></div>';
+      });
+      if((d.misses || []).length > 40){
+        html += '<div class="muted small">{{ tr('还有') }} ' + (d.misses.length - 40) + ' {{ tr('条，未显示') }}</div>';
+      }
+      html += '<button class="btn btn-xs" type="button" onclick="langMissClear()">{{ tr('清空记录') }}</button>';
+    }
+    html += '</div>';
+
+    box.innerHTML = html;
+  }
+
+  window.langScan = function(){
+    say('scanMsg', '{{ tr('扫描中') }}…');
+    api('/api/lang/scan', {lang: el('trLang').value || 'en'}).then(function(d){
+      if(!d.counts){ say('scanMsg', d.msg || 'fail', true); return; }
+      say('scanMsg', '{{ tr('扫描完成') }}');
+      renderScan(d);
+    }).catch(function(e){ say('scanMsg', String(e), true); });
+  };
+
+  window.langReg = function(i){
+    if(!LAST_SCAN || !LAST_SCAN.unregistered || !LAST_SCAN.unregistered[i]) return;
+    var it = LAST_SCAN.unregistered[i];
+    api('/api/lang/register', {items: [{text: it.text, file: it.file}]}).then(function(d){
+      alert(d.msg || (d.ok ? 'ok' : 'fail'));
+      if(d.ok) window.langScan();
+    });
+  };
+
+  window.langRegAll = function(){
+    if(!LAST_SCAN || !LAST_SCAN.unregistered) return;
+    var items = LAST_SCAN.unregistered.map(function(it){
+      return {text: it.text, file: it.file};
+    });
+    api('/api/lang/register', {items: items}).then(function(d){
+      alert(d.msg || (d.ok ? 'ok' : 'fail'));
+      if(d.ok) window.langScan();
+    });
+  };
+
+  window.langFixShard = function(){
+    if(!LAST_SCAN || !LAST_SCAN.shard_gap || !LAST_SCAN.shard_gap.length) return;
+    var items = LAST_SCAN.shard_gap.map(function(it){
+      return {text: it.text, file: it.page};
+    });
+    api('/api/lang/register', {items: items}).then(function(d){
+      alert(d.msg || (d.ok ? 'ok' : 'fail'));
+      if(d.ok) window.langScan();
+    });
+  };
+
+  window.langRegMiss = function(i){
+    if(!LAST_SCAN || !LAST_SCAN.misses || !LAST_SCAN.misses[i]) return;
+    var it = LAST_SCAN.misses[i];
+    api('/api/lang/register', {items: [{text: it.text, page: it.page}]}).then(function(d){
+      alert(d.msg || (d.ok ? 'ok' : 'fail'));
+      if(d.ok) window.langScan();
+    });
+  };
+
+  window.langDropMiss = function(i){
+    if(!LAST_SCAN || !LAST_SCAN.misses || !LAST_SCAN.misses[i]) return;
+    var it = LAST_SCAN.misses[i];
+    api('/api/lang/miss/drop', {text: it.text, lang: LAST_SCAN.lang}).then(function(d){
+      if(d.ok) window.langScan();
+    });
+  };
+
+  window.langMissClear = function(){
+    api('/api/lang/miss/clear', {}).then(function(d){
+      if(d.ok) window.langScan();
+    });
+  };
+
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', loadLangs);
+  }else{
+    loadLangs();
+  }
+})();
+</script>
+<script src="{{ url_for('static', filename='js/ef-type.js', v='2959') }}"></script>
 {% endblock %}

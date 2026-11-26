@@ -1,130 +1,152 @@
+{# SPMS 备件辅料仓管系统 | 作者：菜鸟大叔 (@rookie-uncle / @Colton1982) | 邮箱：510658927@qq.com | QQ：510658927 | Gitee：https://gitee.com/rookie-uncle | GitHub：https://github.com/Colton1982 | Copyright (c) 2026 rookie-uncle. All rights reserved. | Apache-2.0 #}
 {% extends "base.html" %}
-{% block title %}{{ tr('page_screen_config') }} - Spare Parts Management System<style>
-.style-card{cursor:pointer;border:2px solid #e2e8f0;border-radius:10px;padding:8px;text-align:center;background:#fff;transition:border-color .15s}
-.style-card:hover{border-color:#93c5fd}
-.style-card.on{border-color:#2563eb;box-shadow:0 0 0 1px #2563eb inset}
-.style-card label{display:block;cursor:pointer}
-.style-swatch{display:block;height:46px;border-radius:8px;position:relative;margin-bottom:6px}
-.style-swatch i{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:22px;height:22px;border-radius:50%;box-shadow:0 0 0 3px rgba(255,255,255,.35)}
-.style-swatch.custom{background:#f1f5f9;display:flex;align-items:center;justify-content:center;font-size:22px}
-.style-name{font-size:12.5px;color:#334155;font-weight:600}
-</style>
-<script>
-function pickStyle(key){
-  document.querySelectorAll('.style-card input[name=style]').forEach(function(r){ r.checked = r.value === key; });
-  document.querySelectorAll('.style-card').forEach(function(c){ c.classList.toggle('on', c.getAttribute('data-style') === key); });
-  var box = document.getElementById('custom-colors');
-  if(box) box.style.display = key === 'custom' ? 'block' : 'none';
-}
-</script>
-{% endblock %}
-{% block page_title %}{{ tr('大屏展示配置') }}<style>
-.style-card{cursor:pointer;border:2px solid #e2e8f0;border-radius:10px;padding:8px;text-align:center;background:#fff;transition:border-color .15s}
-.style-card:hover{border-color:#93c5fd}
-.style-card.on{border-color:#2563eb;box-shadow:0 0 0 1px #2563eb inset}
-.style-card label{display:block;cursor:pointer}
-.style-swatch{display:block;height:46px;border-radius:8px;position:relative;margin-bottom:6px}
-.style-swatch i{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:22px;height:22px;border-radius:50%;box-shadow:0 0 0 3px rgba(255,255,255,.35)}
-.style-swatch.custom{background:#f1f5f9;display:flex;align-items:center;justify-content:center;font-size:22px}
-.style-name{font-size:12.5px;color:#334155;font-weight:600}
-</style>
-<script>
-function pickStyle(key){
-  document.querySelectorAll('.style-card input[name=style]').forEach(function(r){ r.checked = r.value === key; });
-  document.querySelectorAll('.style-card').forEach(function(c){ c.classList.toggle('on', c.getAttribute('data-style') === key); });
-  var box = document.getElementById('custom-colors');
-  if(box) box.style.display = key === 'custom' ? 'block' : 'none';
-}
-</script>
-{% endblock %}
+{% block title %}{{ tr('page_screen_config') }} - Inventory Management System{% endblock %}
+{% block page_title %}{{ tr('大屏展示配置') }}{% endblock %}
 {% block content %}
 <div class="card-grid">
 <div class="card card-wide" id="card-screen">
-  <div class="card-title">{{ tr('大屏展示配置') }}{{ tr('（保存后大屏立即生效）') }}</div>
+  <div class="card-title">{{ tr('大屏展示配置') }}</div>
+  <div class="muted small ui-hint" style="margin:-6px 0 12px">{{ tr('保存后立即生效') }}</div>
   <form method="post" class="ajax-form">
     <div class="sub-h" style="margin:4px 0 8px">{{ tr('① 显示内容') }}</div>
-    <div class="f-label">{{ tr('显示模块') }}{{ tr('（勾选后大屏只显示这些内容）') }}</div>
+    {# 模块按用途分三组，勾选逻辑与原来完全一致（name=mod_xxx 不变）；
+       金额类模块挂徽标：关「大屏显示金额」时这些卡会自动隐藏。
+       分类占比卡不在其中 —— 它自带数量饼，关金额时只是少画一个饼，卡片仍在。 #}
+    {% set _amt_mods = ['amt_trend', 'usage_line_amt', 'usage_device_amt'] %}
+    {% for _gname, _gkeys in [
+        (tr('统计与趋势'), ['stat_cards', 'stock_overview', 'qty_trend', 'amt_trend']),
+        (tr('分类与领用排行'), ['category', 'usage_line_qty', 'usage_line_amt', 'usage_device_qty', 'usage_device_amt']),
+        (tr('监控与流水'), ['alerts', 'stale', 'pending', 'recent_tx'])] %}
+    <div class="f-label" style="margin:10px 0 4px;font-size:12.5px">{{ _gname }}</div>
     <div class="grid2">
-      {% for key, label in SCREEN_MODULES.items() %}
+      {% for key in _gkeys %}
       <label class="f-check">
         <input type="checkbox" name="mod_{{ key }}" value="1" {{ 'checked' if key in cfg.modules }}>
-        {{ label }}
+        {{ SCREEN_MODULES[key] }}
+        {% if key in _amt_mods %}<span class="amt-tag">{{ tr('金额') }}</span>{% endif %}
       </label>
       {% endfor %}
     </div>
+    {% endfor %}
     <label class="f-check" style="margin-top:10px">
       <input type="checkbox" name="show_price" value="1" {{ 'checked' if cfg.show_price }}>
-      {{ tr('大屏显示金额') }}{{ tr('（') }}{{ tr('单价') }}/{{ tr('金额为敏感内容') }}{{ tr('，') }}{{ tr('默认不展示') }}{{ tr('；') }}{{ tr('不勾选则金额类卡片自动隐藏') }}{{ tr('）') }}
+      {{ tr('大屏显示金额') }}{{ mk('（') }}{{ tr('单价') }}/{{ tr('金额为敏感内容') }}{{ mk('，') }}{{ tr('默认不展示') }}{{ mk('；') }}{{ tr('不勾选则金额类卡片自动隐藏') }}{{ mk('）') }}
     </label>
-    <div class="muted small" style="margin:6px 0 0;line-height:1.6">{{ tr('提示') }}{{ tr('隐藏的模块') }}{{ tr('（') }}{{ tr('如金额卡') }}{{ tr('）') }}{{ tr('会自动留出空位，相邻卡片会自动变宽') }}/{{ tr('变高把空位填满') }}{{ tr('卡片位置保持不变') }}{{ tr('；') }}{{ tr('勾选项越少') }}{{ tr('剩余卡片越大越清晰') }}{{ tr('。') }}</div>
+    <div class="muted small ui-hint" style="margin:6px 0 0;line-height:1.6">{{ tr('提示') }}{{ tr('隐藏的模块') }}{{ mk('（') }}{{ tr('如金额卡') }}{{ mk('）') }}{{ tr('会自动留出空位，相邻卡片会自动变宽') }}/{{ tr('变高把空位填满') }}{{ tr('卡片位置保持不变') }}{{ mk('；') }}{{ tr('勾选项越少') }}{{ tr('剩余卡片越大越清晰') }}{{ mk('。') }}</div>
 
-    <div class="sub-h" style="margin:16px 0 8px">② {{ tr('大屏风格') }}{{ tr('（') }}{{ tr('预设一键套用') }}{{ tr('，') }}{{ tr('或选') }}{{ tr('「') }}{{ tr('自定义') }}{{ tr('」') }}{{ tr('手动配色') }}{{ tr('）') }}</div>
-    <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px">
-      {% for key in ['tech-blue','midnight-gold','tech-cyan','nebula-purple','green-data','light-clean'] %}
-      {% set st = SCREEN_STYLES[key] %}
-      <div class="style-card {{ 'on' if cfg.style==key }}" data-style="{{ key }}" onclick="pickStyle('{{ key }}')">
+    <div class="sub-h" style="margin:16px 0 8px">② {{ tr('大屏样式与色系') }}</div>
+  <div class="muted small ui-hint" style="margin:-4px 0 10px">{{ tr('样式只改形状（圆角、切角、描边、标题标记），色系只改颜色，两者可任意组合；卡片排布在下方单独选') }}</div>
+    {% set curp = SCREEN_PALETTES.get(cfg.palette) or SCREEN_PALETTES.get(palette_base) or SCREEN_PALETTES['deepblue'] %}
+    {# 样式缩略图：形状由 pv-<样式> 决定，颜色取当前选中的色系 ——
+       客户换色系时不用重排页面，JS 只改这几个 --p-* 变量。 #}
+    <div class="pick-cap">{{ tr('样式') }}<span class="pick-note">{{ tr('形状语言') }}{{ mk('（') }}{{ tr('6 种') }}{{ mk('）') }}</span></div>
+    <div class="st-grid st-grid5">
+      {% for key, st in SCREEN_SKINS.items() %}
+      <div class="style-card {{ 'on' if cfg.style==key }}" data-style="{{ key }}" onclick="pickSkin('{{ key }}')">
         <label>
           <input type="radio" name="style" value="{{ key }}" {{ 'checked' if cfg.style==key }} style="display:none">
-          <span class="style-swatch" style="background:linear-gradient(135deg,{{ st.vars.sbg }},{{ st.vars.sbg2 }})"><i style="background:{{ st.vars.num }}"></i></span>
+          <span class="pv pv-skin pv-{{ st.pv }}" style="--p-sbg:{{ curp.vars.sbg }};--p-sbg2:{{ curp.vars.sbg2 }};--p-head:{{ curp.vars.head }};--p-head2:{{ curp.vars.head2 }};--p-card:{{ curp.vars.card }};--p-cardb:{{ curp.vars.cardb }};--p-num:{{ curp.vars.num }};--p-accent:{{ curp.vars.accent }};--p-label:{{ curp.vars.label }}">
+            <span class="pv-head"><i></i><b></b><em></em></span>
+            <span class="pv-row">
+              <span class="pv-card"><i class="pv-t"></i><b class="pv-n"></b><b class="pv-s"></b></span>
+              <span class="pv-card"><i class="pv-t"></i><b class="pv-n" style="width:54%"></b><b class="pv-s" style="width:40%"></b></span>
+              <span class="pv-card"><i class="pv-t"></i><b class="pv-n" style="width:68%"></b><b class="pv-s" style="width:48%"></b></span>
+            </span>
+            <span class="pv-row pv-row2">
+              <span class="pv-card pv-wide"><i class="pv-t"></i>
+                <span class="pv-bars">
+                  <u style="height:34%"></u><u style="height:62%"></u><u style="height:48%"></u>
+                  <u style="height:78%"></u><u style="height:55%"></u><u style="height:88%"></u>
+                  <u style="height:40%"></u><u style="height:66%"></u><u style="height:52%"></u>
+                  <u style="height:72%"></u>
+                </span>
+              </span>
+            </span>
+          </span>
+          {# 名字/性格说明由路由里的 _i18n.t() 先翻好，这里直接输出，别再包一层 tr() #}
           <span class="style-name">{{ st.name }}</span>
+          <span class="style-tag">{{ st.tag }}</span>
         </label>
       </div>
       {% endfor %}
     </div>
-    <div class="style-card manual {{ 'on' if cfg.style=='custom' }}" data-style="custom" onclick="pickStyle('custom')" style="display:inline-block;margin-top:8px">
-      <label>
-        <input type="radio" name="style" value="custom" {{ 'checked' if cfg.style=='custom' }} style="display:none">
-        <span class="style-swatch custom">🎨</span>
-        <span class="style-name">{{ tr('自定义') }}{{ tr('（') }}{{ tr('手动配色') }}{{ tr('）') }}</span>
-      </label>
+
+    {# 色系：一块四色小样（背景 / 卡片 / 数字 / 强调）就能看出深浅与冷暖，
+       比只放一个圆点强；点一下整套换掉，形状不动。 #}
+    <div class="pick-cap" style="margin-top:14px">{{ tr('色系') }}<span class="pick-note">{{ tr('配色方案') }}{{ mk('（') }}{{ tr('5 种') }}{{ mk('，') }}{{ tr('含一种浅色') }}{{ mk('）') }}</span></div>
+    <div class="pal-grid">
+      {% for key, pv in SCREEN_PALETTES.items() %}
+      <div class="pal-card {{ 'on' if cfg.palette==key }}" data-pal="{{ key }}" onclick="pickPalette('{{ key }}')">
+        <label>
+          <input type="radio" name="palette" value="{{ key }}" {{ 'checked' if cfg.palette==key }} style="display:none">
+          <span class="pal-sw" style="--s-sbg:{{ pv.vars.sbg }};--s-sbg2:{{ pv.vars.sbg2 }};--s-card:{{ pv.vars.card }};--s-cardb:{{ pv.vars.cardb }};--s-num:{{ pv.vars.num }};--s-accent:{{ pv.vars.accent }};--s-label:{{ pv.vars.label }}">
+            <span class="pal-bg"><b class="pal-card1"></b><b class="pal-card2"></b><i class="pal-num"></i><i class="pal-acc"></i></span>
+          </span>
+          <span class="style-name">{{ pv.name }}</span>
+          <span class="style-tag">{{ pv.tag }}</span>
+        </label>
+      </div>
+      {% endfor %}
+      <div class="pal-card {{ 'on' if cfg.palette=='custom' }}" data-pal="custom" onclick="pickPalette('custom')">
+        <label>
+          <input type="radio" name="palette" value="custom" {{ 'checked' if cfg.palette=='custom' }} style="display:none">
+          <span class="pal-sw pal-sw-custom"><span class="pv-cart">🎨</span></span>
+          <span class="style-name">{{ tr('自定义') }}</span>
+          <span class="style-tag">{{ tr('手动配色') }}</span>
+        </label>
+      </div>
     </div>
-    <div id="custom-colors" style="{{ 'display:block' if cfg.style=='custom' else 'display:none' }}">
+    <div id="custom-colors" style="{{ 'display:block' if cfg.palette=='custom' else 'display:none' }}">
+      {# 自定义以「上一个选中的色系」为基线：留空的项跟着它，不从固定色板来。 #}
+      {% set base_key = palette_base if palette_base in SCREEN_PALETTES else 'deepblue' %}
+      {% set base_vars = SCREEN_PALETTES[base_key].vars %}
+      <input type="hidden" name="palette_base" id="style-base" value="{{ base_key }}">
       <div class="grid3" style="margin-top:10px">
-        {% for k, lab in [('sbg','页面背景'),('sbg2','背景渐变终点'),('head','顶栏起点色'),('head2','顶栏终点色'),('card','卡片底色'),('cardb','卡片边框'),('label','标签文字色'),('num','数值主色'),('title','面板标题色'),('accent','强调色')] %}
-        <label class="f-label">{{ tr(lab) }}{{ tr('（') }}{{ tr('留空') }}={{ tr('跟随科技蓝默认') }}{{ tr('）') }}
+        {% for k, lab in [('sbg',tr('页面背景')),('sbg2',tr('背景渐变终点')),('head',tr('顶栏起点色')),('head2',tr('顶栏终点色')),('card',tr('卡片底色')),('cardb',tr('卡片边框')),('label',tr('标签文字色')),('num',tr('数值主色')),('title',tr('面板标题色')),('accent',tr('强调色'))] %}
+        <label class="f-label">{{ lab }}<span class="f-note">{{ mk('（') }}{{ tr('留空') }}={{ tr('跟随') }}<span class="base-name">{{ SCREEN_PALETTES[base_key].name }}</span>{{ mk('）') }}</span>
           <span style="display:flex;gap:6px">
             <input type="hidden" name="sc_{{ k }}" value="{{ cfg.style_custom.get(k,'') }}">
-            <input class="f-input color-pick" type="color" value="{{ cfg.style_custom.get(k) or SCREEN_STYLES['tech-blue'].vars[k] }}" oninput="this.previousElementSibling.value=this.value">
-            <button type="button" class="btn" style="padding:4px 10px;font-size:12px" onclick="this.previousElementSibling.previousElementSibling.value='';this.previousElementSibling.value='{{ SCREEN_STYLES['tech-blue'].vars[k] }}'">{{ tr('跟随') }}</button>
+            <input class="f-input color-pick" type="color" value="{{ cfg.style_custom.get(k) or base_vars[k] }}" oninput="this.previousElementSibling.value=this.value">
+            <button type="button" class="btn" style="padding:4px 10px;font-size:12px" onclick="this.previousElementSibling.previousElementSibling.value='';this.previousElementSibling.value='{{ base_vars[k] }}'">{{ tr('跟随') }}</button>
           </span>
         </label>
         {% endfor %}
       </div>
-      <div class="muted small" style="margin:6px 0">{{ tr('留空项自动使用') }}{{ tr('「') }}{{ tr('科技蓝') }}{{ tr('」') }}{{ tr('默认值') }}{{ tr('；') }}{{ tr('自定义风格下页面深浅以你填的') }}{{ tr('「') }}{{ tr('页面背景') }}{{ tr('」') }}{{ tr('为准') }}{{ tr('（') }}{{ tr('浅色背景时图表自动切浅色配色') }}{{ tr('）') }}{{ tr('。') }}</div>
+      <div class="muted small ui-hint" style="margin:6px 0">{{ tr('留空项自动使用') }}{{ mk('「') }}<span class="base-name">{{ tr(SCREEN_PALETTES[base_key].name) }}</span>{{ mk('」') }}{{ tr('默认值') }}{{ mk('；') }}{{ tr('自定义色系时页面深浅以你填的页面背景为准') }}{{ mk('（') }}{{ tr('浅色背景时图表自动切浅色配色') }}{{ mk('）') }}{{ mk('。') }}</div>
     </div>
 
     <div class="sub-h" style="margin:16px 0 8px">③ {{ tr('大屏标题与') }} LOGO</div>
     <div class="grid2">
-      <label class="f-label">{{ tr('大屏标题') }}{{ tr('（') }}{{ tr('留空') }}={{ tr('跟随系统设置的侧栏品牌') }}{{ tr('）') }}
+      <label class="f-label">{{ tr('大屏标题') }}<span class="f-note">{{ mk('（') }}{{ tr('留空') }}={{ tr('跟随系统设置的侧栏品牌') }}{{ mk('）') }}</span>
         <input class="f-input" name="sb_title" value="{{ cfg.sb_title }}" maxlength="30" placeholder="{{ tr('留空跟随系统设置') }}">
       </label>
-      <label class="f-label">{{ tr('副标题') }}{{ tr('（') }}{{ tr('留空') }}={{ tr('跟随系统设置') }}{{ tr('）') }}
+      <label class="f-label">{{ tr('副标题') }}<span class="f-note">{{ mk('（') }}{{ tr('留空') }}={{ tr('跟随系统设置') }}{{ mk('）') }}</span>
         <input class="f-input" name="sb_subtitle" value="{{ cfg.sb_subtitle }}" maxlength="50" placeholder="{{ tr('留空跟随系统设置') }}">
       </label>
-      <label class="f-label">LOGO {{ tr('高度') }}(px{{ tr('，') }}0={{ tr('跟随系统品牌') }})
+      <label class="f-label">LOGO {{ tr('高度') }}(px{{ mk('，') }}0={{ tr('跟随系统品牌') }})
         <input class="f-input" type="number" name="sb_logo_height" value="{{ cfg.sb_logo_height }}" min="0" max="160" step="2">
       </label>
-      <label class="f-label">{{ tr('标题字号') }}(px{{ tr('，') }}0={{ tr('跟随系统品牌') }})
+      <label class="f-label">{{ tr('标题字号') }}(px{{ mk('，') }}0={{ tr('跟随系统品牌') }})
         <input class="f-input" type="number" name="sb_title_size" value="{{ cfg.sb_title_size }}" min="0" max="80" step="1">
       </label>
-      <label class="f-label">{{ tr('副标题字号') }}(px{{ tr('，') }}0={{ tr('跟随系统品牌') }})
+      <label class="f-label">{{ tr('副标题字号') }}(px{{ mk('，') }}0={{ tr('跟随系统品牌') }})
         <input class="f-input" type="number" name="sb_subtitle_size" value="{{ cfg.sb_subtitle_size }}" min="0" max="40" step="1">
       </label>
-      <label class="f-label">{{ tr('标题字色') }}{{ tr('（') }}{{ tr('点击') }}{{ tr('「') }}{{ tr('跟随') }}{{ tr('」') }}{{ tr('恢复系统品牌色') }}{{ tr('）') }}
+      <label class="f-label">{{ tr('标题字色') }}<span class="f-note">{{ mk('（') }}{{ tr('点击') }}{{ mk('「') }}{{ tr('跟随') }}{{ mk('」') }}{{ tr('恢复系统品牌色') }}{{ mk('）') }}</span>
         <span style="display:flex;gap:6px">
           <input type="hidden" name="sb_title_color" value="{{ cfg.sb_title_color }}">
           <input class="f-input color-pick" type="color" value="{{ cfg.sb_title_color or '#ffffff' }}" oninput="this.previousElementSibling.value=this.value">
           <button type="button" class="btn" style="padding:4px 10px;font-size:12px" onclick="this.previousElementSibling.previousElementSibling.value='';this.previousElementSibling.value='#ffffff'">{{ tr('跟随') }}</button>
         </span>
       </label>
-      <label class="f-label">{{ tr('副标题字色') }}{{ tr('（') }}{{ tr('点击') }}{{ tr('「') }}{{ tr('跟随') }}{{ tr('」') }}{{ tr('恢复系统品牌色') }}{{ tr('）') }}
+      <label class="f-label">{{ tr('副标题字色') }}<span class="f-note">{{ mk('（') }}{{ tr('点击') }}{{ mk('「') }}{{ tr('跟随') }}{{ mk('」') }}{{ tr('恢复系统品牌色') }}{{ mk('）') }}</span>
         <span style="display:flex;gap:6px">
           <input type="hidden" name="sb_subtitle_color" value="{{ cfg.sb_subtitle_color }}">
           <input class="f-input color-pick" type="color" value="{{ cfg.sb_subtitle_color or '#93c5fd' }}" oninput="this.previousElementSibling.value=this.value">
           <button type="button" class="btn" style="padding:4px 10px;font-size:12px" onclick="this.previousElementSibling.previousElementSibling.value='';this.previousElementSibling.value='#93c5fd'">{{ tr('跟随') }}</button>
         </span>
       </label>
-      <label class="f-label">{{ tr('字体') }}{{ tr('（') }}{{ tr('留空') }}={{ tr('跟随系统品牌') }}{{ tr('）') }}
+      <label class="f-label">{{ tr('字体') }}<span class="f-note">{{ mk('（') }}{{ tr('留空') }}={{ tr('跟随系统品牌') }}{{ mk('）') }}</span>
         <select class="f-input" name="sb_font_family">
           <option value="" {{ 'selected' if not cfg.sb_font_family }}>{{ tr('跟随系统设置') }}</option>
           <option value="'Microsoft YaHei','PingFang SC',sans-serif" {{ 'selected' if cfg.sb_font_family and 'Microsoft YaHei' in cfg.sb_font_family }}>{{ tr('微软雅黑') }}</option>
@@ -134,9 +156,9 @@ function pickStyle(key){
         </select>
       </label>
     </div>
-    <label class="f-check"><input type="checkbox" name="sb_show_logo" value="1" {{ 'checked' if cfg.sb_show_logo }}> {{ tr('显示') }} LOGO{{ tr('（') }}{{ tr('使用系统设置中上传的品牌') }} LOGO{{ tr('，') }}{{ tr('取消勾选则不显示') }}{{ tr('）') }}</label>
-    <div class="muted small" style="margin:6px 0">
-      {{ tr('说明：') }}{{ tr('大屏顶部标题') }}/LOGO {{ tr('默认跟随') }}{{ tr('「') }}{{ tr('系统设置') }} {{ tr('→') }} {{ tr('界面主题与外观') }} {{ tr('→') }} {{ tr('侧栏品牌') }}{{ tr('」') }}{{ tr('；在此单独填写则大屏用独立值') }}{{ tr('，') }}{{ tr('字号') }}/{{ tr('高度填') }} 0{{ tr('颜色与字体留空表示继续跟随系统') }}{{ tr('。') }}
+    <label class="f-check"><input type="hidden" name="sb_show_logo" value="0"><input type="checkbox" name="sb_show_logo" value="1" {{ 'checked' if cfg.sb_show_logo }}> {{ tr('显示') }} LOGO{{ mk('（') }}{{ tr('使用系统设置中上传的品牌') }} LOGO{{ mk('，') }}{{ tr('取消勾选则不显示') }}{{ mk('）') }}</label>
+    <div class="muted small ui-hint" style="margin:6px 0">
+      {{ tr('说明：') }}{{ tr('大屏顶部标题') }}/LOGO {{ tr('默认跟随') }}{{ mk('「') }}{{ tr('系统设置') }} → {{ tr('界面主题与外观') }} → {{ tr('侧栏品牌') }}{{ mk('」') }}{{ tr('；在此单独填写则大屏用独立值') }}{{ mk('，') }}{{ tr('字号') }}/{{ tr('高度填') }} 0{{ tr('颜色与字体留空表示继续跟随系统') }}{{ mk('。') }}
     </div>
 
     <div class="sub-h" style="margin:16px 0 8px">{{ tr('④ 统计与刷新') }}</div>
@@ -158,23 +180,31 @@ function pickStyle(key){
 
     <div class="sub-h" style="margin:16px 0 8px">⑤ {{ tr('趋势图回溯长度') }}</div>
     <div class="grid2">
-      <label class="f-label">{{ tr('按日') }}{{ tr('（') }}{{ tr('近 N 天') }}{{ tr('）') }}
+      <label class="f-label">{{ tr('按日') }}<span class="f-note">{{ mk('（') }}{{ tr('近 N 天') }}{{ mk('）') }}</span>
+        {# 历史保存值可能不在预设档位里（老版本存过 6 周、45 天），
+           不补进选项的话下拉会显示成别的档位，一保存就把真实值改掉了 #}
+        {% set _opts = [7, 14, 30] %}
+        {% if cfg.trend.day not in _opts %}{% set _opts = _opts + [cfg.trend.day] %}{% endif %}
         <select class="f-input" name="trend_day">
-          {% for n in [7, 14, 30] %}
+          {% for n in _opts|sort %}
           <option value="{{ n }}" {{ 'selected' if cfg.trend.day==n }}>{{ tr('近 {0} 天').format(n) }}</option>
           {% endfor %}
         </select>
       </label>
-      <label class="f-label">{{ tr('按周') }}{{ tr('（') }}{{ tr('近 N 周') }}{{ tr('）') }}
+      <label class="f-label">{{ tr('按周') }}<span class="f-note">{{ mk('（') }}{{ tr('近 N 周') }}{{ mk('）') }}</span>
+        {% set _opts = [4, 8, 12] %}
+        {% if cfg.trend.week not in _opts %}{% set _opts = _opts + [cfg.trend.week] %}{% endif %}
         <select class="f-input" name="trend_week">
-          {% for n in [4, 8, 12] %}
+          {% for n in _opts|sort %}
           <option value="{{ n }}" {{ 'selected' if cfg.trend.week==n }}>{{ tr('近 {0} 周').format(n) }}</option>
           {% endfor %}
         </select>
       </label>
-      <label class="f-label">{{ tr('按月') }}{{ tr('（') }}{{ tr('近 N 月') }}{{ tr('）') }}
+      <label class="f-label">{{ tr('按月') }}<span class="f-note">{{ mk('（') }}{{ tr('近 N 月') }}{{ mk('）') }}</span>
+        {% set _opts = [3, 6, 12] %}
+        {% if cfg.trend.month not in _opts %}{% set _opts = _opts + [cfg.trend.month] %}{% endif %}
         <select class="f-input" name="trend_month">
-          {% for n in [3, 6, 12] %}
+          {% for n in _opts|sort %}
           <option value="{{ n }}" {{ 'selected' if cfg.trend.month==n }}>{{ tr('近 {0} 月').format(n) }}</option>
           {% endfor %}
         </select>
@@ -184,21 +214,28 @@ function pickStyle(key){
     <div class="sub-h" style="margin:16px 0 8px">⑥ {{ tr('各模块显示条数') }}</div>
     <div class="grid2">
       <label class="f-label">{{ tr('最新出入库流水（条）') }}
+        {% set _opts = [5, 10, 20, 30] %}
+        {% if cfg.limits.recent_tx not in _opts %}{% set _opts = _opts + [cfg.limits.recent_tx] %}{% endif %}
         <select class="f-input" name="lim_recent_tx">
-          {% for n in [5, 10, 20, 30] %}
+          {% for n in _opts|sort %}
           <option value="{{ n }}" {{ 'selected' if cfg.limits.recent_tx==n }}>{{ n }} {{ tr('条') }}</option>
           {% endfor %}
         </select>
       </label>
-      <label class="f-label">{{ tr('库存预警') }}{{ tr('（') }}{{ tr('每类条数') }}{{ tr('）') }}
+      <label class="f-label">{{ tr('库存预警') }}<span class="f-note">{{ mk('（') }}{{ tr('每类条数') }}{{ mk('）') }}</span>
+        {% set _opts = [5, 10, 20] %}
+        {% if cfg.limits.alerts not in _opts %}{% set _opts = _opts + [cfg.limits.alerts] %}{% endif %}
         <select class="f-input" name="lim_alerts">
-          {% for n in [5, 10, 20] %}
+          {% for n in _opts|sort %}
           <option value="{{ n }}" {{ 'selected' if cfg.limits.alerts==n }}>{{ n }} {{ tr('条') }}</option>
           {% endfor %}
         </select>
       </label>
-      <label class="f-label">{{ tr('呆滞物料（条）') }}<select class="f-input" name="lim_stale">
-          {% for n in [5, 10, 20] %}
+      <label class="f-label">{{ tr('呆滞物料（条）') }}
+        {% set _opts = [5, 10, 20] %}
+        {% if cfg.limits.stale not in _opts %}{% set _opts = _opts + [cfg.limits.stale] %}{% endif %}
+        <select class="f-input" name="lim_stale">
+          {% for n in _opts|sort %}
           <option value="{{ n }}" {{ 'selected' if cfg.limits.stale==n }}>{{ n }} {{ tr('条') }}</option>
           {% endfor %}
         </select>
@@ -206,7 +243,7 @@ function pickStyle(key){
     </div>
 
     <div class="sub-h" style="margin:16px 0 8px">{{ tr('⑦ 呆滞判定') }}</div>
-    <label class="f-label">{{ tr('呆滞天数') }}{{ tr('（') }}{{ tr('大屏专用') }}{{ tr('；') }}{{ tr('选') }}"{{ tr('跟随系统设置') }}"{{ tr('则使用系统设置中的') }} 90 {{ tr('天默认值') }}{{ tr('）') }}
+    <label class="f-label">{{ tr('呆滞天数') }}<span class="f-note">{{ mk('（') }}{{ tr('大屏专用') }}{{ mk('；') }}{{ tr('选') }}"{{ tr('跟随系统设置') }}"{{ tr('则使用系统设置中的') }} 90 {{ tr('天默认值') }}{{ mk('）') }}</span>
       <select class="f-input" name="stale_days">
         <option value="0" {{ 'selected' if cfg.stale_days==0 }}>{{ tr('跟随系统设置') }}</option>
         {% for n in [30, 60, 90, 120, 180, 365] %}
@@ -215,25 +252,28 @@ function pickStyle(key){
       </select>
     </label>
 
-    <div class="sub-h" style="margin:16px 0 8px">⑧ {{ tr('卡片布局') }}{{ tr('（') }}{{ tr('可拖拽调位置') }}{{ tr('、') }}{{ tr('拉伸大小') }}{{ tr('；') }}{{ tr('10 种预设一键套用，前 5 种含金额、后 5 种不含金额，也支持手动排版') }}{{ tr('）') }}</div>
-    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px">
-      {% for key, lay in SCREEN_LAYOUTS.items() %}
-      <div class="ly-preset {{ 'on' if cfg.layout.mode==key }}" data-p="{{ key }}" onclick="lyApplyPreset('{{ key }}')">
-        <div class="ly-preset-name">{{ lay.name }}</div>
-        <div class="ly-preset-mini" data-mini="{{ key }}"></div>
-      </div>
-      {% endfor %}
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:12px 0">
+      <label class="f-label">{{ tr('滚动速度') }}
+        <input class="f-input" type="number" name="alert_scroll_speed" step="0.5" min="0.5" max="10" value="{{ cfg.alert_scroll_speed or 2 }}">
+      </label>
+      <label class="f-label">{{ tr('出入库流水滚动速度（0.5 最慢，10 最快，默认 2）') }}
+        <input class="f-input" type="number" name="tx_scroll_speed" step="0.5" min="0.5" max="10" value="{{ cfg.tx_scroll_speed or 2 }}">
+      </label>
     </div>
-    <label class="f-check" style="margin-top:10px"><input type="checkbox" id="ly-custom" {{ 'checked' if cfg.layout.mode=='custom' }} onchange="lyToggleCustom()"> {{ tr('手动排版') }}{{ tr('（拖动卡片调整位置，拖动右下角手柄调整大小；目标位置被占用时卡片保持原位不移动）') }}</label>
-    <div id="ly-editor" style="{{ 'display:block' if cfg.layout.mode=='custom' else 'display:none' }}">
-      <div id="ly-canvas" style="margin-top:8px"></div>
-      <div class="muted small" style="margin:6px 0">{{ tr('提示') }}{{ tr('拖拽卡片标题区移动；拖动卡片右下角') }} ◢ {{ tr('手柄调整大小') }}{{ tr('；') }}{{ tr('已勾选') }}{{ tr('「') }}{{ tr('手动排版') }}{{ tr('」') }}{{ tr('时，再次点击某个预设会覆盖当前手动排版') }}{{ tr('。') }}</div>
-    </div>
-    <input type="hidden" name="layout_mode" id="ly-mode" value="{{ cfg.layout.mode }}">
-    <input type="hidden" name="layout_cards" id="ly-cards" value='{{ cfg.layout.cards | tojson }}'>
 
-    <div class="muted small" style="margin:10px 0">
-      {{ tr('大屏页面地址') }}{{ tr('（') }}{{ tr('无需登录') }}{{ tr('，') }}{{ tr('可直接全屏') }}{{ tr('）') }}{{ tr('：') }}<br>
+    <div class="sub-h" style="margin:16px 0 8px">⑧ {{ tr('卡片布局') }}</div>
+  <div class="muted small ui-hint" style="margin:-4px 0 10px">{{ tr('布局只改卡片排布，不影响大屏样式') }}{{ mk('；') }}{{ tr('和实际大屏一致，勾选或取消模块时实时变化') }}</div>
+    <input type="hidden" name="layout_mode" id="ly-mode" value="classic">
+    <!-- v1.0.14：初始值要跟服务端收敛后的 cfg 走。以前写死 price，金额关着时
+         页面还没跑 JS 就提交会带上 price（虽然后端会再收敛一次，但状态不自洽）。 -->
+    <input type="hidden" name="layout_version" id="ly-version" value="{{ ((cfg.get('layout') or {}).get('version') or 'price') }}">
+    <input type="hidden" name="layout_cards" id="ly-cards" value="{}">
+    <div id="ly-preset-grid" class="ly-grid"></div>
+    <div class="muted small ui-hint" style="margin:8px 0 4px">
+      {{ tr('选中哪一版，大屏就用哪一版的排布；未勾选「大屏显示金额」时只能用无金额版，有金额版置灰不可点') }}
+    </div>
+    <div class="muted small ui-hint" style="margin:10px 0">
+      {{ tr('大屏页面地址') }}{{ mk('（') }}{{ tr('无需登录') }}{{ mk('，') }}{{ tr('可直接全屏') }}{{ mk('）') }}{{ mk('：') }}<br>
       <span class="mono">http://127.0.0.1:{{ APP_PORT }}/screen</span>
     </div>
     <button class="btn btn-primary" type="submit">{{ tr('保存配置') }}</button>
@@ -242,11 +282,46 @@ function pickStyle(key){
 </div>
 </div>
 <style>
+/* ⑧ 布局选择：两列分版 —— 左列有金额版、右列无金额版，每行一个布局族 */
+.ly-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:10px}
+.ly-colhead{font-size:12.5px;font-weight:700;color:#334155;text-align:center;padding:4px 0;
+  border-bottom:2px solid #cbd5e1;margin-bottom:2px}
+.ly-colhead:first-child{color:#1d4ed8;border-bottom-color:#1d4ed8}
+.ly-colhead:nth-child(2){color:#b45309;border-bottom-color:#d97706}
 .ly-preset{cursor:pointer;border:2px solid #e2e8f0;border-radius:10px;padding:8px;text-align:center;background:#fff;transition:border-color .15s}
 .ly-preset:hover{border-color:#93c5fd}
 .ly-preset.on{border-color:#2563eb;box-shadow:0 0 0 1px #2563eb inset}
+.ly-preset.sel{border-color:#93c5fd;border-style:dashed}
+/* 缩略图：画成「小屏」而不是色块 —— 深墨底 + 极淡描边 + 玻璃感卡片块，
+   左列（有金额版）冷钢蓝，右列（无金额版）暖石墨，光看缩略图就能分出两列，
+   又不至于像原来那样一片荧光黄，把整页质感拉下去。 */
+.ly-preset-mini{height:74px;margin-top:6px;position:relative;border-radius:8px;overflow:hidden;
+  background:radial-gradient(120% 92% at 50% -18%, #1b2740 0%, #0c1424 58%, #070b13 100%);
+  box-shadow:inset 0 0 0 1px rgba(150,184,226,.16), inset 0 1px 0 rgba(255,255,255,.06)}
+.ly-preset.np .ly-preset-mini{
+  background:radial-gradient(120% 92% at 50% -18%, #2a2418 0%, #14110c 58%, #0a0805 100%);
+  box-shadow:inset 0 0 0 1px rgba(206,178,124,.16), inset 0 1px 0 rgba(255,255,255,.05)}
+/* 未勾选「大屏显示金额」：右列（有金额版）整列不可选 —— 缩略图灰掉、名字变浅、
+   光标禁止、不响应 hover。名字保持可读，否则用户不知道为什么这一列点不动。 */
+.ly-preset.locked{cursor:not-allowed;background:#f8fafc}
+.ly-preset.locked .ly-preset-mini{opacity:.25;filter:grayscale(1)}
+.ly-preset.locked .ly-preset-name{color:#a3aebd}
+.ly-preset.locked:hover{border-color:#e2e8f0;box-shadow:none}
+.ly-colhead.lock{color:#94a3b8;border-bottom-color:#cbd5e1}
 .ly-preset-name{font-size:13px;color:#334155;font-weight:600}
-.ly-preset-mini{height:54px;margin-top:6px;position:relative;background:#f1f5f9;border-radius:6px;overflow:hidden}
+.np-tag{display:inline-block;margin-left:4px;padding:0 6px;border-radius:8px;font-size:10.5px;
+  font-weight:600;color:#b45309;background:#fef3c7;vertical-align:1px}
+/* 缩略预览：每张卡留缝，否则相邻卡片的描边会连成一条条横杠，看着像斑马纹 */
+.lym{position:absolute;padding:1px;box-sizing:border-box}
+.lym>i{display:block;width:100%;height:100%;border-radius:3px;box-sizing:border-box}
+/* 缩略图太小，描边会糊成一片，所以只用实心块 + 缝隙表示卡片 */
+.ly-preset-mini .lym{padding:1px}
+.ly-preset-mini .lym>i{border:0;border-radius:1.5px;
+  background:linear-gradient(180deg, rgba(166,201,235,.34), rgba(120,158,198,.15));
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.10)}
+.ly-preset.np .lym>i{
+  background:linear-gradient(180deg, rgba(214,190,146,.30), rgba(158,136,98,.13));
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.08)}
 .ly-mini-card{position:absolute;background:#bfdbfe;border:1px solid #60a5fa;border-radius:2px}
 #ly-canvas{position:relative;height:420px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;
   background-image:linear-gradient(#e2e8f0 1px,transparent 1px),linear-gradient(90deg,#e2e8f0 1px,transparent 1px);
@@ -255,164 +330,481 @@ function pickStyle(key){
 .ly-card-head{padding:6px 8px;font-size:12px;color:#1e40af;font-weight:600;pointer-events:none}
 .ly-resize{position:absolute;right:2px;bottom:2px;width:15px;height:15px;cursor:nwse-resize;
   background:linear-gradient(135deg,transparent 49%,#2563eb 50%,#2563eb 58%,transparent 59%)}
+/* ① 显示模块的「金额」徽标：关掉大屏显示金额时这类卡自动隐藏 */
+.amt-tag{display:inline-block;margin-left:6px;padding:0 7px;border-radius:8px;font-size:10.5px;
+  font-weight:600;color:#b45309;background:#fef3c7;vertical-align:1px}
 </style>
 <script>
 const LY_PRESETS = {{ SCREEN_LAYOUTS | tojson }};
 const LY_CARDS_META = {{ SCREEN_CARDS | tojson }};
-const LY_COLS = 12, LY_ROWS = 10;
 let LY = null;
-let lyDrag = null;
+/* 布局族：两列各 5 行 —— 左列有金额版、右列无金额版。
+   老库存过的 *_np 模式（classic_np 等）是「该布局的无金额版」，
+   与族内 noprice 等价，加载时归一到对应族，保存后即统一口径；
+   老的 aurora/obsidian/command 是「风格绑排版」时代的专属坐标，已在
+   服务端 _sanitize_layout 归并到 classic/grid/wide，这里不再列出。 */
+const LY_FAMS = ['classic', 'split', 'grid', 'flow', 'wide'];
+const LY_HEAD_P = {{ tr('有金额版') | tojson }};
+const LY_HEAD_N = {{ tr('无金额版') | tojson }};
 
-function lyDrawMinis(){
-  document.querySelectorAll('.ly-preset-mini').forEach(function(m){
-    const key = m.getAttribute('data-mini');
-    const p = LY_PRESETS[key];
-    let html = '';
-    for(const k in p.cards){
-      const v = p.cards[k];
-      html += '<div class="ly-mini-card" style="left:'+(v[0]*100/12)+'%;top:'+(v[1]*100/10)+'%;width:'+(v[2]*100/12)+'%;height:'+(v[3]*100/10)+'%"></div>';
-    }
-    m.innerHTML = html;
-  });
+function lyDrawMiniPreview(){ /* 已移除：布局选择只保留 16 张预设缩略图，不再在页尾重复一张大预览 */ }
+
+// 缩略预览渲染：按「实际大屏的行高逻辑」重算坐标。
+// 大屏每一行的高度 = 该行最高卡片的高度，整屏高度 = 各行之和；
+// 旧代码直接拿 y/12、h/12 画，宽屏矩阵这类总高不是 12 的模板会溢出预览框底部，
+// 卡片之间又没有缝，最后看起来就是几条横杠。
+function lyNumP(v, d){ var n = Number(v); return isFinite(n) ? n : (d || 0); }
+function lyRoundP(v){ return Math.round(lyNumP(v) * 100) / 100; }
+function lyNormCard(c){
+  if(Array.isArray(c)) return {x:lyNumP(c[0]), y:lyNumP(c[1]), w:lyNumP(c[2]), h:lyNumP(c[3])};
+  return {x:lyNumP(c.x), y:lyNumP(c.y), w:lyNumP(c.w), h:lyNumP(c.h)};
 }
-
-function lyCardHtml(k, c){
-  const meta = LY_CARDS_META[k] || {label:k};
-  return '<div class="ly-card" data-k="'+k+'" style="left:'+(c.x*100/12)+'%;top:'+(c.y*100/10)+'%;width:'+(c.w*100/12)+'%;height:'+(c.h*100/10)+'%">'
-    + '<div class="ly-card-head">'+meta.label+'</div><i class="ly-resize"></i></div>';
-}
-
-function lyDraw(){
-  const canvas = document.getElementById('ly-canvas');
-  if(!canvas) return;
-  let html = '';
-  for(const k in LY.cards){
-    html += lyCardHtml(k, LY.cards[k]);
+function lyLayoutRows(cards){
+  const byY = {}, ys = [];
+  for(const k in cards){
+    const y = lyRoundP(cards[k].y);
+    if(!byY[y]){ byY[y] = []; ys.push(y); }
+    byY[y].push(k);
   }
-  canvas.innerHTML = html;
+  ys.sort(function(a,b){ return a - b; });
+  let off = 0;
+  const pos = {}, rowH = {};
+  ys.forEach(function(y){
+    let h = 0;
+    byY[y].forEach(function(k){ h = Math.max(h, lyNumP(cards[k].h)); });
+    rowH[y] = h; pos[y] = off; off += h;
+  });
+  return {ys:ys, byY:byY, pos:pos, rowH:rowH, total: off || 1};
+}
+function lyRenderMini(container, cards){
+  if(!container) return;
+  // 预览与大屏同一口径：卡片按 y/总高、h/总高 画（跨行卡片就自然占两行）。
+  // 旧代码先「按 y 分行、行高取本行最大 h」，遇到跨两行的饼会把同排其他卡也拉成双倍高，
+  // 再往下排就溢出了预览框 —— 预览和真机对不上，用户只能凭猜。
+  let total = 0;
+  for(const k in cards){ total = Math.max(total, lyNumP(cards[k].y) + lyNumP(cards[k].h)); }
+  if(total <= 0) total = 1;
+  let html = '';
+  for(const k in cards){
+    const c = cards[k];
+    const left = (lyNumP(c.x) / 12) * 100, w = (lyNumP(c.w) / 12) * 100;
+    const top = (lyNumP(c.y) / total) * 100, h = (lyNumP(c.h) / total) * 100;
+    html += '<div class="lym" style="left:'+left.toFixed(3)+'%;top:'+top.toFixed(3)+'%;width:'+w.toFixed(3)+'%;height:'+h.toFixed(3)+'%"><i></i></div>';
+  }
+  container.style.position = 'relative';
+  container.innerHTML = html;
+}
+
+// 预览要和「显示模块 / 布局版本」两个开关保持一致，否则勾掉模块预览里还占着位子
+// category 不在此列：这张卡里还有数量饼，关金额也要显示（只是少一个饼）
+const LY_AMT_KEYS = ['stat_in_amt','stat_out_amt','amt_trend','line_amt','dev_amt'];
+function lyPriceOn(){
+  const el = document.querySelector('input[name=show_price]');
+  return !!(el && el.checked);
+}
+/* 当前生效的版本：关掉「大屏显示金额」时只有无金额版；开着时看用户点的是哪一列 */
+function lyVersion(){
+  if(!lyPriceOn()) return 'np';
+  return (LY && LY.version === 'np') ? 'np' : 'price';
+}
+function lyVisibleCards(){
+  const ver = lyVersion();
+  const preset = LY_PRESETS[LY.mode];
+  let src = LY.cards || {};
+  // 预设模式下 LY.cards 是空的（坐标由服务端按预设重新生成），这里必须回落到预设坐标，
+  // 否则「点一下布局 → 预览直接变空」；自定义模式才有自己的 cards。
+  if(!Object.keys(src).length && preset){
+    src = (ver === 'np' && preset.noprice) ? preset.noprice : (preset.cards || {});
+  }
+  const mods = {};
+  document.querySelectorAll('input[name^="mod_"]').forEach(function(cb){ mods[cb.name.slice(4)] = cb.checked; });
+  const out = {};
+  for(const k in src){
+    const meta = LY_CARDS_META[k];
+    if(!meta) continue;
+    if(mods[meta.module] === false) continue;
+    if(ver === 'np' && LY_AMT_KEYS.indexOf(k) >= 0) continue;
+    out[k] = lyNormCard(src[k]);
+  }
+  return out;
+}
+function lyRenderPresetMini(el, cards){
+  if(!el) return;
+  lyRenderMini(el, cards);
 }
 
 function lySync(){
-  document.getElementById('ly-mode').value = LY.mode;
-  document.getElementById('ly-cards').value = JSON.stringify(LY.cards);
+  const modeEl = document.getElementById('ly-mode');
+  if(modeEl) modeEl.value = LY.mode;
+  const verEl = document.getElementById('ly-version');
+  if(verEl) verEl.value = lyVersion();
+  const cardsEl = document.getElementById('ly-cards');
+  if(cardsEl) cardsEl.value = JSON.stringify(LY.cards);
+  lySyncHigh();
+}
+/* 高亮：选中的那一格实线（就是大屏当前在用的那一版），同族的另一格虚线；
+   未勾选「大屏显示金额」时，左列（有金额版）整列置灰并禁止点击。 */
+function lySyncHigh(){
+  const price = lyPriceOn();
+  const ver = lyVersion();
   document.querySelectorAll('.ly-preset').forEach(function(el){
-    el.classList.toggle('on', LY.mode === el.getAttribute('data-p'));
+    const isPrice = el.getAttribute('data-v') === 'price';
+    const sel = el.getAttribute('data-f') === LY.mode;
+    const live = sel && el.getAttribute('data-v') === ver;
+    el.classList.toggle('on', live);
+    el.classList.toggle('sel', sel && !live);
+    el.classList.toggle('locked', isPrice && !price);
   });
-  document.getElementById('ly-custom').checked = (LY.mode === 'custom');
-  document.getElementById('ly-editor').style.display = (LY.mode === 'custom') ? 'block' : 'none';
+  const heads = document.querySelectorAll('.ly-colhead');
+  if(heads.length >= 2) heads[0].classList.toggle('lock', !price);
+  const verEl = document.getElementById('ly-version');
+  if(verEl) verEl.value = ver;
 }
 
 function lyApplyPreset(name){
   if(!LY_PRESETS[name]) return;
   LY.mode = name;
-  LY.cards = {};
-  const p = LY_PRESETS[name];
-  for(const k in p.cards){
-    const v = p.cards[k];
-    LY.cards[k] = {x:v[0], y:v[1], w:v[2], h:v[3]};
-  }
-  lyDraw(); lySync();
+  LY.cards = {};   // 预设模式由服务端按 SCREEN_LAYOUTS 重新生成坐标
+  lyDrawMiniPreview(); lySync();
 }
 
-function lyToggleCustom(){
-  if(document.getElementById('ly-custom').checked){
-    LY.mode = 'custom';
-  } else {
-    const on = document.querySelector('.ly-preset.on');
-    if(on) lyApplyPreset(on.getAttribute('data-p'));
-    else lyApplyPreset('classic');
-    return;
-  }
-  lyDraw(); lySync();
-}
-
-function lyHit(x,y,w,h,skip){
-  for(const k in LY.cards){
-    if(k===skip) continue;
-    const c = LY.cards[k];
-    if(x < c.x+c.w && x+w > c.x && y < c.y+c.h && y+h > c.y) return k;
-  }
-  return null;
-}
+let cfg_layout_mode = '{{ cfg.get("layout", {}).get("mode", "classic") if cfg.get("layout") else "classic" }}';
+let cfg_layout_ver = '{{ (cfg.get("layout", {}).get("version") or "price") if cfg.get("layout") else "price" }}';
 
 function lyInit(){
-  const cardsRaw = {{ cfg.layout.cards | tojson }};
-  const mode = '{{ cfg.layout.mode }}';
-  LY = {mode: mode, cards: {}};
+  let m = cfg_layout_mode;
+  if(/_np$/.test(m) && LY_PRESETS[m.slice(0, -3)]) m = m.slice(0, -3);   // 老库 *_np → 对应族
+  if(!LY_PRESETS[m]) m = 'classic';
+  const cardsRaw = {{ (cfg.get("layout", {}).get("cards", {}) if cfg.get("layout") else {}) | tojson }};
+  // forcedNp：页面打开时金额就是关的，版本是被强制成 np 的（不是用户主动选的），
+  // 等用户重新勾上金额时自动弹回有金额版，避免「勾了金额却还是无金额排布」的困惑。
+  LY = {mode: m, version: (cfg_layout_ver === 'np' ? 'np' : 'price'),
+        forcedNp: !lyPriceOn(), cards: {}};
   for(const k in cardsRaw){
     const c = cardsRaw[k];
     LY.cards[k] = {x:c.x, y:c.y, w:c.w, h:c.h};
   }
-  lyDrawMinis();
-  lyDraw();
+  // 两列分版：表头行 + 每族一行（左=有金额版缩略图，右=无金额版缩略图）
+  const grid = document.getElementById('ly-preset-grid');
+  let html = '<div class="ly-colhead">' + LY_HEAD_P + '</div><div class="ly-colhead">' + LY_HEAD_N + '</div>';
+  for(const fam of LY_FAMS){
+    const p = LY_PRESETS[fam];
+    if(!p) continue;
+    html += '<div class="ly-preset" data-f="'+fam+'" data-v="price">'
+      + '<div class="ly-preset-name">'+p.name+'</div>'
+      + '<div class="ly-preset-mini"></div></div>'
+      + '<div class="ly-preset np" data-f="'+fam+'" data-v="np">'
+      + '<div class="ly-preset-name">'+p.name+'<span class="np-tag">'+LY_HEAD_N+'</span></div>'
+      + '<div class="ly-preset-mini"></div></div>';
+  }
+  grid.innerHTML = html;
+  // 画完结构再逐张填缩略图（自定义渲染函数需要容器已在文档里）
+  for(const fam of LY_FAMS){
+    const p = LY_PRESETS[fam];
+    if(!p) continue;
+    [[p.cards, 'price'], [p.noprice || {}, 'np']].forEach(function(pair){
+      const box = grid.querySelector('.ly-preset[data-f="'+fam+'"][data-v="'+pair[1]+'"] .ly-preset-mini');
+      const cards = {};
+      for(const k in pair[0]){ cards[k] = lyNormCard(pair[0][k]); }
+      lyRenderMini(box, cards);
+    });
+  }
+  // 两格都可点：点哪一格就是「大屏用哪一版」；金额没开时有金额版整列不可点
+  grid.querySelectorAll('.ly-preset').forEach(function(el){
+    el.addEventListener('click', function(){
+      const v = el.getAttribute('data-v');
+      if(v === 'price' && !lyPriceOn()) return;   // 未勾选「大屏显示金额」：有金额版不可选
+      if(v === 'np'){
+        // v1.0.14：点「无金额版」就是不要金额，勾选框同步取消，两者始终自洽。
+        // 直接改 checked 不会触发 change，后面的 lyApplyPreset 负责重画预览/高亮。
+        const px = document.querySelector('input[name=show_price]');
+        if(px && px.checked) px.checked = false;
+        // 记成「被逼成 np」：用户重新勾金额时自动弹回有金额版，
+        // 否则会提交出「金额开 + np」，被后端收敛回去，看着像开关没生效。
+        LY.forcedNp = true;
+      } else {
+        LY.forcedNp = false;                      // 主动点的有金额版，不自动回弹
+      }
+      LY.version = v;
+      lyApplyPreset(el.getAttribute('data-f'));
+    });
+  });
+  lyDrawMiniPreview();
   lySync();
 }
 
-(function(){
-  const canvas = document.getElementById('ly-canvas');
-  if(!canvas) return;
-  canvas.addEventListener('mousedown', function(e){
-    const t = e.target;
-    const cardEl = t.closest('.ly-card');
-    if(!cardEl) return;
-    const key = cardEl.getAttribute('data-k');
-    const c = LY.cards[key];
-    if(!c) return;
-    const rect = canvas.getBoundingClientRect();
-    lyDrag = {key:key, cv:canvas, ox:c.x, oy:c.y, ow:c.w, oh:c.h, el:cardEl,
-              mode: t.classList.contains('ly-resize') ? 'resize' : 'move'};
-    e.preventDefault();
+// 大屏显示金额勾选变化时：版本跟着切换（关→只能无金额版；重开→回到有金额版）+ 预览同步
+document.querySelector('input[name=show_price]').addEventListener('change', function(){
+  if(!lyPriceOn()){
+    LY.forcedNp = (LY.version !== 'np');   // 记下「这是被开关逼成 np 的」
+    LY.version = 'np';
+  } else if(LY.forcedNp){
+    LY.version = 'price';                  // 之前是被逼的，重新勾上就弹回有金额版
+    LY.forcedNp = false;
+  }
+  lyDrawMiniPreview();
+  lySync();
+});
+
+// 模块勾选变化时，同步更新缩微预览
+document.querySelectorAll('input[name^="mod_"]').forEach(function(cb){
+  cb.addEventListener('change', function(){
+    lyDrawMiniPreview();
   });
-  document.addEventListener('mousemove', function(e){
-    if(!lyDrag) return;
-    const d = lyDrag;
-    // 每次用实时画布位置，避免页面滚动后坐标错位
-    const r = d.cv.getBoundingClientRect();
-    const ux = (e.clientX - r.left) / r.width * LY_COLS;
-    const uy = (e.clientY - r.top) / r.height * LY_ROWS;
-    const c = LY.cards[d.key];
-    if(d.mode === 'move'){
-      // 以卡片中心跟随鼠标
-      let nx = Math.round(ux - d.ow/2), ny = Math.round(uy - d.oh/2);
-      nx = Math.max(0, Math.min(nx, LY_COLS - d.ow));
-      ny = Math.max(0, Math.min(ny, LY_ROWS - d.oh));
-      if(nx === c.x && ny === c.y) return;
-      // {{ tr('目标位置被占用') }}：{{ tr('不移动') }}、{{ tr('不做交换') }}，避免拖动过程中错乱跳变
-      if(lyHit(nx, ny, d.ow, d.oh, d.key)) return;
-      c.x = nx; c.y = ny;
-      d.el.style.left = (nx*100/12)+'%'; d.el.style.top = (ny*100/10)+'%';
-    } else {
-      let nw = Math.round(ux - d.ox), nh = Math.round(uy - d.oy);
-      nw = Math.max(1, Math.min(nw, LY_COLS - d.ox));
-      nh = Math.max(1, Math.min(nh, LY_ROWS - d.oy));
-      if(nw === c.w && nh === c.h) return;
-      if(lyHit(d.ox, d.oy, nw, nh, d.key)) return;
-      c.w = nw; c.h = nh;
-      d.el.style.width = (nw*100/12)+'%'; d.el.style.height = (nh*100/10)+'%';
-    }
-  });
-  document.addEventListener('mouseup', function(){
-    // 松手后一次性重绘并同步表单，拖动过程中不做整卡重绘
-    if(lyDrag){ lyDrag = null; lyDraw(); lySync(); }
-  });
-})();
+});
+
+// 页面加载完成后初始化布局预览
+document.addEventListener('DOMContentLoaded', function(){
+  lyInit();
+});
+
 lyInit();
 </script>
-.style-card{cursor:pointer;border:2px solid #e2e8f0;border-radius:10px;padding:8px;text-align:center;background:#fff;transition:border-color .15s}
-.style-card:hover{border-color:#93c5fd}
-.style-card.on{border-color:#2563eb;box-shadow:0 0 0 1px #2563eb inset}
+<style>
+/* ---- ② 大屏风格：配色缩略图 = 一块迷你大屏 ---- */
+.st-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+@media (max-width:1180px){ .st-grid{grid-template-columns:repeat(2,1fr)} }
+.style-card{position:relative;cursor:pointer;border:2px solid #e2e8f0;border-radius:12px;padding:9px;text-align:center;
+  background:#fff;transition:border-color .15s,box-shadow .15s,transform .15s}
+.style-card:hover{border-color:#93c5fd;transform:translateY(-1px)}
+.style-card.on{border-color:#2563eb;box-shadow:0 0 0 1px #2563eb inset, 0 6px 18px rgba(37,99,235,.12)}
+.style-card.on::after{content:'✓';position:absolute;right:9px;top:9px;width:19px;height:19px;border-radius:50%;
+  background:#2563eb;color:#fff;font-size:12px;line-height:19px;text-align:center;box-shadow:0 2px 6px rgba(37,99,235,.35)}
 .style-card label{display:block;cursor:pointer}
-.style-swatch{display:block;height:46px;border-radius:8px;position:relative;margin-bottom:6px}
-.style-swatch i{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:22px;height:22px;border-radius:50%;box-shadow:0 0 0 3px rgba(255,255,255,.35)}
-.style-swatch.custom{background:#f1f5f9;display:flex;align-items:center;justify-content:center;font-size:22px}
-.style-name{font-size:12.5px;color:#334155;font-weight:600}
+.style-name{display:block;margin-top:7px;font-size:13px;color:#334155;font-weight:600}
+.style-tag{display:block;margin-top:2px;font-size:11px;color:#94a3b8;line-height:1.35}
+
+/* 预览框：内容全部来自 --p-* 变量，换配色不用改这里 */
+.pv{position:relative;display:flex;flex-direction:column;gap:5px;height:126px;border-radius:9px;padding:8px;
+  overflow:hidden;background:linear-gradient(155deg,var(--p-sbg),var(--p-sbg2));
+  box-shadow:inset 0 0 0 1px rgba(15,23,42,.08)}
+.pv-head{display:flex;align-items:center;gap:5px;flex:none;height:11px}
+.pv-head i{width:5px;height:5px;border-radius:50%;background:var(--p-num);flex:none}
+.pv-head b{height:5px;width:34%;border-radius:3px;background:var(--p-label);opacity:.55}
+.pv-head em{margin-left:auto;height:5px;width:16%;border-radius:3px;background:var(--p-label);opacity:.3}
+.pv-row{display:flex;gap:5px;flex:1;min-height:0}
+.pv-row2{flex:.85}
+.pv-card{position:relative;flex:1;min-width:0;border-radius:5px;padding:5px 5px 4px;
+  background:var(--p-card);border:1px solid var(--p-cardb);
+  display:flex;flex-direction:column;justify-content:center;gap:3px;overflow:hidden}
+.pv-card i.pv-t{display:block;height:3px;width:58%;border-radius:2px;background:var(--p-label);opacity:.6}
+.pv-card b.pv-n{display:block;height:7px;width:62%;border-radius:2px;background:var(--p-num)}
+.pv-card b.pv-s{display:block;height:3px;width:46%;border-radius:2px;background:var(--p-label);opacity:.4}
+.pv-wide{justify-content:flex-start;gap:5px}
+.pv-bars{display:flex;align-items:flex-end;gap:3px;flex:1;min-height:0}
+.pv-bars u{flex:1;border-radius:2px 2px 0 0;background:var(--p-num);opacity:.7}
+.pv-bars u:nth-child(2n){background:var(--p-accent);opacity:.55}
+
+/* 皮肤特征：一眼能看出这是哪一套 */
+.pv-glow::before{content:'';position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(120px 70px at 18% -6%,rgba(56,189,248,.20),transparent 72%)}
+.pv-glow .pv-card::before{content:'';position:absolute;left:16%;right:16%;top:0;height:1px;
+  background:linear-gradient(90deg,transparent,var(--p-num),transparent);opacity:.6}
+
+.pv-hud{background-image:
+  linear-gradient(rgba(56,189,248,.09) 1px,transparent 1px),
+  linear-gradient(90deg,rgba(56,189,248,.09) 1px,transparent 1px),
+  linear-gradient(155deg,var(--p-sbg),var(--p-sbg2));
+  background-size:15px 15px,15px 15px,auto}
+.pv-hud::before,.pv-hud::after{content:'';position:absolute;pointer-events:none}
+/* 四角括号：用 8 条渐变边线画 L 形（真机皮肤里是卡片 background 底图，同一个做法） */
+.pv-hud::before{inset:5px;opacity:.85;
+  background:
+    linear-gradient(var(--p-num),var(--p-num)) left top/11px 1.5px no-repeat,
+    linear-gradient(var(--p-num),var(--p-num)) left top/1.5px 11px no-repeat,
+    linear-gradient(var(--p-num),var(--p-num)) right top/11px 1.5px no-repeat,
+    linear-gradient(var(--p-num),var(--p-num)) right top/1.5px 11px no-repeat,
+    linear-gradient(var(--p-num),var(--p-num)) left bottom/11px 1.5px no-repeat,
+    linear-gradient(var(--p-num),var(--p-num)) left bottom/1.5px 11px no-repeat,
+    linear-gradient(var(--p-num),var(--p-num)) right bottom/11px 1.5px no-repeat,
+    linear-gradient(var(--p-num),var(--p-num)) right bottom/1.5px 11px no-repeat;
+}
+.pv-hud .pv-card{border-color:color-mix(in srgb, var(--p-num) 30%, transparent)}
+
+.pv-glass{background:var(--p-sbg)}
+.pv-glass::before{content:'';position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(95px 95px at 8% -4%,color-mix(in srgb, var(--p-num) 50%, transparent),transparent 70%),
+             radial-gradient(95px 95px at 96% 104%,color-mix(in srgb, var(--p-accent) 30%, transparent),transparent 70%)}
+.pv-glass .pv-card{background:linear-gradient(160deg,color-mix(in srgb, var(--p-num) 20%, transparent),rgba(255,255,255,.05));
+  border-color:color-mix(in srgb, var(--p-num) 40%, transparent);border-radius:8px}
+.pv-glass .pv-card::before{content:'';position:absolute;left:14%;right:14%;top:0;height:1px;
+  background:linear-gradient(90deg,transparent,color-mix(in srgb, var(--p-num) 70%, transparent),transparent)}
+
+.pv-gold .pv-card{background:linear-gradient(180deg,#17171b,#101013);border-color:rgba(212,175,55,.30)}
+.pv-gold .pv-card::before{content:'';position:absolute;left:13%;right:13%;top:0;height:1px;
+  background:linear-gradient(90deg,transparent,rgba(212,175,55,.55),transparent)}
+.pv-gold .pv-card i.pv-t{background:rgba(212,175,55,.45);opacity:1}
+
+.pv-grid{background-image:
+  linear-gradient(rgba(61,220,154,.10) 1px,transparent 1px),
+  linear-gradient(90deg,rgba(61,220,154,.10) 1px,transparent 1px),
+  linear-gradient(155deg,var(--p-sbg),var(--p-sbg2));
+  background-size:17px 17px,17px 17px,auto}
+.pv-grid .pv-card{border-color:rgba(61,220,154,.28)}
+
+/* ── v1.0.9 三套新风格：缩略图连形状一起区分（切角 / 双环圆角 / 线框）── */
+.pv-ember{background:
+  radial-gradient(90px 26px at 50% 108%,color-mix(in srgb, var(--p-num) 30%, transparent),transparent 72%),
+  linear-gradient(170deg,var(--p-sbg),var(--p-sbg2))}
+.pv-ember .pv-card{background:linear-gradient(180deg,var(--p-card),color-mix(in srgb, var(--p-card) 82%, var(--p-sbg)));
+  border-color:color-mix(in srgb, var(--p-num) 26%, transparent);
+  border-radius:0;clip-path:polygon(0 0,calc(100% - 8px) 0,100% 8px,100% 100%,0 100%)}
+.pv-ember .pv-card::before{content:'';position:absolute;left:0;top:0;width:30%;height:2px;
+  background:linear-gradient(90deg,color-mix(in srgb, var(--p-num) 85%, transparent),transparent)}
+.pv-ember .pv-card i.pv-t{background:color-mix(in srgb, var(--p-num) 45%, transparent);opacity:1;transform:skewX(-20deg);border-radius:0}
+
+.pv-rose{background:radial-gradient(circle at 30% 12%,color-mix(in srgb, var(--p-num) 16%, var(--p-sbg2)),var(--p-sbg) 72%)}
+.pv-rose .pv-card{background:linear-gradient(180deg,var(--p-card),color-mix(in srgb, var(--p-card) 84%, var(--p-sbg)));
+  border-color:color-mix(in srgb, var(--p-num) 28%, transparent);
+  border-radius:10px;box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--p-num) 16%, transparent)}
+.pv-rose .pv-card::before{content:'';position:absolute;left:22%;right:22%;bottom:0;height:1px;
+  background:linear-gradient(90deg,transparent,color-mix(in srgb, var(--p-num) 55%, transparent),transparent)}
+.pv-rose .pv-card i.pv-t{background:radial-gradient(circle,#ffffff,var(--p-num));opacity:1;
+  width:5px;height:5px;border-radius:50%;margin-right:auto}
+
+.pv-aqua{background:
+  repeating-radial-gradient(circle at 20% 6%,color-mix(in srgb, var(--p-num) 10%, transparent) 0 1px,transparent 1px 34px),
+  linear-gradient(180deg,var(--p-sbg),var(--p-sbg2) 78%)}
+.pv-aqua .pv-card{background:color-mix(in srgb, var(--p-card) 88%, transparent);border:none;
+  border-left:2px solid color-mix(in srgb, var(--p-num) 48%, transparent);
+  border-right:1px solid color-mix(in srgb, var(--p-num) 16%, transparent);
+  border-radius:1px}
+.pv-aqua .pv-card::before{content:'';position:absolute;left:0;right:0;top:0;height:1px;
+  background:repeating-linear-gradient(90deg,color-mix(in srgb, var(--p-num) 50%, transparent) 0 5px,transparent 5px 9px)}
+.pv-aqua .pv-card i.pv-t{width:12px;height:2px;background:color-mix(in srgb, var(--p-num) 55%, transparent);opacity:1}
+
+.pv-light .pv-card{background:#fff;border-color:#e2e8f0;box-shadow:0 1px 3px rgba(15,23,42,.09)}
+.pv-light .pv-card::before{content:'';position:absolute;left:0;right:0;top:0;height:2px;
+  background:linear-gradient(90deg,var(--p-num),var(--p-accent));opacity:.8}
+
+.pv-custom{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;
+  background:repeating-linear-gradient(45deg,#f1f5f9,#f1f5f9 9px,#e9eef5 9px,#e9eef5 18px);
+  box-shadow:inset 0 0 0 1.5px #dbe3ed}
+.pv-cart{font-size:26px;line-height:1;opacity:.9}
+.pv-ctext{font-size:11px;color:#7c8ba1}
+
+/* 星舰舰桥：梯形舰桥条 + 星点 + 斜角标签 */
+.pv-bridge{background:
+  radial-gradient(circle at 20% 30%,color-mix(in srgb, var(--p-num) 55%, transparent) 0 1px,transparent 1.6px),
+  radial-gradient(circle at 72% 68%,color-mix(in srgb, var(--p-accent) 50%, transparent) 0 1px,transparent 1.6px),
+  linear-gradient(170deg,var(--p-sbg),var(--p-sbg2));
+  background-size:23px 21px,31px 29px,auto}
+.pv-bridge::before{content:'';position:absolute;left:24%;right:24%;top:0;height:9px;
+  background:color-mix(in srgb, var(--p-head2) 80%, transparent);
+  clip-path:polygon(8% 0,92% 0,100% 100%,0 100%);
+  border-bottom:1px solid var(--p-accent)}
+.pv-bridge .pv-card{background:color-mix(in srgb, var(--p-card) 88%, transparent);
+  border-color:color-mix(in srgb, var(--p-accent) 40%, transparent);border-radius:2px}
+.pv-bridge .pv-card i.pv-t{width:auto;height:4px;opacity:1;border-radius:0;
+  background:color-mix(in srgb, var(--p-accent) 45%, transparent);
+  clip-path:polygon(0 0,calc(100% - 4px) 0,100% 100%,4px 100%)}
+
+/* ---- ② 样式 × 色系：两排选择器 ---- */
+.st-grid5{grid-template-columns:repeat(6,1fr)}
+@media (max-width:1180px){ .st-grid5{grid-template-columns:repeat(3,1fr)} }
+.pick-cap{font-size:13px;font-weight:700;color:#334155;margin:0 0 8px}
+.pick-note{font-weight:400;color:#94a3b8;font-size:12px;margin-left:8px}
+.pal-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:10px}
+@media (max-width:1180px){ .pal-grid{grid-template-columns:repeat(3,1fr)} }
+.pal-card{cursor:pointer;border:2px solid #e2e8f0;border-radius:12px;padding:9px;text-align:center;
+  background:#fff;transition:border-color .15s,box-shadow .15s,transform .15s}
+.pal-card:hover{border-color:#93c5fd;transform:translateY(-1px)}
+.pal-card.on{border-color:#2563eb;box-shadow:0 0 0 1px #2563eb inset,0 6px 18px rgba(37,99,235,.12)}
+.pal-card label{display:block;cursor:pointer}
+/* 色样：一块「迷你大屏」——背景渐变 + 两张卡片 + 数字色点 + 强调色点，
+   四色就能看出深浅冷暖，比单个圆点强得多 */
+.pal-sw{display:block;height:52px;border-radius:8px;overflow:hidden;
+  box-shadow:inset 0 0 0 1px rgba(15,23,42,.10)}
+.pal-bg{display:flex;align-items:flex-end;gap:3px;height:100%;padding:7px;
+  background:linear-gradient(150deg,var(--s-sbg),var(--s-sbg2))}
+.pal-bg b{flex:1;height:60%;border-radius:4px;background:var(--s-card);
+  border:1px solid var(--s-cardb);position:relative}
+.pal-bg b::after{content:'';position:absolute;left:4px;right:34%;top:4px;height:3px;
+  border-radius:2px;background:var(--s-num)}
+.pal-bg i{width:9px;height:9px;border-radius:50%;flex:none}
+.pal-num{background:var(--s-num)}
+.pal-acc{background:var(--s-accent)}
+.pal-sw-custom{display:flex;align-items:center;justify-content:center;
+  background:#f1f5f9;border:1px dashed #cbd5e1}
 </style>
 <script>
-function pickStyle(key){
+/* 风格选择只改配色（皮肤由大屏端按 style 自动挂载），与 ⑧ 卡片布局互不影响 */
+/* 样式只改形状（大屏端 body.skin-*），色系只改颜色（:root 的 --* 变量），互不影响 */
+const PAL_VARS = {{ SCREEN_PALETTES | tojson }};
+let LAST_PRESET = '{{ cfg.palette if cfg.palette != "custom" else palette_base }}';
+
+function baseKey(){
+  var el = document.getElementById('style-base');
+  return (el && el.value) || 'deepblue';
+}
+function baseVars(){
+  var s = PAL_VARS[baseKey()];
+  return (s && s.vars) || {};
+}
+function setBase(key){
+  var el = document.getElementById('style-base');
+  if(el) el.value = key;
+  var nm = (PAL_VARS[key] || {}).name || key;
+  document.querySelectorAll('.base-name').forEach(function(n){ n.textContent = nm; });
+}
+/* 换过色系再点自定义 → 清掉旧的自定义值，让每个颜色框重新「跟随」新色系。 */
+function clearCustom(){
+  document.querySelectorAll('#custom-colors label').forEach(function(lab){
+    var hid = lab.querySelector('input[type=hidden][name^=sc_]');
+    if(hid) hid.value = '';
+  });
+}
+function syncCustomColors(){
+  var vars = baseVars();
+  document.querySelectorAll('#custom-colors label').forEach(function(lab){
+    var hid = lab.querySelector('input[type=hidden][name^=sc_]');
+    var col = lab.querySelector('input[type=color]');
+    if(!hid || !col) return;
+    var k = hid.name.slice(3);
+    if(!vars[k]) return;
+    if(!hid.value) col.value = vars[k];
+    var btn = lab.querySelector('button');
+    if(btn) btn.setAttribute('onclick',
+      "this.previousElementSibling.previousElementSibling.value='';this.previousElementSibling.value='" + vars[k] + "'");
+  });
+}
+
+/* 点了色系 → 5 张样式缩略图当场换色（形状不动），让客户直接看到组合效果 */
+function paintPreviews(key){
+  var v = (PAL_VARS[key] || {}).vars;
+  if(!v) return;
+  var map = {'--p-sbg':'sbg','--p-sbg2':'sbg2','--p-head':'head','--p-head2':'head2',
+             '--p-card':'card','--p-cardb':'cardb','--p-num':'num','--p-accent':'accent','--p-label':'label'};
+  document.querySelectorAll('.pv-skin').forEach(function(el){
+    for(var cssVar in map){
+      if(v[map[cssVar]]) el.style.setProperty(cssVar, v[map[cssVar]]);
+    }
+  });
+}
+
+function pickSkin(key){
   document.querySelectorAll('.style-card input[name=style]').forEach(function(r){ r.checked = r.value === key; });
   document.querySelectorAll('.style-card').forEach(function(c){ c.classList.toggle('on', c.getAttribute('data-style') === key); });
+}
+
+function pickPalette(key){
+  document.querySelectorAll('.pal-card input[name=palette]').forEach(function(r){ r.checked = r.value === key; });
+  document.querySelectorAll('.pal-card').forEach(function(c){ c.classList.toggle('on', c.getAttribute('data-pal') === key); });
   var box = document.getElementById('custom-colors');
   if(box) box.style.display = key === 'custom' ? 'block' : 'none';
+  if(key === 'custom'){
+    if(LAST_PRESET && LAST_PRESET !== baseKey()){
+      clearCustom();
+      setBase(LAST_PRESET);
+    }
+    syncCustomColors();
+  } else {
+    LAST_PRESET = key;
+    setBase(key);
+    syncCustomColors();
+    paintPreviews(key);
+  }
 }
+syncCustomColors();
 </script>
 {% endblock %}

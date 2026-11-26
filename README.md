@@ -1,6 +1,10 @@
-# 备件管理系统 Spare Parts Management System (SPMS)
+# 备件管理系统 Spare Parts Management System（SPMS）
 
 中文版 | [English](#english)
+
+**当前版本：v1.2（2026-11-25）**
+
+本项目以当前代码状态作为 v1.2 发布。旧开发过程中的版本演进不再计入发布历史，全部能力作为 v1.2 一次性交付。
 
 ---
 
@@ -8,196 +12,213 @@
 
 ### 项目简介
 
-面向制造工厂周边备件与辅料管理的 Web 系统：备件建档、多库位库存、出入库调库申请与审批、呆滞物料分析、回收站、多数据库、AD 域登录、数据大屏，支持 9 种界面语言。内置 Python 运行时，双击 `Start.bat` 即可运行，无需安装 Python 或第三方包。(需下载发行版)
+SPMS 是面向制造工厂产线的备件,辅料，工具的管理系统，覆盖备件建档、四级库位、库存三态、出入库与调库、借换检修、审批、盘点、呆滞分析、数据大屏和备份恢复。系统提供 11 种界面语言，支持 SQLite、MySQL、MariaDB、PostgreSQL、SQL Server、Oracle，可单机离线使用，也可指向共享数据库在局域网内多人协作。
+
+Windows 交付包内置 Python 运行时与全部依赖，解压后双击 `Start.bat` 即可运行，无需安装 Python 或第三方包。
+
+### 核心能力
+
+- **备件主数据**：建档、编辑、停用恢复、Excel 导入导出、多库位录入、整数/小数数量类型、图片压缩存库、字段级操作审计。
+- **四级库位与三态管理**：仓库-货架-货位-格位；库位区分良品、待报废、待维修三态，待报废区只允许报废出库，待维修区只允许走借·换·检·修。
+- **报废复判调库**：待报废区的件复判可修时可转入待维修区，必须填写复判原因，且执行人须持「待报废转待维修复判」权限；流水固定留痕，配件状态与批次原样保留，不会被当作良品。
+- **库存与批次**：每个库存行保留批次与入库日期；调库支持整库位和批次两级选择；先进先出提示可在系统设置中开关和自定义。
+- **出入库与审批**：领用、直接出入库、调库、借出、换货、检测、维修及其还回；贵重件强制审批；撤销请求走仓管审批回滚。
+- **借换检修**：借出保留原批次；换/检/修还回生成 `RT` 新批次，保证追溯链路完整。
+- **申请单批量提交**：出库、入库、调库、借换检修四类分批成单；逐行校验，错误行标红，成功与失败结果分别说明。
+- **盘点管理**：按全部、仓库、货架、分类等范围盘点；手机扫码录入；周期节点、复盘单、合并盘点报告；正常行和差异行都展示，差异可永久留痕并生成原因分析。
+- **分析图表**：库存、入库、出库、领用多维分析；设备型号领用趋势可点击柱子下钻柏拉图，数量与金额双图随 Excel 导出。
+- **数据大屏**：8 套预设布局（每套带金额/无金额双版本）、6 套配色与自定义配色；卡片拖拽排版；分类占比双饼图；刷新间隔、模块增减均可配。
+- **权限与安全**：角色 × 模块 × 子操作三级矩阵；金额为敏感字段，无权限者全站不可见；API Key 鉴权；操作审计。
+- **多语言**：中、英、日、韩、泰、越、俄、法、德、西班牙、印尼 11 种语言，词条外置，缺译回退中文，带翻译覆盖率和运行期漏词管理。
+- **运维**：在线备份、自动备份、整库恢复审批流、回收站、AD 域登录、局域网部署。
 
 ### 功能模块
 
-| 模块 | 说明 |
-| --- | --- |
-| 数据图表主页 `/dashboard` | 库存/入库/出库分析图表，图表风格可配置 |
-| 备件信息维护 `/parts/manage` | 建档、编辑、删除、导入导出、多库位录入、数量类型（整数/小数）、操作记录查询 |
-| 备件查询 `/parts` | 按料号/名称/规格/分类/呆滞状态查询 |
-| 出入库调库申请 `/applications` | 领用/直接出入库申请、调库、撤销、审批 |
-| 出入库管理 `/inout` | 仓管执行出入库、驳回、审批、导出；贵重备件走审批 |
-| 货架管理 `/locations` | 仓库-货架-货位-格位四级库位、操作记录查询 |
-| 产线与设备 `/lines` | 产线/设备配置（备件适用记录） |
-| 部门配置 `/departments` | 部门管理 |
-| 用户管理 `/users` | 用户增删改、重置密码、角色分配 |
-| 权限配置 `/permissions` | 角色 × 模块 × 子操作三级权限矩阵 |
-| 审批中心 `/approval` | 贵重备件出库审批 |
-| 呆滞物料 `/stale` | 呆滞判定（默认 90 天可配）与清单导出 |
-| 回收站 `/recycle` | 备件/货架/部门/用户分组回收，保留期自动清除（默认 3 天可配）、管理员恢复（覆盖冲突提示） |
-| 备份恢复 `/restore` | 在线备份、自动备份（1 小时～每月）、整库恢复（审批流程） |
-| 系统设置 `/settings` | 数据库/部署/语言/AD 登录/对外接口/界面主题（6 套预设 + 自定义手动配色）/自定义表头/库存规则 |
-| 大屏 `/screen` | 车间数据大屏（多种布局 × 6 种配色 + 自定义手动配色，卡片拖拽排版、隐藏补位） |
+| 模块 | 路径 | 说明 |
+| --- | --- | --- |
+| 数据图表主页 | `/dashboard` | 库存/入库/出库/领用分析，趋势下钻柏拉图，图表与明细导出 Excel |
+| 备件信息维护 | `/parts/manage` | 建档、编辑、删除、导入导出、多库位、数量类型、停用恢复、操作记录 |
+| 备件查询 | `/parts` | 按料号/名称/规格/分类/状态筛选，一键发起申请 |
+| 出入库调库申请 | `/applications` | 领用、直接出入库、调库、借换检修申请与批量提交 |
+| 出入库管理 | `/inout` | 仓管执行、驳回、审批、导出；整库位/批次两级调库；FIFO 提示 |
+| 货架管理 | `/locations` | 四级库位、三态属性、库位码打印、操作记录 |
+| 借换检修台账 | `/borrows` | 借出、换出、检修、还回与批次追溯 |
+| 产线与设备 | `/lines` | 产线、设备配置及适用关系 |
+| 部门配置 | `/departments` | 部门管理 |
+| 用户管理 | `/users` | 用户增删改、重置密码、角色分配 |
+| 权限配置 | `/permissions` | 角色 × 模块 × 子操作权限矩阵 |
+| 审批中心 | `/approval` | 贵重件、盘点差异、恢复等业务审批 |
+| 呆滞物料 | `/stale` | 呆滞判定（默认 90 天可配）与清单导出 |
+| 盘点管理 | `/stocktakes` | 盘点单、扫码录入、周期节点、合并报告、差异审批与校准 |
+| 回收站 | `/recycle` | 备件/库位/部门/用户分组回收与恢复 |
+| 备份恢复 | `/restore` | 手动/自动备份与整库恢复审批 |
+| 系统设置 | `/settings` | 数据库、部署、语言、AD、API、主题、表头、库存规则 |
+| 数据大屏 | `/screen` | 车间大屏，布局、配色、卡片与金额开关均可配置 |
 
 ### 技术结构
 
-```
+```text
 SPMS/
-├── app.py                 # Flask 主程序（路由 + 业务逻辑，约 6650 行）
-├── config.py              # 静态配置：角色/权限模块/大屏卡片/布局/图表风格
-├── i18n.py                # 国际化入口：t()/tr()/TR() 与 current_lang()（flask.g 每请求缓存）
-├── i18n_tool.py           # 翻译同步工具：scan（扫描未登记词条）/ skeleton（生成 _pending.json 补译骨架）
-├── i18n/                  # 词条外置目录（中文原文作 key）
-│   ├── zh.json            # 120 条 key 式特殊词条
-│   ├── en.json            # 英文词条（2000+ 条）
-│   ├── ja/ko/th/vi/ru/fr/de.json   # 日/韩/泰/越/俄/法/德
-├── templates/             # 25 个 Jinja2 模板（文本经 tr()/TR() 包裹）
-├── static/
-│   ├── css/style.css      # 全局样式
-│   └── js/app.js, charts.js        # 前端逻辑（中文经 TR() 包裹）
-├── data/SPMS.db            # SQLite 默认数据库（可切换 MySQL/MariaDB/PostgreSQL/SQL Server/Oracle）
-├── settings.json          # 运行时设置（数据库、语言、AD、接口密钥等，随安装生成）
-├── Start.bat              # Windows 双击启动（内置运行时）
-├── 业务流程文档.md        # 完整业务流程说明（中文）
-└── README.md
+├── app.py                    # Flask 主程序：路由与业务逻辑
+├── config.py                 # 角色、权限模块、大屏卡片/布局/配色
+├── database.py / db.py       # 建表升级与多数据库适配
+├── settings.py / notify.py   # 运行配置与通知
+├── i18n.py                   # 兼容适配层（代理到 i18n2）
+├── i18n2/                    # 多语言内核：引擎/扫描/翻译/语言管理
+├── locale/                   # 词条真源：catalog、legacy_map、pages
+├── templates/                # Jinja2 模板
+├── static/                   # CSS、JavaScript、自绘图表
+├── data/                     # 运行期数据目录（包内不带数据库）
+├── settings.example.json     # 配置示例
+├── Start.bat                 # Windows 双击启动
+├── README.md / BusinessWorkflow.md / RELEASE_NOTES.md
+├── OpenSourceGuide.md / CONTRIBUTING.md / THIRD-PARTY-NOTICES.md
+└── requirements*.txt         # 源码运行依赖
 ```
 
 ### 多语言机制
 
-- **词条外置**：全部界面文案以中文原文为 key 存放在 `i18n/*.json`；新增语言/修改译文不动主程序。
-- **三层入口**：
-  - `{{ tr('中文') }}` — Jinja 模板文本
-  - `TR('中文')` — 内联/外部 JS
-  - `_i18n.t('中文', _i18n.current_lang())` — Python（含 flash 提示）
-- **缺译回退**：某语言缺词条时自动回退中文原文，界面不空白。
-- **性能**：`current_lang()` 每请求只解析一次（flask.g 缓存）；词条查询为 dict O(1)。
-- **业务数据不翻译**：备件名、部门名、用户名、申请原因等用户数据保持原文。
-- **扩展新词条**：代码中直接写 `tr('新文案')` → `python3 i18n_tool.py scan` 查看未登记项 → `python3 i18n_tool.py skeleton` 生成 `i18n/_pending.json` 补译骨架 → 译文 merge 进各语言 json。
+- 词条真源在 `locale/catalog/<语言>.json`，中文原文到语义 ID 的映射在 `locale/legacy_map.json`，页面分片在 `locale/pages.json`，语言注册表在 `locale/languages.json`。
+- 模板使用 `{{ tr('中文') }}`，JavaScript 使用 `TR('中文')`，Python 使用 `_i18n.t('中文', lang)`。
+- 缺译自动回退中文，不显示空白；业务数据（备件名、部门名、用户名、申请原因等）不翻译。
+- 新增文案需同步四路词条，并执行扫描确认 `unwrapped`、`unregistered`、`untranslated`、`shard_gap`、`runtime_miss` 均为 0。
 
 ### 运行
 
+源码运行：
+
 ```bash
-python3 app.py              # 默认端口 5000
-# 或 Windows 双击 Start.bat（无需安装 Python）
-# 首次运行访问 /setup 完成数据库初始化
+pip install -r requirements.txt        # SQLite 最小依赖
+python app.py                          # 默认端口 5000
 ```
 
-演示账号：`admin / admin123`（管理员）、`warehouse01 / 123456`（仓管）、`manager01 / 123456`（经理）、`user01 / 123456`（普通用户）。
+需要 MySQL、MariaDB、PostgreSQL、SQL Server、Oracle 时安装：
+
+```bash
+pip install -r requirements-full.txt
+```
+
+Windows 免安装包：
+
+1. 解压 `SPMS_v1.2_Windows_x64.zip`。
+2. 双击 `Start.bat`。
+3. 首次运行按初始化向导选择数据库路径、端口和是否加载演示数据。
+4. 用管理员账号登录后立即修改密码。
+
+演示账号：`admin / admin123`、`warehouse01 / 123456`、`manager01 / 123456`、`user01 / 123456`。
+
+生成模拟流水：
+
+```bash
+python seed_monthly_demo.py              # 今年 1 月至当前月
+python seed_monthly_demo.py --year 2025
+python seed_monthly_demo.py --force
+```
 
 ### 数据与部署
 
-- 数据库类型在系统设置中可选：SQLite（内置默认）、MySQL、MariaDB、PostgreSQL、SQL Server、Oracle。
-- 局域网共享：各电脑指向同一公共盘数据库路径即可共用；备件图片以二进制存库，随数据库文件一起拷贝。
-- 部署模式：开启部署设置后其他电脑可通过浏览器直接访问。
-- 备份：在线备份方式，运行中不中断；可设置自动备份周期（1 小时～每月），保留天数超限自动压缩。
+- SQLite 为默认数据库；其它数据库在系统设置中切换并安装相应驱动。
+- 局域网共享：各客户端指向同一个共享盘数据库文件；图片以二进制存库，随数据库文件一起备份。
+- 部署模式开启后，同一网络内其他电脑可通过浏览器访问。
+- 备份支持手动与自动（分钟至月），超量自动清理；整库恢复需走审批流。
+- 交付包不含数据库和 `settings.json`，避免覆盖现场数据。
 
-### 打包约定
+### 开源信息
 
-交付 zip 以 `SPMS/` 为前缀打包，排除 `*.pyc`、`data/*`、`settings.json`。
+- 许可证：Apache-2.0，详见 `LICENSE`。
+- 第三方依赖声明：`THIRD-PARTY-NOTICES.md`。
+- 发布说明：`RELEASE_NOTES.md`（v1.2 发布说明）。
+- 交付包：`SPMS_v1.2_Windows_x64.zip`（免安装）与 `SPMS_v1.2_Source.zip`（纯源码）。
+- 开源与发版流程：`OpenSourceGuide.md`。
+- 业务流程：`BusinessWorkflow.md`。
+- 贡献指南：`CONTRIBUTING.md`。
 
+软件按“现状”提供，不提供任何明示或默示担保。使用、复制、修改和再分发请遵守 Apache-2.0 与当地法律法规。
 
-### 开源
+## 关于作者
 
-- **许可证**：Apache-2.0——完全开源，可自由商用、修改、再分发，并附带专利授权（Copyright 2026 菜鸟大叔，详见 `LICENSE`）
-- **免责声明**：软件按「现状」(AS IS) 提供，作者不对使用后果承担任何责任，不提供任何明示或默示的担保（含适销性、特定用途适用性、不侵权）
-- **发布说明**：见 `开源发布指南.md`（安全检查、建仓、推送、Release 步骤）
-- **依赖安装**（使用方）：
+**菜鸟大叔**（@rookie-uncle / @Colton1982）
+- Gitee：https://gitee.com/rookie-uncle
+- GitHub：https://github.com/Colton1982
+- Email：510658927@qq.com｜colton.zhou@outlook.com｜colton.zhou@email.cn
+- QQ：510658927
 
-```bash
-pip install -r requirements.txt        # SQLite 即用：flask + ldap3 + pillow
-pip install -r requirements-full.txt   # 需要 MySQL/MariaDB/PostgreSQL/SQL Server/Oracle 时
-python app.py                          # 浏览器打开 http://127.0.0.1:5000
-```
-
-- **贡献**：欢迎提交 Issue / PR。新增界面文案按「多语言机制」补 `i18n/*.json` 并跑 `python3 i18n_tool.py scan` 校验后提交。
+Copyright © 2026 菜鸟大叔 (rookie-uncle / Colton1982). All rights reserved.
 
 ---
 
 ## English
 
-
 ### Overview
 
-A web-based spare parts management system for production lines: part master data, multi-location inventory, inbound/outbound & transfer requests with approval, stagnant material analysis, recycle bin, multiple database backends, AD domain login, and a data screen — with 9 UI languages. It bundles its own Python runtime: double-click `Start.bat`, no Python or third-party packages required. （Requires downloading the release build）
+SPMS is a management system for spare parts, consumables and tools on manufacturing production lines. It covers part master data, a four-level location model, three stock conditions, inbound/outbound and transfer workflows, borrow/exchange/verify/maintenance flows, approvals, stocktaking, stagnant-material analysis, shop-floor dashboards and backup/restore. The UI supports 11 languages and the data layer supports SQLite, MySQL, MariaDB, PostgreSQL, SQL Server and Oracle.
+
+The Windows package bundles Python and all dependencies. Unzip it and double-click `Start.bat`; no Python installation is required.
+
+### Key features
+
+- Part master data with multi-location stock, integer/decimal quantities, image compression, Excel import/export and audit logs.
+- Warehouse–rack–slot–cell locations with three conditions: good, pending scrap and pending repair. Pending-scrap stock can only be scrapped; pending-repair stock can only move through borrow/exchange/verify/maintenance.
+- Batch and inbound-date tracking; two-level transfer source selection (whole location or batch); configurable FIFO placement tip.
+- Issue, direct in/out, transfer, borrow, exchange, verification and maintenance flows with approvals and rollback requests.
+- Borrow returns keep the original batch; exchange/verify/maintenance returns create a new `RT` batch.
+- Per-type batch submission with row-level validation and explicit success/failure results.
+- Stocktaking by scope, mobile barcode entry, cycle nodes, merged period reports and permanent difference traceability.
+- Analytics with trend-to-Pareto drill-down and Excel export.
+- Shop-floor screen with eight layouts, price/no-price variants, six palettes and draggable cards.
+- Role/module/operation permission matrix, sensitive price fields, API key authentication and audit trails.
+- Eleven UI languages with externalized dictionaries and missing-translation reporting.
+- Online/scheduled backups, restore approval workflow, recycle bin, AD login and LAN deployment.
 
 ### Modules
 
-| Module | Description |
-| --- | --- |
-| Dashboard `/dashboard` | Inventory/in/out analytics charts; configurable chart styles |
-| Part Master `/parts/manage` | Create/edit/delete, import/export, multi-location entry, quantity type (integer/decimal), operation audit log |
-| Part Search `/parts` | Search by code/name/spec/category/stagnant state |
-| Applications `/applications` | Issue, direct in/out, transfer requests, cancellation, approval |
-| In/Out Management `/inout` | Warehouse execution, rejection, approval, export; valuable parts require approval |
-| Locations `/locations` | 4-level location tree: warehouse–rack–shelf–bin, operation audit log |
-| Lines & Equipment `/lines` | Line/equipment configuration with part applicability |
-| Departments `/departments` | Department management |
-| Users `/users` | User CRUD, password reset, role assignment |
-| Permissions `/permissions` | Role × module × sub-operation matrix |
-| Approval Center `/approval` | Valuable part issue approvals |
-| Stagnant `/stale` | Stagnant judgment (default 90 days, configurable) and list export |
-| Recycle Bin `/recycle` | Parts/racks/departments/users grouped; auto-purge after retention (default 3 days); admin restore with overwrite-conflict warning |
-| Backup & Restore `/restore` | Online backup, scheduled backup (1h–monthly), full restore (approval workflow) |
-| Settings `/settings` | Database, deployment, language, AD login, external API, UI theme (6 presets + custom colors), custom columns, stock rules |
-| Screen `/screen` | Shop-floor data screen (multiple layouts × 6 palettes + custom colors, draggable cards, auto gap-fill) |
+| Module | Path | Description |
+| --- | --- | --- |
+| Dashboard | `/dashboard` | Inventory/in/out/issue analytics, Pareto drill-down, Excel export |
+| Part Master | `/parts/manage` | Create/edit/delete, import/export, multi-location stock, audit log |
+| Part Search | `/parts` | Search by code/name/spec/category/state; launch requests |
+| Applications | `/applications` | Issue, in/out, transfer, borrow/exchange/verify/maintenance requests |
+| In/Out | `/inout` | Warehouse execution, approval, export, two-level transfer, FIFO tip |
+| Locations | `/locations` | Four-level location tree, three conditions, location-code printing |
+| Borrow Register | `/borrows` | Borrow/exchange/verify/maintenance and batch traceability |
+| Lines & Equipment | `/lines` | Lines, equipment and applicability |
+| Users & Permissions | `/users`, `/permissions` | User management and role/module/operation matrix |
+| Approval | `/approval` | Valuable parts, stocktake differences, restores |
+| Stagnant | `/stale` | Configurable stagnant threshold and export |
+| Stocktaking | `/stocktakes` | Orders, scanning, cycle nodes, merged reports, difference approval |
+| Backup & Restore | `/restore` | Scheduled backup and approval-controlled restore |
+| Settings | `/settings` | Database, deployment, languages, AD, API, theme, stock rules |
+| Screen | `/screen` | Configurable shop-floor dashboard |
 
-### Code Structure
-
-```
-SPMS/
-├── app.py                 # Flask main app (routes + business logic, ~6650 lines)
-├── config.py              # Static config: roles, permission modules, screen cards/layouts, chart styles
-├── i18n.py                # i18n entry: t()/tr()/TR() and current_lang() (flask.g per-request cache)
-├── i18n_tool.py           # i18n sync tools: scan / skeleton (generates i18n/_pending.json)
-├── i18n/                  # Externalized term dictionaries (Chinese source text as key)
-│   ├── zh.json            # 120 key-style special terms
-│   ├── en.json            # English (2000+ entries)
-│   ├── ja/ko/th/vi/ru/fr/de.json   # Japanese/Korean/Thai/Vietnamese/Russian/French/German
-├── templates/             # 25 Jinja2 templates (text wrapped with tr()/TR())
-├── static/
-│   ├── css/style.css
-│   └── js/app.js, charts.js        # Front-end logic (Chinese wrapped with TR())
-├── data/SPMS.db            # Default SQLite DB (switchable to MySQL/MariaDB/PostgreSQL/SQL Server/Oracle)
-├── settings.json          # Runtime settings (generated on setup)
-├── Start.bat              # Windows launcher (bundled runtime)
-├── 业务流程文档.md        # Full business-process documentation (Chinese)
-└── README.md
-```
-
-### i18n Design
-
-- **Externalized terms**: all UI texts are keyed by the Chinese source in `i18n/*.json`; adding languages or editing translations never touches the main app.
-- **Three entry points**: `{{ tr('text') }}` (Jinja), `TR('text')` (JS), `_i18n.t('text', _i18n.current_lang())` (Python, incl. flash).
-- **Fallback**: a missing translation falls back to the Chinese source — the UI never shows blank.
-- **Performance**: `current_lang()` is resolved once per request (flask.g cache); lookups are O(1) dict reads.
-- **Business data is not translated**: part names, department names, usernames, request reasons, etc. stay as entered.
-- **Adding terms**: write `tr('new text')` in code, run `python3 i18n_tool.py scan` to list unregistered keys, `python3 i18n_tool.py skeleton` to generate `_pending.json`, then merge completed translations into each language file.
-
-### Run
+### Run from source
 
 ```bash
-python3 app.py              # default port 5000
-# or double-click Start.bat on Windows (no Python install needed)
-# First run: visit /setup to initialize the database
+pip install -r requirements.txt
+python app.py
+# open http://127.0.0.1:5000
 ```
 
-Demo accounts: `admin / admin123` (Admin), `warehouse01 / 123456` (Warehouse), `manager01 / 123456` (Manager), `user01 / 123456` (User).
+Use `requirements-full.txt` for non-SQLite database drivers.
 
-### Data & Deployment
+Demo accounts: `admin / admin123`, `warehouse01 / 123456`, `manager01 / 123456`, `user01 / 123456`.
 
-- Database type selectable in Settings: SQLite (built-in default), MySQL, MariaDB, PostgreSQL, SQL Server, Oracle.
-- LAN sharing: all computers point to the same shared-disk database path; part images are stored in the database as binary and travel with the DB file.
-- Deployment mode: other computers can access directly via browser after enabling deployment settings.
-- Backup: online, no interruption while running; scheduled backups from 1 hour to monthly with auto-compression beyond retention.
+### Open source
 
-### Packaging
+- License: Apache-2.0 (see `LICENSE`).
+- Third-party notices: `THIRD-PARTY-NOTICES.md`.
+- Release notes: `RELEASE_NOTES.md` (v1.2).
+- Open-source and release workflow: `OpenSourceGuide.md`.
+- Business rules: `BusinessWorkflow.md`.
+- Contributing: `CONTRIBUTING.md`.
 
-Delivered zips use the `SPMS/` prefix and exclude `*.pyc`, `data/*`, and `settings.json`.
+The software is provided “AS IS”, without warranty of any kind.
 
-### Open Source
+### About the Author
 
-- **License**: Apache-2.0 — fully open source, free for commercial use, modification and redistribution, with an explicit patent grant (Copyright 2026 Colton Zhou, see `LICENSE`)
-- **Disclaimer**: The software is provided "AS IS", without warranty of any kind (merchantability, fitness for a particular purpose, or non-infringement). The author is not liable for any claims or damages.
-- **Publishing guide**: `开源发布指南.md` (security check, repo setup, push, Release steps)
-- **Dependencies**:
+**Rookie Uncle** (@rookie-uncle / @Colton1982)
+- Gitee: https://gitee.com/rookie-uncle
+- GitHub: https://github.com/Colton1982
+- Email: 510658927@qq.com | colton.zhou@outlook.com | colton.zhou@email.cn
+- QQ: 510658927
 
-```bash
-pip install -r requirements.txt        # SQLite only: flask + ldap3 + pillow
-pip install -r requirements-full.txt   # for MySQL/MariaDB/PostgreSQL/SQL Server/Oracle
-python app.py                          # open http://127.0.0.1:5000
-```
-
-- **Contributing**: Issues and PRs welcome. For new UI strings, add entries in `i18n/*.json` and run `python3 i18n_tool.py scan` before submitting.
-
+Copyright © 2026 菜鸟大叔 (rookie-uncle / Colton1982). All rights reserved.

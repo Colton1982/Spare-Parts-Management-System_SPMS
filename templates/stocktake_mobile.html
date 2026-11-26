@@ -1,0 +1,459 @@
+{# SPMS 备件辅料仓管系统 | 作者：菜鸟大叔 (@rookie-uncle / @Colton1982) | 邮箱：510658927@qq.com | QQ：510658927 | Gitee：https://gitee.com/rookie-uncle | GitHub：https://github.com/Colton1982 | Copyright (c) 2026 rookie-uncle. All rights reserved. | Apache-2.0 #}
+<!DOCTYPE html>
+<html lang="{{ cur_lang }}" dir="{{ cur_dir or 'ltr' }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>{{ tr('手机盘点') }} · {{ st.no }}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'PingFang SC','Microsoft YaHei',Arial,sans-serif;background:#f3f6fa;color:#1f2937;padding-bottom:90px}
+.top{position:sticky;top:0;background:#2563eb;color:#fff;padding:14px 16px;z-index:10}
+.top .no{font-size:17px;font-weight:700;letter-spacing:.5px}
+.top .meta{font-size:12px;opacity:.85;margin-top:3px}
+.progress{margin-top:8px;height:6px;background:rgba(255,255,255,.25);border-radius:3px;overflow:hidden}
+.progress i{display:block;height:100%;background:#4ade80;border-radius:3px;transition:width .2s}
+.search{display:flex;gap:8px;padding:10px 16px;background:#fff;border-bottom:1px solid #e5e9f0}
+.search input{flex:1;font-size:15px;padding:11px 12px;border:1px solid #d1d9e6;border-radius:10px}
+.search button{font-size:14px;padding:11px 14px;border:0;border-radius:10px;background:#2563eb;color:#fff;min-width:64px}
+#scan-video{width:100%;display:none;background:#000}
+.list{padding:10px 16px;display:flex;flex-direction:column;gap:10px}
+.item{background:#fff;border:1px solid #e5e9f0;border-radius:12px;padding:12px;overflow:hidden}
+.item.hit{border-color:#2563eb;background:#eff6ff}
+.item.done{opacity:.8}
+.item .code{font-family:Consolas,monospace;font-size:13px;color:#2563eb;font-weight:600;word-break:break-all}
+.item .nm{font-size:15px;margin-top:2px;word-break:break-word}
+.item .loc{font-size:12px;color:#64748b;margin-top:2px;word-break:break-all}
+.item .row{display:flex;align-items:center;gap:8px;margin-top:10px}
+/* 账面挤掉「差异」列会把整张卡片撑出屏幕（右侧按钮、说明全被裁）；
+   输入框和差异用固定 flex-basis，账面负责让位 */
+.item .row .book{font-size:13px;color:#64748b;flex:1 1 0;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.item .row input{flex:0 0 96px;width:96px;font-size:17px;font-weight:700;padding:10px 6px;border:1px solid #cbd5e1;border-radius:10px;text-align:center}
+.item .row input.neg{border-color:#dc2626;background:#fef2f2;color:#dc2626}
+.item .row .diff{flex:0 0 54px;width:54px;font-size:13px;font-weight:600;text-align:right;color:#64748b}
+.item .diff.pos{color:#16a34a}.item .diff.neg{color:#dc2626}
+.item .mis{font-size:12px;color:#b45309;background:#fef3c7;border-radius:6px;padding:4px 8px;margin-top:6px;display:inline-block}
+.item .misbtn{font-size:12px;color:#b45309;background:#fef3c7;border:0;border-radius:8px;padding:6px 10px;margin-top:6px}
+.pk-sheet{position:fixed;left:0;right:0;bottom:0;background:#fff;border-radius:16px 16px 0 0;box-shadow:0 -4px 20px rgba(0,0,0,.15);padding:14px 16px 20px;display:none;z-index:50;max-height:70vh;overflow-y:auto}
+.pk-head{display:flex;justify-content:space-between;align-items:center;font-size:15px;margin-bottom:10px}
+.pk-sheet input{width:100%;font-size:15px;padding:11px 12px;border:1px solid #d1d9e6;border-radius:10px}
+.pk-list{margin-top:10px;display:flex;flex-direction:column;gap:8px}
+.pk-item{display:flex;flex-direction:column;gap:2px;padding:10px 12px;border:1px solid #e5e9f0;border-radius:10px}
+.pk-code{font-family:Consolas,monospace;font-size:13px;color:#2563eb;font-weight:600}
+.pk-nm{font-size:14px;color:#1f2937}
+.pk-none{text-align:center;color:#94a3b8;font-size:13px;padding:16px 0}
+.note{font-size:12px;color:#64748b;text-align:center;padding:6px}
+.foot{position:fixed;left:0;right:0;bottom:0;display:flex;gap:10px;padding:12px 16px;background:#fff;border-top:1px solid #e5e9f0}
+.foot .btn{flex:1;font-size:16px;font-weight:700;padding:14px;border:0;border-radius:12px}
+.foot .save{background:#e0e7ff;color:#3730a3}
+.foot .submit{background:#2563eb;color:#fff}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:96px;background:rgba(17,24,39,.92);color:#fff;font-size:13px;line-height:1.45;padding:10px 16px;border-radius:14px;z-index:99;display:none;max-width:calc(100% - 32px);text-align:center}
+.empty{text-align:center;color:#94a3b8;padding:40px 0;font-size:14px}
+/* v1.0.17：每条差异的逐行原因分析与改善处理 */
+.item .ana{margin-top:10px;padding:10px;background:#f8fafc;border:1px solid #e5e9f0;border-radius:10px;display:grid;gap:8px}
+.item .ana .ana-t{font-size:12px;font-weight:700;color:#334155}
+.item .ana label{display:block;font-size:12px;color:#64748b}
+.item .ana textarea,.item .ana input{width:100%;margin-top:3px;font-size:14px;color:#1f2937;padding:8px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;font-family:inherit}
+.item .ana textarea{resize:vertical;min-height:52px}
+.item .ana .ana-2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+/* v1.0.21：手机盘点也区分「本期已盘 / 未盘」 */
+.tabs{display:flex;gap:6px;padding:10px 16px 0;background:#fff;border-bottom:1px solid #e5e9f0}
+.tabs .tab{flex:1;font-size:13px;padding:9px 2px;border:0;border-bottom:2px solid transparent;background:transparent;color:#64748b;border-radius:8px 8px 0 0}
+.tabs .tab.active{color:#2563eb;border-bottom-color:#2563eb;font-weight:700;background:#eff6ff}
+.tabs .tab .n{font-weight:700}
+.item.locked{background:#f1f5f9;opacity:.72}
+.item .prior{font-size:12px;color:#15803d;background:#dcfce7;border-radius:6px;padding:4px 8px;margin-top:6px;display:inline-block}
+.item .rbtn{font-size:12px;color:#b45309;background:#fef3c7;border:0;border-radius:8px;padding:6px 10px;margin-top:6px;margin-left:6px}
+.item .row input.locked-inp{background:#f1f5f9;color:#94a3b8;border-color:#e2e8f0}
+</style>
+</head>
+<body>
+<div class="top">
+  <div class="no">{{ st.no }}</div>
+  <div class="meta">{{ tr('范围') }}: {{ st.scope_text }} · <span id="cnt"></span></div>
+  <div class="progress"><i id="bar"></i></div>
+</div>
+<div class="toast" id="toast"></div>
+<div class="search">
+  <input id="kw" type="text" placeholder="{{ tr('搜索料号 / 名称') }}" oninput="filterList()">
+  <button id="scan-btn" onclick="toggleScan()">📷 {{ tr('扫码') }}</button>
+</div>
+<div class="tabs" id="tabs" style="display:none">
+  <button type="button" class="tab active" data-f="all" onclick="setTab('all')">{{ tr('全部') }} <span class="n" id="tab-all-n"></span></button>
+  <button type="button" class="tab" data-f="undo" onclick="setTab('undo')">{{ tr('未盘') }} <span class="n" id="tab-undo-n"></span></button>
+  <button type="button" class="tab" data-f="done" onclick="setTab('done')">{{ tr('本期已盘') }} <span class="n" id="tab-done-n"></span></button>
+</div>
+<video id="scan-video" playsinline muted></video>
+<div class="list" id="list"></div>
+<div class="empty" id="empty" style="display:none">{{ tr('无匹配记录') }}</div>
+<div class="note">{{ tr('扫码需 HTTPS 或 localhost 环境；内网 http 地址请手动输入料号') }}</div>
+<div class="foot">
+  <button class="btn save" onclick="saveAll()">{{ tr('保存全部') }}</button>
+  <form id="submit-form" method="post" action="{{ url_for('stocktake_submit', sid=st.id) }}" style="flex:1;display:flex" onsubmit="return submitCheck()">
+    <button class="btn submit" type="submit" style="width:100%">{{ tr('提交') }}</button>
+  </form>
+</div>
+<div id="pk-sheet" class="pk-sheet">
+  <div class="pk-head">
+    <b>{{ tr('错料：选择实物料号') }}</b>
+    <span onclick="closePick()" style="font-size:22px;cursor:pointer">&times;</span>
+  </div>
+  <input id="pk-kw" type="text" placeholder="{{ tr('输入实物料号 / 名称') }}" oninput="onPkInput()">
+  <div id="pk-list" class="pk-list"></div>
+</div>
+<script>
+var SID = {{ st.id }};
+var items = {{ items|tojson }};
+var ST_DONE = {{ 'true' if st.status=='done' else 'false' }};
+var ST_PENDING = {{ 'true' if st.status in ('pending1','pending2') else 'false' }};
+var editable = !ST_DONE && !ST_PENDING && {{ 'true' if st.status=='draft' else 'false' }};
+/* v1.0.21：本期已盘行数（建单时由别的单据盘过，本单只读） */
+var PRIOR_CNT = items.filter(function(it){ return (it.prior_st||'').toString().trim() !== ''; }).length;
+var curTab = 'all';
+var _toastT = null;
+var MSG_NEG = {{ tr('盘点数量不能为负数，请检查标红的输入框') | tojson }};
+/* 提示条：成功类 2.8 秒、报错类 5.2 秒（以前一律 1.9 秒，手机上根本读不完一行字），点一下可立即关 */
+function toast(msg, ms){ var t=document.getElementById('toast'); t.textContent=msg; t.style.display='block';
+  t.onclick = function(){ clearTimeout(_toastT); t.style.display='none'; };
+  clearTimeout(_toastT); _toastT=setTimeout(function(){ t.style.display='none'; }, ms || 2800); }
+/* 实盘数量只接受 0 及以上的数字；空表示未盘。负数在手机上很容易误触减号，必须当场拦住 */
+function qtyErr(v){
+  if(v === '' || v == null) return false;
+  var n = parseFloat(v);
+  return (isNaN(n) || n < 0 || !isFinite(n));
+}
+function esc(s){ var d=document.createElement('div'); d.textContent=s==null?'':String(s); return d.innerHTML; }
+function fmt(n){ if(n==null||n==='') return ''; return n; }
+function render(){
+  var kw = (document.getElementById('kw').value||'').trim().toLowerCase();
+  var box = document.getElementById('list');
+  box.innerHTML = '';
+  var shown = 0, done = 0;
+  items.forEach(function(it){
+    var prior = (it.prior_st||'').toString().trim() !== '';
+    var reopened = !!it._reopen;
+    var ok = !kw || it.part_code.toLowerCase().indexOf(kw)>=0 || (it.part_name||'').toLowerCase().indexOf(kw)>=0
+             || (it.location||'').toLowerCase().indexOf(kw)>=0;
+    if(!ok) return;
+    /* v1.0.21：页签过滤（已盘行重盘后回到未盘） */
+    if(curTab === 'undo' && (prior && !reopened)) return;
+    if(curTab === 'done' && !(prior && !reopened)) return;
+    shown++;
+    if(it.actual_qty != null) done++;
+    /* 已盘行本单只读灰化；重盘后解锁 */
+    var isLocked = prior && editable && !reopened;
+    var d = document.createElement('div');
+    d.className = 'item' + (it.actual_qty != null ? ' done':'') + (kw && ok ? ' hit':'') + (isLocked ? ' locked':'');
+    d.id = 'itm-' + it.id;
+    d.setAttribute('data-id', it.id);
+    d.setAttribute('data-book', it.book_qty == null ? 0 : it.book_qty);
+    var diff = (it.actual_qty == null) ? null : (it.actual_qty - it.book_qty);
+    var mis = (it.actual_part_id && it.actual_part_id != it.part_id) ? it.actual_part_code : '';
+    var misHtml = mis
+      ? '<div class="mis">⚠ {{ tr('错料') }} → ' + esc(mis) + '</div>'
+      : '';
+    /* v1.0.21：本期已盘徽章 + 重盘按钮 */
+    var priorHtml = '';
+    if(prior){
+      priorHtml = '<div><span class="prior">{{ tr('本期已盘') }} ' + esc((it.prior_at||'').toString().slice(0,10)) + ' · ' + esc(it.prior_st||'') + (it.prior_qty != null ? ' · ' + it.prior_qty : '') + '</span>'
+        + (editable && !reopened ? '<button type="button" class="rbtn" onclick="recount(' + it.id + ')">{{ tr('重盘') }}</button>' : '')
+        + '</div>';
+    }
+    var actBtn = editable
+      ? '<button class="misbtn" onclick="pickMismatch('+it.id+')">' + (mis ? '{{ tr('改错料') }}' : '{{ tr('错料') }}') + '</button>'
+      : '';
+    /* v1.0.17：有差异的卡片直接给四个输入，随「保存全部」一次落库 */
+    var anaHtml = '';
+    if(editable && ((diff != null && diff != 0) || mis)){
+      anaHtml = '<div class="ana"><div class="ana-t">{{ tr('逐行差异分析') }}</div>'+
+        '<label>{{ tr('原因分析') }}<textarea class="m-cause" rows="2" maxlength="4000" placeholder="'+esc('{{ tr('填写本条差异的原因') }}')+'">'+esc(it.cause||'')+'</textarea></label>'+
+        '<label>{{ tr('改善处理') }}<textarea class="m-action" rows="2" maxlength="4000" placeholder="'+esc('{{ tr('填写本条差异的改善处理') }}')+'">'+esc(it.action||'')+'</textarea></label>'+
+        '<div class="ana-2">'+
+          '<label>{{ tr('责任人') }}<input class="m-owner" type="text" maxlength="60" value="'+esc(it.action_owner||'')+'"></label>'+
+          '<label>{{ tr('计划完成日期') }}<input class="m-due" type="date" value="'+esc(it.action_due||'')+'"></label>'+
+        '</div></div>';
+    }
+    /* v1.0.21：已盘行实盘输入框只读，显示上次盘点数；重盘后恢复可编辑 */
+    var qtyHtml;
+    if(isLocked){
+      qtyHtml = '<input class="qty locked-inp" type="number" min="0" readonly value="' + (it.prior_qty == null ? '' : it.prior_qty) + '" placeholder="' + esc('{{ tr('未盘') }}') + '">';
+    } else if(editable){
+      qtyHtml = '<input class="qty" type="number" min="0" inputmode="decimal" autocomplete="off" step="'+(it.qty_decimal?'any':'1')+'" value="'+(it.actual_qty==null?'':it.actual_qty)+'" data-prev="'+(it.actual_qty==null?'':it.actual_qty)+'" oninput="onQtyInput(this)" onchange="onQtyChange(this,'+it.id+')" placeholder="'+esc('{{ tr('实盘') }}')+'">';
+    } else {
+      qtyHtml = '<div class="book" style="font-weight:700">'+esc('{{ tr('实盘') }}')+' '+fmt(it.actual_qty)+'</div>';
+    }
+    d.innerHTML = '<div class="code">'+esc(it.part_code)+'</div>'+
+      '<div class="nm">'+esc(it.part_name)+'</div>'+
+      '<div class="loc">'+esc(it.location||'—')+'</div>'+
+      misHtml + priorHtml +
+      '<div class="row"><div class="book">'+esc('{{ tr('账面') }}')+' '+fmt(it.book_qty)+'</div>'+
+      qtyHtml +
+      '<div class="diff '+(diff>0?'pos':(diff<0?'neg':''))+'">'+(diff==null?'—':(diff>0?'+':'')+diff)+'</div></div>'+
+      (actBtn ? '<div style="text-align:right">'+actBtn+'</div>' : '') +
+      anaHtml;
+    box.appendChild(d);
+  });
+  document.getElementById('empty').style.display = shown ? 'none':'block';
+  updateCnt();
+}
+function updateCnt(){
+  var done = items.filter(function(it){ return it.actual_qty != null; }).length;
+  var pct = items.length ? Math.round(done/items.length*100) : 0;
+  document.getElementById('cnt').textContent = done + '/' + items.length;
+  document.getElementById('bar').style.width = pct + '%';
+}
+function filterList(){ render(); }
+/* 输入时实时标红 + 实时算差异，不等失焦 */
+function onQtyInput(el){
+  var bad = qtyErr((el.value || '').trim());
+  if(bad){ el.classList.add('neg'); } else { el.classList.remove('neg'); }
+  var card = el.closest ? el.closest('.item') : null;
+  if(!card) return;
+  var dEl = card.querySelector('.diff');
+  if(!dEl) return;
+  var book = parseFloat(card.getAttribute('data-book'));
+  if(isNaN(book)) book = 0;
+  var raw = (el.value || '').trim();
+  if(raw === '' || isNaN(parseFloat(raw))){ dEl.textContent = '—'; dEl.className = 'diff'; return; }
+  var diff = Math.round((parseFloat(raw) - book) * 1000) / 1000;
+  dEl.textContent = (diff > 0 ? '+' : '') + diff;
+  dEl.className = 'diff ' + (diff > 0 ? 'pos' : (diff < 0 ? 'neg' : ''));
+}
+/* 失焦提交：非法值直接回退到上一次成功保存的值，不发请求 */
+function onQtyChange(el, id){
+  var v = (el.value || '').trim();
+  if(qtyErr(v)){
+    el.value = el.getAttribute('data-prev') || '';
+    onQtyInput(el);
+    toast(MSG_NEG, 5200);
+    return;
+  }
+  saveOne(id, v);
+}
+function saveOne(id, v, apid, apcode){
+  var val = (v === '' || v == null) ? null : parseFloat(v);
+  if(val != null && (isNaN(val) || !isFinite(val) || val < 0)){ toast(MSG_NEG, 5200); return; }
+  var one = Object.assign({id:id, actual_qty:val},
+                          anaOf(document.querySelector('#list .item[data-id="'+id+'"]')));
+  var body = {items:[one]};
+  if(apid !== undefined) body.items[0].actual_part_id = apid;
+  fetch('/api/stocktake/'+SID+'/save', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(body)})
+    .then(function(r){ return r.json(); }).then(function(d){
+      if(d.ok){ var it = items.find(function(x){return x.id===id;}); if(it){ it.actual_qty = val; if(apid !== undefined){ it.actual_part_id = apid || null; it.actual_part_code = apcode || ''; } } render(); toast('{{ tr('已保存') }}'); }
+      else { toast(d.msg||'{{ tr('保存失败') }}', 5200); render(); }
+    }).catch(function(){ toast('{{ tr('保存失败') }}', 5200); });
+}
+// ---- 错料：选择实物料号 ----
+var pickId = null, pkTimer = null;
+function pickMismatch(id){
+  pickId = id;
+  document.getElementById('pk-kw').value = '';
+  document.getElementById('pk-list').innerHTML = '';
+  document.getElementById('pk-sheet').style.display = 'block';
+  searchParts('');
+}
+function closePick(){ document.getElementById('pk-sheet').style.display = 'none'; pickId = null; }
+function searchParts(kw){
+  fetch('/api/parts/search?kw=' + encodeURIComponent(kw) + '&limit=20').then(function(r){ return r.json(); }).then(function(list){
+    var box = document.getElementById('pk-list');
+    box.innerHTML = '';
+    if(!list || !list.length){ box.innerHTML = '<div class="pk-none">{{ tr('无匹配物料') }}</div>'; return; }
+    list.forEach(function(p){
+      var b = document.createElement('div');
+      b.className = 'pk-item';
+      b.innerHTML = '<div class="pk-code">'+esc(p.part_code)+'</div><div class="pk-nm">'+esc(p.name)+'</div>';
+      b.onclick = function(){
+        var it = items.find(function(x){return x.id===pickId;});
+        saveOne(pickId, it && it.actual_qty != null ? it.actual_qty : null, p.id, p.part_code);
+        closePick();
+      };
+      box.appendChild(b);
+    });
+  }).catch(function(){});
+}
+function onPkInput(){
+  clearTimeout(pkTimer);
+  var kw = document.getElementById('pk-kw').value.trim();
+  pkTimer = setTimeout(function(){ searchParts(kw); }, 250);
+}
+/* v1.0.17：从卡片里取逐行分析四个字段 */
+function anaOf(card){
+  var o = {};
+  if(!card) return o;
+  var c = card.querySelector('.m-cause'), a = card.querySelector('.m-action'),
+      w = card.querySelector('.m-owner'), d = card.querySelector('.m-due');
+  if(c) o.cause = c.value;
+  if(a) o.action = a.value;
+  if(w) o.action_owner = w.value;
+  if(d) o.action_due = d.value;
+  return o;
+}
+/* 保存全部：以界面上的输入框为准（可能还没失焦），先逐条校验，有一条非法就整批不发 */
+function collectRows(){
+  var cards = document.querySelectorAll('#list .item[data-id]');
+  var list = [], bad = [], firstBad = null;
+  for(var i=0;i<cards.length;i++){
+    var card = cards[i];
+    var id = parseInt(card.getAttribute('data-id'), 10);
+    var inp = card.querySelector('input.qty');
+    if(!inp || !id) continue;
+    if(inp.classList.contains('locked-inp')) continue; /* 已盘行不随本单提交 */
+    var extra = anaOf(card);
+    var v = (inp.value || '').trim();
+    if(v === ''){ list.push(Object.assign({id:id, actual_qty:null}, extra)); continue; }
+    if(qtyErr(v)){
+      inp.classList.add('neg');
+      var it = items.find(function(x){ return x.id === id; });
+      bad.push(it ? it.part_code : ('#' + id));
+      if(!firstBad) firstBad = card;
+      continue;
+    }
+    list.push(Object.assign({id:id, actual_qty:parseFloat(v)}, extra));
+  }
+  return {list:list, bad:bad, firstBad:firstBad};
+}
+function saveAll(){
+  var r = collectRows();
+  if(r.bad.length){
+    toast(MSG_NEG, 5200);
+    if(r.firstBad && r.firstBad.scrollIntoView) r.firstBad.scrollIntoView({block:'center'});
+    return;
+  }
+  if(!r.list.length){ toast('{{ tr('无可保存的明细') }}', 5200); return; }
+  fetch('/api/stocktake/'+SID+'/save', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({items: r.list})
+  }).then(function(res){ return res.json(); }).then(function(d){
+    if(d.ok){
+      r.list.forEach(function(x){
+        var it = items.find(function(y){ return y.id === x.id; });
+        if(it) it.actual_qty = x.actual_qty;
+      });
+      render();
+      toast('{{ tr('已保存') }} '+d.saved+' {{ tr('条') }}');
+    }
+    else { toast(d.msg||'{{ tr('保存失败') }}', 5200); render(); }
+  }).catch(function(){ toast('{{ tr('保存失败') }}', 5200); });
+}
+// ---- 扫码 ----
+var scanning = false, stream = null, video = null;
+function stopScan(){
+  scanning = false;
+  if(stream){ stream.getTracks().forEach(function(t){ t.stop(); }); stream = null; }
+  var v = document.getElementById('scan-video');
+  if(v){ v.style.display='none'; v.srcObject = null; }
+  document.getElementById('scan-btn').textContent = '📷 {{ tr('扫码') }}';
+}
+function toggleScan(){
+  if(scanning){ stopScan(); return; }
+  if(!('BarcodeDetector' in window)){ toast('{{ tr('当前浏览器不支持扫码') }}', 5200); return; }
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ toast('{{ tr('无法访问摄像头（需 HTTPS）') }}', 5200); return; }
+  navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}}).then(function(s){
+    scanning = true; stream = s;
+    video = document.getElementById('scan-video');
+    video.srcObject = s; video.style.display='block';
+    document.getElementById('scan-btn').textContent = '⏹ {{ tr('停止') }}';
+    loop();
+  }).catch(function(){ toast('{{ tr('无法打开摄像头（需 HTTPS 或 localhost）') }}', 5200); });
+}
+function loop(){
+  if(!scanning) return;
+  var det = new BarcodeDetector({formats:['qr_code','ean_13','ean_8','code_128','code_39','upc_a','upc_e']});
+  det.detect(video).then(function(codes){
+    if(codes && codes.length){
+      var v = codes[0].rawValue.trim();
+      document.getElementById('kw').value = v;
+      stopScan();
+      render();
+      var byCode = items.filter(function(it){ return it.part_code === v; });
+      var byLoc = items.filter(function(it){ return (it.location||'') === v; });
+      if(byCode.length || byLoc.length){
+        toast('{{ tr('已定位') }}: ' + v);
+        if(byCode.length && editable){ saveOne(byCode[0].id, null); }
+      }
+      else { toast('{{ tr('未找到该料号 / 库位') }}', 5200); }
+      return;
+    }
+    setTimeout(loop, 220);
+  }).catch(function(){ if(scanning) setTimeout(loop, 300); });
+}
+/* 手机页卡片不在 form 里，提交时把逐行分析拼成隐藏字段带上去 */
+function fillSubmitFields(){
+  var form = document.getElementById('submit-form');
+  if(!form) return;
+  form.querySelectorAll('.dyn').forEach(function(x){ x.remove(); });
+  document.querySelectorAll('#list .item[data-id]').forEach(function(card){
+    var id = card.getAttribute('data-id');
+    [['.m-cause','icause_'],['.m-action','iaction_'],
+     ['.m-owner','iowner_'],['.m-due','idue_']].forEach(function(p){
+      var el = card.querySelector(p[0]); if(!el) return;
+      var h = document.createElement('input');
+      h.type = 'hidden'; h.className = 'dyn'; h.name = p[1] + id; h.value = el.value;
+      form.appendChild(h);
+    });
+  });
+}
+function submitCheck(){
+  fillSubmitFields();
+  var neg = 0;
+  document.querySelectorAll('#list .item input.qty').forEach(function(inp){
+    if(qtyErr((inp.value || '').trim())){ neg++; inp.classList.add('neg'); }
+  });
+  if(neg > 0){ toast(MSG_NEG, 5200); return false; }
+  /* v1.0.21：已盘行由别的单据负责，不计入本单完成度 */
+  var miss = 0;
+  items.forEach(function(it){
+    var prior = (it.prior_st||'').toString().trim() !== '';
+    var reopened = !!it._reopen;
+    if(prior && !reopened) return;
+    if(it.actual_qty == null) miss++;
+  });
+  if(miss > 0){ toast('{{ tr('还有') }} '+miss+' {{ tr('条未盘，全部盘完才能提交') }}', 5200); return false; }
+  var bad = null;
+  document.querySelectorAll('#list .item[data-id]').forEach(function(card){
+    var c = card.querySelector('.m-cause'), a = card.querySelector('.m-action');
+    if(c && a && (!c.value.trim() || !a.value.trim())) bad = bad || card;
+  });
+  if(bad){
+    toast('{{ tr('每条差异都要填写原因分析和改善处理') }}', 5200);
+    if(bad.scrollIntoView) bad.scrollIntoView({block:'center'});
+    return false;
+  }
+  return confirm('{{ tr('提交后差异将锁定并进入审批，确认提交？') }}');
+}
+window.addEventListener('beforeunload', stopScan);
+/* v1.0.21：本期已盘 / 未盘 分页签 + 重盘解锁 */
+function refreshTabCounts(){
+  var t = document.getElementById('tabs');
+  if(!PRIOR_CNT){ if(t) t.style.display = 'none'; return; }
+  t.style.display = 'flex';
+  var undo = 0, doneN = 0;
+  items.forEach(function(it){
+    var prior = (it.prior_st||'').toString().trim() !== '';
+    var reopened = !!it._reopen;
+    if(prior && !reopened) doneN++; else undo++;
+  });
+  document.getElementById('tab-all-n').textContent = items.length;
+  document.getElementById('tab-undo-n').textContent = undo;
+  document.getElementById('tab-done-n').textContent = doneN;
+}
+function setTab(f){
+  curTab = f;
+  document.querySelectorAll('#tabs .tab').forEach(function(b){
+    b.classList.toggle('active', b.getAttribute('data-f') === f);
+  });
+  render();
+}
+function recount(id){
+  var it = items.find(function(x){ return x.id === id; });
+  if(!it) return;
+  if(!confirm('{{ tr('该行本期已盘过，确定重盘吗？（重盘后以本次实盘数为准）') }}')) return;
+  it._reopen = true;
+  render();
+  refreshTabCounts();
+}
+refreshTabCounts();
+render();
+</script>
+</body>
+</html>

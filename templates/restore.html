@@ -1,6 +1,7 @@
+{# SPMS 备件辅料仓管系统 | 作者：菜鸟大叔 (@rookie-uncle / @Colton1982) | 邮箱：510658927@qq.com | QQ：510658927 | Gitee：https://gitee.com/rookie-uncle | GitHub：https://github.com/Colton1982 | Copyright (c) 2026 rookie-uncle. All rights reserved. | Apache-2.0 #}
 {% extends "base.html" %}
-{% block title %}{{ tr('page_restore') }} - Spare Parts Management System{% endblock %}
-{% block page_title %}>{{ tr('page_restore') }}{% endblock %}
+{% block title %}{{ tr('page_restore') }} - Inventory Management System{% endblock %}
+{% block page_title %}{{ tr('page_restore') }}{% endblock %}
 {% block content %}
 <style>
 .restore-note{background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 14px;margin-bottom:14px}
@@ -13,16 +14,17 @@
 </style>
 
 <div class="restore-note">
-  <b>{{ tr('恢复规则：') }}</b>{{ tr('恢复申请只能由') }}<b>{{ tr('仓库管理人员') }} / {{ tr('最高用户') }}</b>{{ tr('发起；由申请人的') }}<b>{{ tr('部门经理') }}</b>或<b>{{ tr('最高用户') }}</b>{{ tr('审批') }}
-  {{ tr('（') }}{{ tr('最高用户发起时可选由自己审批或选择经理以上人员审批') }}{{ tr('）') }}{{ tr('；') }}{{ tr('审批通过后由') }}<b>{{ tr('仓库管理人员') }} / {{ tr('最高用户') }}</b>{{ tr('执行恢复') }}{{ tr('。') }}
-  {{ tr('执行时系统会先自动备份当前数据库') }}{{ tr('（') }}{{ tr('备份到备份目录') }}{{ tr('，') }}{{ tr('文件名含') }} prerestore{{ tr('）') }}{{ tr('，') }}{{ tr('再用所选备份覆盖，随后自动重启生效') }}{{ tr('。') }}
+  <b>{{ tr('恢复规则：') }}</b>{{ tr('restore.rule_line1') }}{{ mk('。') }}
+  {{ tr('审批通过后由') }}<b>{{ tr('仓库管理人员') }} / {{ tr('最高用户') }}</b>{{ tr('执行恢复') }}{{ mk('。') }}
+  {{ tr('执行时系统会先自动备份当前数据库') }}{{ mk('（') }}{{ tr('备份到备份目录') }}{{ mk('，') }}{{ tr('文件名含') }} prerestore{{ mk('）') }}{{ mk('，') }}{{ tr('再用所选备份覆盖，随后自动重启生效') }}{{ mk('。') }}
 </div>
 
 <div class="card-grid">
+{% if cur_user.role in ('admin','warehouse') %}
 <div class="card card-wide" id="card-backup">
   <div class="card-title">{{ tr('数据库自动备份') }}</div>
-  <form method="post" action="/settings" class="ajax-form">
-    <label class="f-check"><input type="checkbox" name="backup_enabled" value="1" {{ 'checked' if backup.enabled }}> {{ tr('启用自动备份') }}{{ tr('（软件运行期间自动检查，到期自动备份）') }}</label>
+  <form method="post" action="{{ url_for('restore_backup') }}" class="ajax-form">
+    <label class="f-check"><input type="checkbox" name="backup_enabled" value="1" {{ 'checked' if backup.enabled }}> {{ tr('启用自动备份') }}</label>
     <div class="grid2">
       <label class="f-label">{{ tr('备份间隔') }}<select class="f-input" name="backup_interval_hours">
           {% for v, l in [(1, tr('每 1 小时')), (6, tr('每 6 小时')), (12, tr('每 12 小时')), (24, tr('每天')), (72, tr('每 3 天')), (168, tr('每周')), (720, tr('每月'))] %}
@@ -30,56 +32,55 @@
           {% endfor %}
         </select>
       </label>
-      <label class="f-label">{{ tr('保留份数') }}{{ tr('（') }}{{ tr('手动录入') }}{{ tr('自动删除更早的') }}{{ tr('；') }}1-99{{ tr('）') }}
+      <label class="f-label">{{ tr('保留份数') }}<span class="f-note">{{ mk('（') }}{{ tr('手动录入') }}{{ tr('自动删除更早的') }}{{ mk('；') }}1-99{{ mk('）') }}</span>
         <input class="f-input" type="number" name="backup_keep" min="1" max="99" value="{{ backup.keep }}" style="max-width:160px">
       </label>
     </div>
-    <label class="f-label">{{ tr('备份目录') }}{{ tr('（') }}{{ tr('可手动录入') }}{{ tr('，') }}{{ tr('也可点') }}{{ tr('「') }}{{ tr('选择目录') }}{{ tr('」') }}{{ tr('浏览') }}{{ tr('；') }}{{ tr('留空') }}={{ tr('数据库同级') }} backups {{ tr('文件夹') }}{{ tr('）') }}
+    <label class="f-label">{{ tr('备份目录') }}<span class="f-note">{{ mk('（') }}{{ tr('可手动录入') }}{{ mk('，') }}{{ tr('也可点') }}{{ mk('「') }}{{ tr('选择目录') }}{{ mk('」') }}{{ tr('浏览') }}{{ mk('；') }}{{ tr('留空') }}={{ tr('数据库同级') }} backups {{ tr('文件夹') }}{{ mk('）') }}</span>
       <div class="dir-row" style="display:flex;gap:8px;align-items:center">
         <input class="f-input" name="backup_dir" id="backup-dir-input" value="{{ backup.dir }}" style="flex:1">
         <button type="button" class="btn" onclick="openDirModal()">{{ tr('选择目录') }}</button>
       </div>
     </label>
-    <div class="muted small" style="margin:8px 0">
-      {{ tr('说明') }}{{ tr('备份使用在线备份方式，软件运行期间执行备份不会中断使用') }}{{ tr('、') }}{{ tr('也不锁库') }}{{ tr('；') }}
-      {{ tr('建议备份到与数据库不同的位置') }}{{ tr('（') }}{{ tr('如另一台机器') }}/{{ tr('另一个共享目录') }}{{ tr('）') }}{{ tr('。') }}{{ tr('任何一台开着软件的电脑到期都会自动执行备份') }}{{ tr('。') }}
+    <div class="muted small ui-hint" style="margin:8px 0">
+      {{ tr('说明') }}{{ mk('：') }}{{ tr('备份使用在线备份方式，软件运行期间执行备份不会中断使用') }}{{ mk('、') }}{{ tr('也不锁库') }}{{ mk('；') }}
+      {{ tr('建议备份到与数据库不同的位置') }}{{ mk('（') }}{{ tr('如另一台机器') }}/{{ tr('另一个共享目录') }}{{ mk('）') }}{{ mk('。') }}{{ tr('任何一台开着软件的电脑到期都会自动执行备份') }}{{ mk('。') }}
     </div>
     <button class="btn btn-primary" type="submit" name="backup_save" value="1">{{ tr('保存备份设置') }}</button>
     <button class="btn" type="submit" name="backup_now" value="1">{{ tr('立即备份一次') }}</button>
-    <div class="sub-h" style="margin:14px 0 6px">{{ tr('备份文件列表') }}{{ tr('（') }}{{ tr('可点击') }}{{ tr('「') }}{{ tr('申请恢复') }}{{ tr('」') }}{{ tr('发起恢复') }}{{ tr('，') }}{{ tr('也可删除') }}{{ tr('）') }}</div>
-    <div id="backups-box">{% include "_backups.html" %}</div>
   </form>
+  <div class="sub-h" style="margin:14px 0 6px">{{ tr('备份文件列表') }}</div>
+  <div class="muted small ui-hint" style="margin:-4px 0 10px">{{ tr('可点击「申请恢复」发起恢复，也可删除') }}</div>
+  {# 备份列表必须放在表单外面：里面每条都有自己删除用的 form，
+     嵌套 form 是非法 HTML，浏览器会把外层 form 提前闭合成半个表单 #}
+  <div id="backups-box">{% include "_backups.html" %}</div>
 </div>
+{% else %}
+<div class="card card-wide" id="card-backup">
+  <div class="card-title">{{ tr('数据库自动备份') }}</div>
+  <div class="muted ui-hint">{{ tr('备份与恢复仅限') }}{{ tr('仓库管理人员') }} / {{ tr('最高用户') }}{{ tr('操作') }}{{ mk('；') }}{{ tr('如需备份请联系管理员') }}{{ mk('。') }}</div>
+</div>
+{% endif %}
 
 
 <div class="card card-wide">
   <div class="card-title">{{ tr('发起恢复申请') }}</div>
   <form method="post" action="{{ url_for('restore_apply') }}" class="grid2">
-    <label class="f-label">{{ tr('选择备份文件') }}<select class="f-input" name="backup_name" required>
+    <label class="f-label">{{ tr('选择备份文件') }}<select class="f-input" name="backup_name" id="restore-backup-select" required>
         {% for b in backups %}
-        <option value="{{ b.name }}" {{ 'selected' if pre_backup==b.name }}>{{ b.name }}{{ tr('（') }}{{ "%.1f"|format(b.size/1024/1024) }}MB / {{ b.mtime }}{{ tr('）') }}</option>
+        <option value="{{ b.name }}" {{ 'selected' if pre_backup==b.name }}>{{ b.name }}{{ mk('（') }}{{ "%.1f"|format(b.size/1024/1024) }}MB / {{ b.mtime }}{{ mk('）') }}</option>
         {% else %}
-        <option value="">{{ tr('暂无可用备份') }}{{ tr('（请先在系统设置中创建备份）') }}</option>
+        <option value="">{{ tr('暂无可用备份') }}{{ tr('（请先点上方「立即备份一次」生成一份）') }}</option>
         {% endfor %}
       </select>
       <input type="hidden" name="backup_dir" value="{{ backups[0].dir if backups else '' }}">
       <div class="muted small">{{ tr('备份目录：') }}<span class="mono">{{ backups[0].dir if backups else tr('无备份') }}</span></div>
     </label>
-    {% if cur_user.role == 'admin' %}
-    <label class="f-label">{{ tr('审批人') }}{{ tr('（最高用户可自审或选经理以上人员）') }}
-      <select class="f-input" name="approver_id" required>
-        {% for x in approvers %}
-        <option value="{{ x.id }}">{{ x.display_name }}{{ tr('（') }}{{ tr(ROLE_NAMES[x.role]) }}{% if x.department %} / {{ x.department }}{% endif %}{{ tr('）') }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    {% else %}
-    <div class="f-label">{{ tr('审批人') }}<div class="muted" style="padding:8px 0">{{ tr('自动指派') }}{{ tr('你的部门经理；无部门经理时由最高用户审批') }}{{ tr('。') }}</div>
+    <div class="f-label">{{ tr('审批人') }}<div class="muted" style="padding:8px 0">{{ tr('restore.approver_hint_top') }}{{ mk('。') }}</div>
     </div>
-    {% endif %}
     <div style="grid-column:1/-1">
       <button class="btn btn-primary" type="submit">{{ tr('提交恢复申请') }}</button>
-      <a class="btn" href="{{ url_for('system_settings') }}">{{ tr('去系统设置创建备份') }} {{ tr('→') }}</a>
+      <span class="muted small ui-hint">{{ tr('没有备份时，先在上面「数据库自动备份」里点一次立即备份') }}</span>
     </div>
   </form>
 </div>
@@ -87,6 +88,7 @@
 {% if todo %}
 <div class="card card-wide">
   <div class="card-title">{{ tr('待我审批') }}</div>
+  <div class="muted small ui-hint">{{ tr('restore.approver_hint_top') }}{{ mk('。') }}</div>
   <table class="table">
     <thead><tr><th>{{ tr('申请单号') }}</th><th>{{ tr('备份文件') }}</th><th>{{ tr('申请时间') }}</th><th>{{ tr('th_applicant') }}</th><th>{{ tr('审批意见') }}</th><th>{{ tr('th_ops') }}</th></tr></thead>
     <tbody>
@@ -99,6 +101,8 @@
       <td style="min-width:180px">
         <form method="post" action="{{ url_for('restore_approve', rid=r.id) }}" style="display:inline">
           <input class="f-input" style="padding:4px 8px;max-width:170px" name="note" placeholder="{{ tr('审批意见（可选）') }}">
+          <input class="f-input mono" style="padding:4px 8px;max-width:150px" name="confirm_word"
+                 placeholder="{{ tr('restore.approve_word_ph') }}" required>
           <button class="btn btn-success" type="submit">{{ tr('通过') }}</button>
         </form>
         <form method="post" action="{{ url_for('restore_reject', rid=r.id) }}" style="display:inline">
@@ -122,10 +126,10 @@
       <td class="mono">{{ r.app_no }}</td>
       <td class="mono small">{{ r.backup_name }}</td>
       <td class="mono">{{ r.created_at }}</td>
-      <td>{{ tr(r.approver or '待审批') }} }}</td>
+      <td>{{ r.approver or tr('待审批') }}</td>
       <td>
         {% if r.status=='pending' %}<span class="badge badge-pending">{{ tr('待审批') }}</span>
-        {% elif r.status=='approved' %}<span class="badge badge-approved">{{ tr('已通过') }}{{ tr('（') }}{{ tr('可执行恢复') }}{{ tr('）') }}</span>
+        {% elif r.status=='approved' %}<span class="badge badge-approved">{{ tr('已通过') }}{{ mk('（') }}{{ tr('可执行恢复') }}{{ mk('）') }}</span>
         {% elif r.status=='rejected' %}<span class="badge badge-rejected">{{ tr('status_rejected') }}</span>
         {% elif r.status=='completed' %}<span class="badge badge-completed">{{ tr('已恢复') }}</span>
         {% else %}<span class="badge badge-canceled">{{ tr('status_canceled') }}</span>{% endif %}
@@ -151,7 +155,8 @@
 </div>
 
 <div class="card card-wide">
-  <div class="card-title">{{ tr('全部恢复记录') }}{{ tr('（') }}{{ tr('最近') }} 100 {{ tr('条') }}{{ tr('）') }}</div>
+  <div class="card-title">{{ tr('全部恢复记录') }}</div>
+  <div class="muted small ui-hint" style="margin:-6px 0 12px">{{ tr('最近') }} 100 {{ tr('条') }}</div>
   <table class="table">
     <thead><tr><th>{{ tr('申请单号') }}</th><th>{{ tr('备份文件') }}</th><th>{{ tr('th_applicant') }}</th><th>{{ tr('th_approver') }}</th><th>{{ tr('th_status') }}</th><th>{{ tr('申请时间') }}</th><th>{{ tr('审批/恢复时间') }}</th><th>{{ tr('意见') }}</th></tr></thead>
     <tbody>
@@ -178,5 +183,77 @@
     </tbody>
   </table>
 </div>
+
+{# v1.0.77：备份目录选择弹窗。以前按钮调用了一个全项目都不存在的 openDirModal()，
+   浏览器直接 ReferenceError；这里把服务端 /api/browse_dir 真正接上。 #}
+<div id="dir-modal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:9999;align-items:center;justify-content:center">
+  <div style="width:min(620px,92vw);max-height:82vh;display:flex;flex-direction:column;background:var(--card,#fff);color:var(--text,#0f172a);border-radius:10px;padding:16px;box-shadow:0 18px 48px rgba(0,0,0,.28)">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <b>{{ tr('选择目录') }}</b>
+      <button type="button" class="btn btn-xs" onclick="closeDirModal()">✕</button>
+    </div>
+    <div id="dir-msg" class="muted small" style="min-height:18px"></div>
+    <div id="dir-cur" class="mono small" style="padding:7px 9px;background:var(--bg,#f8fafc);border-radius:6px;margin-bottom:8px;word-break:break-all"></div>
+    <div id="dir-list" style="flex:1;min-height:180px;max-height:320px;overflow:auto;border:1px solid var(--line,#cbd5e1);border-radius:6px"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+      <button type="button" class="btn" onclick="dirGoParent()">{{ tr('上一级') }}</button>
+      <button type="button" class="btn btn-primary" onclick="dirPick()">{{ tr('选择') }}</button>
+      <button type="button" class="btn" onclick="closeDirModal()">{{ tr('取消') }}</button>
+    </div>
+  </div>
+</div>
+<script>
+(function(){
+  var modal = document.getElementById('dir-modal');
+  var listBox = document.getElementById('dir-list');
+  var curBox = document.getElementById('dir-cur');
+  var msgBox = document.getElementById('dir-msg');
+  var input = document.getElementById('backup-dir-input');
+  var DIR_CUR = '', DIR_PARENT = '';
+  function sep(p){ return /[\\/]$/.test(p) ? '' : (p.indexOf('\\') >= 0 ? '\\' : '/'); }
+  function row(text, fn){
+    var b = document.createElement('button');
+    b.type = 'button'; b.className = 'btn btn-plain';
+    b.style.cssText = 'display:block;width:100%;text-align:left;margin:2px 0;white-space:normal;word-break:break-all';
+    b.textContent = text; b.onclick = fn; return b;
+  }
+  function render(d){
+    DIR_CUR = d.cur || ''; DIR_PARENT = d.parent || '';
+    curBox.textContent = DIR_CUR || '—';
+    listBox.innerHTML = '';
+    if(DIR_PARENT) listBox.appendChild(row('..', function(){ dirLoad(DIR_PARENT); }));
+    var dirs = d.dirs || [];
+    dirs.forEach(function(name){
+      listBox.appendChild(row(name, function(){ dirLoad(DIR_CUR + sep(DIR_CUR) + name); }));
+    });
+    if(!dirs.length && !DIR_PARENT){
+      var e = document.createElement('div');
+      e.className = 'muted small'; e.style.padding = '12px';
+      e.textContent = {{ tr('暂无子目录')|tojson }};
+      listBox.appendChild(e);
+    }
+  }
+  window.dirLoad = function(p){
+    msgBox.textContent = {{ tr('加载中')|tojson }} + '...';
+    fetch('/api/browse_dir?path=' + encodeURIComponent(p || ''),
+          {headers:{'X-Requested-With':'XMLHttpRequest'}})
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if(!d || !d.ok){ msgBox.textContent = (d && d.msg) || {{ tr('加载失败')|tojson }}; return; }
+        msgBox.textContent = ''; render(d);
+      })
+      .catch(function(e){ msgBox.textContent = {{ tr('加载失败')|tojson }} + ': ' + e; });
+  };
+  window.openDirModal = function(){
+    if(!input) return;
+    modal.style.display = 'flex';
+    dirLoad(input.value || '');
+  };
+  window.closeDirModal = function(){ modal.style.display = 'none'; };
+  window.dirGoParent = function(){ if(DIR_PARENT) dirLoad(DIR_PARENT); };
+  window.dirPick = function(){ if(input && DIR_CUR) input.value = DIR_CUR; closeDirModal(); };
+  modal.addEventListener('click', function(e){ if(e.target === modal) closeDirModal(); });
+})();
+</script>
 </div>
 {% endblock %}

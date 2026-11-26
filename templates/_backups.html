@@ -1,3 +1,4 @@
+{# SPMS 备件辅料仓管系统 | 作者：菜鸟大叔 (@rookie-uncle / @Colton1982) | 邮箱：510658927@qq.com | QQ：510658927 | Gitee：https://gitee.com/rookie-uncle | GitHub：https://github.com/Colton1982 | Copyright (c) 2026 rookie-uncle. All rights reserved. | Apache-2.0 #}
 {% if backups %}
 <div class="table-wrap">
   <table class="table">
@@ -10,7 +11,7 @@
         <td>{{ "%.1f"|format(b.size/1024) }} KB</td>
         <td class="small">{{ b.mtime }}</td>
         <td>
-          <form method="post" action="/settings" class="ajax-form" onsubmit="return confirm('{{ tr('确认删除该备份文件？此操作不可恢复') }}{{ tr('。') }}')">
+          <form method="post" action="{{ url_for('restore_backup') }}" class="ajax-form" onsubmit="return confirm('{{ tr('确认删除该备份文件？此操作不可恢复') }}。')">
             <input type="hidden" name="backup_file" value="{{ b.name }}">
             <button class="btn btn-xs" name="backup_delete" value="1">{{ tr('btn_delete') }}</button>
           </form>
@@ -21,5 +22,5 @@
   </table>
 </div>
 {% else %}
-<div class="muted small">{{ tr('暂无备份文件') }}{{ tr('。') }}{{ tr('点击') }}{{ tr('「') }}{{ tr('立即备份一次') }}{{ tr('」') }}{{ tr('可生成第一份备份') }}{{ tr('。') }}</div>
+<div class="muted small">{{ tr('暂无备份文件') }}{{ mk('。') }}{{ tr('点击') }}{{ mk('「') }}{{ tr('立即备份一次') }}{{ mk('」') }}{{ tr('可生成第一份备份') }}{{ mk('。') }}</div>
 {% endif %}

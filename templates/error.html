@@ -1,9 +1,11 @@
+{# SPMS 备件辅料仓管系统 | 作者：菜鸟大叔 (@rookie-uncle / @Colton1982) | 邮箱：510658927@qq.com | QQ：510658927 | Gitee：https://gitee.com/rookie-uncle | GitHub：https://github.com/Colton1982 | Copyright (c) 2026 rookie-uncle. All rights reserved. | Apache-2.0 #}
 {% extends "base.html" %}
-{% block title %}{{ tr('page_error') }} - Spare Parts Management System{% endblock %}
+{% block title %}{{ tr('page_error') }} - Inventory Management System{% endblock %}
 {% block content %}
 <div class="error-box">
   <div class="error-code">{{ code }}</div>
-  <p>{{ msg }}</p>
+  {# msg 是代码里写的中文整句（403/404 等），必须走取词，否则英文界面永远中文 #}
+  <p>{{ tr(msg) }}</p>
   <a class="btn btn-primary" href="{{ url_for('dashboard') }}">{{ tr('返回主页') }}</a>
 </div>
 {% endblock %}

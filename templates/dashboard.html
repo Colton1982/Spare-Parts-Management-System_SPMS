@@ -1,6 +1,7 @@
+{# SPMS 备件辅料仓管系统 | 作者：菜鸟大叔 (@rookie-uncle / @Colton1982) | 邮箱：510658927@qq.com | QQ：510658927 | Gitee：https://gitee.com/rookie-uncle | GitHub：https://github.com/Colton1982 | Copyright (c) 2026 rookie-uncle. All rights reserved. | Apache-2.0 #}
 {% extends "base.html" %}
-{% block title %}{{ tr('page_dashboard') }} - Spare Parts Management System{% endblock %}
-{% block page_title %}>{{ tr('page_dashboard') }}{% endblock %}
+{% block title %}{{ tr('page_dashboard') }} - Inventory Management System{% endblock %}
+{% block page_title %}{{ tr('page_dashboard') }}{% endblock %}
 {% block content %}
 <style>
 .dash-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px}
@@ -18,8 +19,27 @@
 .filter-bar{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin:4px 0 14px}
 .filter-bar .f-label{min-width:150px}
 .chart-card-wide{grid-column:1/-1}
+/* 图表头部：标题 + 右侧分类下拉（总览/单看某条线、某台设备、某个型号） */
+.chart-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:6px}
+.chart-head .chart-title{margin:0}
+.chart-pick{max-width:200px;padding:3px 8px;border:1px solid #d8dee8;border-radius:7px;
+  background:#fff;font-size:12px;color:#334155;cursor:pointer}
+.chart-pick:hover{border-color:#94a3b8}
+.chart-pick-wrap{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
 .an-table-wrap{overflow:auto;max-height:480px}
 .an-table-wrap table th{position:sticky;top:0;background:#f8fafc}
+/* ===== 柏拉图弹窗 ===== */
+.pareto-panel{max-width:1240px}
+.pareto-head-l{display:flex;flex-direction:column;gap:2px;min-width:0}
+.pareto-head-r{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+.pareto-by{display:flex;align-items:center;gap:6px;font-size:12.5px;color:#334155;white-space:nowrap}
+.pareto-by .f-input{padding:3px 8px;font-size:12.5px}
+.pareto-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+/* 无金额权限时只留一张图，整行铺开（否则右半边空一格） */
+.pareto-grid.one{grid-template-columns:1fr}
+.pareto-card{border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;background:#fff;min-width:0}
+.pareto-ttl{font-size:13px;font-weight:600;color:#0f172a;margin-bottom:6px}
+@media (max-width:1100px){.pareto-grid{grid-template-columns:1fr}}
 </style>
 
 <div class="dash-head">
@@ -42,14 +62,11 @@
     </div>
     <div class="cfg-row">
       <div class="cfg-block">
-        <div class="cfg-title">{{ tr('图表风格') }}{{ tr('（') }}5 {{ tr('种预设') }}{{ tr('）') }}</div>
+        <div class="cfg-title">{{ tr('图表风格') }}{{ mk('（') }}5 {{ tr('种预设') }}{{ mk('）') }}</div>
         <div id="style-minis"></div>
       </div>
-      <div class="cfg-block">
-        <div class="cfg-title">{{ tr('图表类型') }}</div>
-        <label class="f-check"><input type="radio" name="cfg_chart" value="bar">{{ tr('柱状图') }}</label><br>
-        <label class="f-check"><input type="radio" name="cfg_chart" value="line">{{ tr('折线图') }}</label>
-      </div>
+      {# 「图表类型 柱/线」已下线：分析页的图现在统一是「数量柱 + 金额折线」的组合图，
+         再留一个柱/线开关只会让人以为点了有用（其实什么都没变）。 #}
       <div class="cfg-block">
         <div class="cfg-title">{{ tr('显示 Top N') }}</div>
         <select class="f-input" id="cfg-top" style="max-width:110px">
@@ -60,15 +77,87 @@
       <div class="cfg-block">
         <div class="cfg-title">{{ tr('入库') }}/{{ tr('出库统计期间') }}</div>
         <select class="f-input" id="cfg-range" style="max-width:130px">
-          <option value="all">{{ tr('全部') }}</option><option value="30">{{ tr('近 {0} 天').format(30) }}</option>
-          <option value="90">{{ tr('近 {0} 天').format(90) }}</option><option value="year">{{ tr('近一年') }}</option>
+          <option value="7">{{ tr('近一周') }}</option><option value="30">{{ tr('近30日') }}</option>
+          <option value="90">{{ tr('近90日') }}</option><option value="year">{{ tr('近一年') }}</option><option value="custom">{{ tr('自定义周期') }}</option>
         </select>
       </div>
       <div class="cfg-block" style="align-self:flex-end">
         <button class="btn btn-primary" id="btn-cfg-save">{{ tr('保存设置') }}</button>
         <button class="btn" id="btn-cfg-close">{{ tr('btn_close') }}</button>
-        <span class="muted small" style="margin-left:8px">{{ tr('金额显示由系统设置') }}{{ tr('→') }}{{ tr('权限配置') }}{{ tr('「') }}{{ tr('备件金额查看') }}{{ tr('」') }}{{ tr('统一控制') }}</span>
+        <span class="muted small ui-hint" style="margin-left:8px">{{ tr('金额显示由系统设置') }}→{{ tr('权限配置') }}{{ mk('「') }}{{ tr('物料金额查看') }}{{ mk('」') }}{{ tr('统一控制') }}</span>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- ======== 柏拉图弹窗（领用趋势点柱子打开） ======== -->
+<div class="modal-mask" id="pareto-mask" style="display:none" onclick="closePareto()">
+  <div class="chart-cfg-panel pareto-panel" onclick="event.stopPropagation()">
+    <div class="cfg-head">
+      <div class="pareto-head-l">
+        <div class="cfg-head-title" id="pareto-title">—</div>
+        <div class="muted small" id="pareto-sub">—</div>
+      </div>
+      <div class="pareto-head-r">
+        <label class="pareto-by">{{ tr('细分维度') }}
+          <select class="f-input" id="pareto-by" onchange="paretoReload()"></select>
+        </label>
+        <button class="btn" id="pareto-export">{{ tr('导出 Excel') }}</button>
+        <button class="cfg-close-x" onclick="closePareto()" title="{{ tr('关闭') }}">✕</button>
+      </div>
+    </div>
+    <div class="pareto-grid" id="pareto-grid">
+      <div class="pareto-card">
+        <div class="pareto-ttl">{{ tr('领用数量柏拉图') }}</div>
+        <canvas id="pareto-qty" height="330" style="height:330px"></canvas>
+      </div>
+      <div class="pareto-card" id="pareto-amt-wrap">
+        <div class="pareto-ttl">{{ tr('领用金额柏拉图') }}</div>
+        <canvas id="pareto-amt" height="330" style="height:330px"></canvas>
+      </div>
+    </div>
+    <div class="muted small ui-hint" id="pareto-hint" style="margin-top:8px">
+      {{ tr('柱=数值，折线=累计占比；柱子按数值从大到小排，虚线是 80% 分界') }}
+    </div>
+  </div>
+</div>
+
+<!-- ======== 维修柏拉图弹窗（维修趋势点柱子打开） ========
+   点某根柱 = 「这个时间桶里，维修都修了些什么」。弹窗给四张柏拉图：
+   左列按维修品类型、右列按物料料号，各一份数量、一份金额（无金额权限时只出数量）。
+   时间窗由后端按被点的那根柱重算，与画柱子共用 _series_buckets。 -->
+<div class="modal-mask" id="repair-pareto-mask" style="display:none" onclick="closeRepairPareto()">
+  <div class="chart-cfg-panel pareto-panel" onclick="event.stopPropagation()">
+    <div class="cfg-head">
+      <div class="pareto-head-l">
+        <div class="cfg-head-title" id="repair-pareto-title">—</div>
+        <div class="muted small" id="repair-pareto-sub">—</div>
+      </div>
+      <div class="pareto-head-r">
+        <button class="btn" id="repair-pareto-export">{{ tr('导出 Excel') }}</button>
+        <button class="cfg-close-x" onclick="closeRepairPareto()" title="{{ tr('关闭') }}">✕</button>
+      </div>
+    </div>
+    <div class="pareto-grid" id="repair-pareto-grid">
+      <div class="pareto-card">
+        <div class="pareto-ttl">{{ tr('按维修品类型·数量') }}</div>
+        <canvas id="repair-pareto-type-qty" height="320" style="height:320px"></canvas>
+      </div>
+      <div class="pareto-card" id="repair-pareto-code-qty-wrap">
+        <div class="pareto-ttl">{{ tr('按物料料号·数量') }}</div>
+        <canvas id="repair-pareto-code-qty" height="320" style="height:320px"></canvas>
+      </div>
+      <div class="pareto-card" id="repair-pareto-type-amt-wrap">
+        <div class="pareto-ttl">{{ tr('按维修品类型·金额') }}</div>
+        <canvas id="repair-pareto-type-amt" height="320" style="height:320px"></canvas>
+      </div>
+      <div class="pareto-card" id="repair-pareto-code-amt-wrap">
+        <div class="pareto-ttl">{{ tr('按物料料号·金额') }}</div>
+        <canvas id="repair-pareto-code-amt" height="320" style="height:320px"></canvas>
+      </div>
+    </div>
+    <div class="muted small ui-hint" style="margin-top:8px">
+      {{ tr('柱=数值，折线=累计占比；柱子按数值从大到小排') }}
     </div>
   </div>
 </div>
@@ -81,33 +170,62 @@
         <option value="rack">{{ tr('按货架') }}</option>
       </select>
     </label>
+    <label class="f-label" id="flt-cat-wrap" style="display:none">{{ tr('分类维度') }}<select class="f-input" id="flt-cat">
+        <option value="device">{{ tr('设备名') }}</option>
+        <option value="model">{{ tr('设备型号') }}</option>
+      </select>
+    </label>
     <label class="f-label">{{ tr('仓库') }}<select class="f-input" id="flt-wh"><option value="">{{ tr('全部仓库') }}</option></select>
     </label>
-    <label class="f-label">{{ tr('备件名称') }}<select class="f-input" id="flt-name"><option value="">{{ tr('全部名称') }}</option></select>
+    <label class="f-label">{{ tr('物料名称') }}<select class="f-input" id="flt-name"><option value="">{{ tr('全部名称') }}</option></select>
     </label>
-    <label class="f-label">{{ tr('备件编码') }}<select class="f-input" id="flt-code"><option value="">{{ tr('全部编码') }}</option></select>
+    <label class="f-label">{{ tr('物料编码') }}<select class="f-input" id="flt-code"><option value="">{{ tr('全部编码') }}</option></select>
     </label>
-    <label class="f-label" id="flt-range-wrap" style="display:none">{{ tr('期间') }}<select class="f-input" id="flt-range"><option value="all">{{ tr('全部') }}</option><option value="30">{{ tr('近 {0} 天').format(30) }}</option>
-        <option value="90">{{ tr('近 {0} 天').format(90) }}</option><option value="year">{{ tr('近一年') }}</option></select>
+    <div class="f-label" id="flt-gran-wrap" style="display:none">
+      {# 默认「近30日」而不是「今日」：月初、或者早上刚上班时，当天一笔领用都还没有，
+         线体/设备分析四张图全是「暂无数据」，看着像功能坏了。滚动窗口任何一天都有数据。 #}
+      <span class="seg" id="flt-gran-seg">
+        <button class="seg-btn" data-gran="day">{{ tr('日度') }}</button>
+        <button class="seg-btn" data-gran="week">{{ tr('周度') }}</button>
+        <button class="seg-btn" data-gran="month">{{ tr('月度') }}</button>
+        <button class="seg-btn active" data-gran="30">{{ tr('近30日') }}</button>
+      </span>
+    </div>
+    <label class="f-label" id="flt-range-wrap" style="display:none">{{ tr('期间') }}<select class="f-input" id="flt-range"><option value="7">{{ tr('近一周') }}</option><option value="30">{{ tr('近30日') }}</option>
+        <option value="90">{{ tr('近90日') }}</option><option value="year">{{ tr('近一年') }}</option><option value="custom">{{ tr('自定义周期') }}</option></select>
     </label>
+    <div class="f-label" id="flt-date-wrap" style="display:none">
+      <div>{{ tr('起') }}<input class="f-input" type="date" id="flt-start" style="max-width:150px"></div>
+      <div>{{ tr('止') }}<input class="f-input" type="date" id="flt-end" style="max-width:150px"></div>
+    </div>
     <button class="btn" id="btn-refresh">{{ tr('btn_search') }}</button>
-    <button class="btn" id="btn-an-export" title="{{ tr('按当前页签与筛选条件导出') }} Excel{{ tr('（') }}{{ tr('统计') }}+{{ tr('明细') }}{{ tr('）') }}">{{ tr('导出 Excel') }}</button>
+    <button class="btn" id="btn-an-export" title="{{ tr('按当前页签与筛选条件导出') }} Excel（{{ tr('统计') }}+{{ tr('明细') }}）">{{ tr('导出 Excel') }}</button>
   </div>
 
   <div class="cards" id="an-cards"></div>
 
+  {# v1.0.47：按现场反馈去掉数据图表分析页的延期提示卡片（盘点延期信息仍在盘点报告/盘点页可见）。 #}
+
+  {# 数量与金额合成一张组合图：柱=数量（左轴）、折线=金额（右轴）。
+     以前数量、金额各占一张柱状图，读的时候要横着来回对同一根柱子，还看不出
+     「数量不多但金额很高」这种料。画法统一走 drawCombo，和总览的出入库趋势一致。
+     高度这里钉死：canvas 只有 width:100%，高度会按属性宽高比随卡片宽度放大，
+     半宽卡能撑到 470px，压掉 1/3 后统一 300px。 #}
   <div class="charts">
-    <div class="chart-card">
+    <div class="chart-card chart-card-wide">
       <div class="chart-title" id="an-bar-title">—</div>
-      <canvas id="chart-an-bar" height="260"></canvas>
+      <canvas id="chart-an-bar" height="300" style="height:300px"></canvas>
     </div>
-    <div class="chart-card">
+  </div>
+
+  <div class="charts">
+    <div class="chart-card" id="an-pie-wrap">
       <div class="chart-title" id="an-pie-title">—</div>
-      <canvas id="chart-an-pie" height="260"></canvas>
+      <canvas id="chart-an-pie" height="240" style="height:240px"></canvas>
     </div>
-    <div class="chart-card" id="an-amt-wrap" style="display:none">
-      <div class="chart-title" id="an-amt-title">—</div>
-      <canvas id="chart-an-amt" height="260"></canvas>
+    <div class="chart-card" id="an-amt-pie-wrap" style="display:none">
+      <div class="chart-title" id="an-amt-pie-title">—</div>
+      <canvas id="chart-an-amt-pie" height="240" style="height:240px"></canvas>
     </div>
   </div>
 
@@ -123,47 +241,109 @@
 <div id="ov-view" style="display:none">
 <div class="dash-head">
   <div class="seg">
-    <button class="seg-btn active" data-period="day">{{ tr('按日') }}</button>
-    <button class="seg-btn" data-period="week">{{ tr('按周') }}</button>
-    <button class="seg-btn" data-period="month">{{ tr('按月') }}</button>
+    <button class="seg-btn active" data-period="day">{{ tr('日度') }}</button>
+    <button class="seg-btn" data-period="week">{{ tr('周度') }}</button>
+    <button class="seg-btn" data-period="month">{{ tr('月度') }}</button>
   </div>
-  <span class="dash-hint">{{ tr('统计口径') }}{{ tr('：') }}{{ tr('已完成出入库流水') }}{{ tr('（') }}{{ tr('调库不计入') }}{{ tr('）') }}</span>
+  <span class="dash-hint">{{ tr('统计口径') }}{{ mk('：') }}{{ tr('已完成出入库流水') }}{{ mk('（') }}{{ tr('调库不计入') }}{{ mk('）') }}</span>
+  <button class="btn" id="btn-ov-export" title="{{ tr('导出总览') }} Excel">{{ tr('导出 Excel') }}</button>
 </div>
 
 <div class="cards" id="sum-cards">
-  <div class="card"><div class="card-title">{{ tr('入库数量') }}</div><div class="card-num" id="c-in-qty">--</div><div class="card-sub" id="c-in-qty-sub"></div></div>
-  {% if can('price') %}<div class="card"><div class="card-title">{{ tr('入库金额(元)') }}</div><div class="card-num" id="c-in-amt">--</div><div class="card-sub" id="c-in-amt-sub"></div></div>{% endif %}
-  <div class="card"><div class="card-title">{{ tr('出库数量') }}</div><div class="card-num" id="c-out-qty">--</div><div class="card-sub" id="c-out-qty-sub"></div></div>
-  {% if can('price') %}<div class="card"><div class="card-title">{{ tr('出库金额(元)') }}</div><div class="card-num" id="c-out-amt">--</div><div class="card-sub" id="c-out-amt-sub"></div></div>{% endif %}
+  <div class="card"><div class="card-title" id="c-in-qty-t">{{ tr('日度入库数量') }}</div><div class="card-num" id="c-in-qty">--</div><div class="card-sub" id="c-in-qty-sub"></div></div>
+  {% if can('price') %}<div class="card"><div class="card-title" id="c-in-amt-t">{{ tr('日度入库金额') }}{{ mk('（') }}{{ cur() }}{{ mk('）') }}</div><div class="card-num" id="c-in-amt">--</div><div class="card-sub" id="c-in-amt-sub"></div></div>{% endif %}
+  <div class="card"><div class="card-title" id="c-out-qty-t">{{ tr('日度出库数量') }}</div><div class="card-num" id="c-out-qty">--</div><div class="card-sub" id="c-out-qty-sub"></div></div>
+  {% if can('price') %}<div class="card"><div class="card-title" id="c-out-amt-t">{{ tr('日度出库金额') }}{{ mk('（') }}{{ cur() }}{{ mk('）') }}</div><div class="card-num" id="c-out-amt">--</div><div class="card-sub" id="c-out-amt-sub"></div></div>{% endif %}
   <div class="card"><div class="card-title">{{ tr('呆滞料号数') }}</div><div class="card-num" id="c-stale-count" style="color:#b91c1c">--</div><div class="card-sub" id="c-stale-days"></div></div>
-  {% if can('price') %}<div class="card"><div class="card-title">{{ tr('呆滞库存金额') }}({{ tr('元') }})</div><div class="card-num" id="c-stale-amt" style="color:#b91c1c">--</div><div class="card-sub">{{ tr('超期未领用备件占用资金') }}</div></div>{% endif %}
+  {% if can('price') %}<div class="card"><div class="card-title">{{ tr('呆滞库存金额') }}{{ mk('（') }}{{ cur() }}{{ mk('）') }}</div><div class="card-num" id="c-stale-amt" style="color:#b91c1c">--</div><div class="card-sub">{{ tr('超期未领用物料占用资金') }}</div></div>{% endif %}
 </div>
 
 <div class="charts">
-  <div class="chart-card">
-    <div class="chart-title">{{ tr('出入库数量趋势') }}</div>
-    <canvas id="chart-qty" height="260"></canvas>
+  <!-- 入库、出库各成一张：混在一张图看趋势时，出库常比入库大一个量级，
+       入库那根柱会被压得几乎看不见，分开才各自读得出「这周比上周多还是少」。
+       两张都占满整行：日度是 31 根柱，半宽卡一根柱只有 8px，「哪天高哪天低」
+       得靠猜；整行后每根柱 40px 上下，横轴日期也能逐日读出来。 -->
+  <div class="chart-card chart-card-wide">
+    <div class="chart-title">{{ tr('入库趋势') }}</div>
+    <canvas id="chart-in" height="300" style="height:300px"></canvas>
   </div>
+  <div class="chart-card chart-card-wide">
+    <div class="chart-title">{{ tr('出库趋势') }}</div>
+    <canvas id="chart-out" height="300" style="height:300px"></canvas>
+  </div>
+</div>
+
+<!-- 领用趋势：与出入库趋势同一批时间桶、同一种画法 —— 柱=数量（左轴）、折线=金额（右轴）。
+     头部下拉：默认「总览」看各分类堆叠构成，选具体一项就单看那条线/那台设备/那个型号 -->
+{# 三张都占满整行：每张卡自己就是「柱+线」的完整组合图，半宽会在右侧空出半个格子，
+   横轴十几个日期也挤。放进同一个 .charts 网格里，行距统一，不再各占一个容器。 #}
+<div class="charts">
+  <div class="chart-card chart-card-wide">
+    <div class="chart-head">
+      <div class="chart-title">{{ tr('线别领用趋势') }}</div>
+      <div class="chart-pick-wrap">
+        <span class="muted small ui-hint">{{ tr('点柱子看柏拉图') }}</span>
+        <select class="chart-pick" id="pick-line" data-dim="line" onchange="onUsagePick('line', this.value)"></select>
+      </div>
+    </div>
+    <canvas id="chart-uline" height="340" style="height:340px"></canvas>
+  </div>
+
+  <div class="chart-card chart-card-wide">
+    <div class="chart-head">
+      <div class="chart-title">{{ tr('设备领用趋势') }}</div>
+      <div class="chart-pick-wrap">
+        <span class="muted small ui-hint">{{ tr('点柱子看柏拉图') }}</span>
+        <select class="chart-pick" id="pick-device" data-dim="device" onchange="onUsagePick('device', this.value)"></select>
+      </div>
+    </div>
+    <canvas id="chart-udev" height="340" style="height:340px"></canvas>
+  </div>
+
+  <div class="chart-card chart-card-wide">
+    <div class="chart-head">
+      <div class="chart-title">{{ tr('设备型号领用趋势') }}</div>
+      <div class="chart-pick-wrap">
+        <span class="muted small ui-hint">{{ tr('点柱子看柏拉图') }}</span>
+        <select class="chart-pick" id="pick-model" data-dim="model" onchange="onUsagePick('model', this.value)"></select>
+      </div>
+    </div>
+    <canvas id="chart-utype" height="340" style="height:340px"></canvas>
+  </div>
+</div>
+
+<!-- 维修趋势：借·换·检·修台账「维修」子类型的数量与金额随时间变化；
+     柱=维修数量（左轴）、折线=维修金额（右轴，无金额权限时只有柱）；
+     点柱子弹维修柏拉图，按维修品类型与物料料号分析并导出详细数据 -->
+<div class="charts">
+  <div class="chart-card chart-card-wide">
+    <div class="chart-head">
+      <div class="chart-title">{{ tr('维修趋势') }}</div>
+      <div class="chart-pick-wrap">
+        <span class="muted small ui-hint">{{ tr('点柱子看柏拉图') }}</span>
+      </div>
+    </div>
+    <canvas id="chart-repair" height="340" style="height:340px"></canvas>
+  </div>
+</div>
+
+<div class="charts">
+  {# 无金额权限时整张卡都不渲染：只留空 div 会在网格里占半个白格子 #}
   {% if can('price') %}<div class="chart-card">
-    <div class="chart-title">{{ tr('出入库金额趋势') }}({{ tr('元') }})</div>
-    <canvas id="chart-amt" height="260"></canvas>
+    <div class="chart-title">{{ tr('物料分类库存金额占比') }}{{ mk('（') }}{{ cur() }}{{ mk('）') }}</div>
+    {# 高度必须写进 style：只写 height 属性时，绘制代码按实测高度回写属性，
+       显示高度会跟着属性一起涨（这块饼图曾被撑到 530px）。350px 是原来的 2/3。 #}
+    <canvas id="chart-cat" height="350" style="height:350px"></canvas>
   </div>{% endif %}
-</div>
-
-<div class="charts">
-  <div class="chart-card">
-    {% if can('price') %}<div class="chart-title">{{ tr('备件分类库存金额占比') }}({{ tr('元') }})</div>
-    <canvas id="chart-cat" height="260"></canvas>{% endif %}
-  </div>
-  <div class="chart-card">
+  <div class="chart-card{% if not can('price') %} chart-card-wide{% endif %}">
     <div class="chart-title">{{ tr('库存上下限预警') }}</div>
     <div class="alert-box">
       <div class="alert-section">
-        <div class="alert-head alert-low">🔻 {{ tr('低于下限') }}{{ tr('（') }}0{{ tr('）') }}</div>
+        <div class="alert-head alert-low">🔻 {{ tr('低于下限') }}{{ mk('（') }}0{{ mk('）') }}</div>
         <div id="alert-low-list" class="alert-list"><span class="muted">{{ tr('加载中…') }}</span></div>
       </div>
       <div class="alert-section">
-        <div class="alert-head alert-high">🔺 {{ tr('超过上限') }}{{ tr('（') }}0{{ tr('）') }}</div>
+        <div class="alert-head alert-high">🔺 {{ tr('超过上限') }}{{ mk('（') }}0{{ mk('）') }}</div>
         <div id="alert-high-list" class="alert-list"><span class="muted">{{ tr('加载中…') }}</span></div>
       </div>
     </div>
@@ -181,20 +361,20 @@
   </div>
   <div class="chart-card">
     <div class="chart-title">{{ tr('说明') }}</div>
-    <div class="muted small" style="line-height:1.9">
-      <p>{{ tr('· 呆滞口径：以') }}<b>{{ tr('th_code') }}</b>{{ tr('为锚点') }}{{ tr('，') }}{{ tr('超过设定天数') }}{{ tr('（') }}{{ tr('系统设置可配') }}{{ tr('，') }}{{ tr('默认') }} 90 {{ tr('天') }}{{ tr('）') }}{{ tr('未领用') }}{{ tr('（') }}{{ tr('无出库') }}{{ tr('）') }}{{ tr('即判定为呆滞') }}{{ tr('。') }}</p>
-      <p>· {{ tr('参考日期') }}{{ tr('：') }}{{ tr('最近一次') }}<b>{{ tr('type_out') }}</b>{{ tr('时间') }}{{ tr('；') }}{{ tr('从未出库过的备件按') }}<b>{{ tr('建档日期') }}</b>{{ tr('起算。') }}</p>
-      {% if can('price') %}<p>· {{ tr('调库入库流水不计入领用') }}{{ tr('；') }}{{ tr('呆滞金额') }} = {{ tr('当前库存') }} × {{ tr('单价') }}{{ tr('。') }}</p>{% endif %}
-      <p>{{ tr('· 数据图表主页与') }}<b>{{ tr('大屏展示') }}</b>{{ tr('均含呆滞监控，大屏可在「大屏配置」中调整阈值与显示条数。') }}</p>
+    <div class="muted small ui-hint" style="line-height:1.9">
+      <p>{{ tr('· 呆滞口径：以') }}<b>{{ tr('th_code') }}</b>{{ tr('为锚点') }}{{ mk('，') }}{{ tr('超过设定天数') }}{{ mk('（') }}{{ tr('系统设置可配') }}{{ mk('，') }}{{ tr('默认') }} 90 {{ tr('天') }}{{ mk('）') }}{{ tr('未领用') }}{{ mk('（') }}{{ tr('无出库') }}{{ mk('）') }}{{ tr('即判定为呆滞') }}{{ mk('。') }}</p>
+      <p>· {{ tr('参考日期') }}{{ mk('：') }}{{ tr('最近一次') }}<b>{{ tr('type_out') }}</b>{{ tr('时间') }}{{ mk('；') }}{{ tr('从未出库过的物料按') }}<b>{{ tr('建档日期') }}</b>{{ tr('起算。') }}</p>
+      {% if can('price') %}<p>· {{ tr('调库入库流水不计入领用') }}{{ mk('；') }}{{ tr('呆滞金额') }} = {{ tr('当前库存') }} × {{ tr('单价') }}{{ mk('。') }}</p>{% endif %}
+      <p>{{ tr('· 数据图表分析与') }}<b>{{ tr('大屏展示') }}</b>{{ tr('均含呆滞监控，大屏可在「大屏配置」中调整阈值与显示条数。') }}</p>
     </div>
   </div>
 </div>
 </div>
 {% endblock %}
 {% block scripts %}
-<script src="{{ url_for('static', filename='js/charts.js') }}"></script>
+<script src="{{ url_for('static', filename='js/charts.js', v='20261124a') }}"></script>
 <script>
-// 金额敏感：SEE_PRICE=false（无「备件金额查看」权限，普通用户默认）时金额卡/金额图/金额列全部隐藏
+// 金额敏感：SEE_PRICE=false（无「物料金额查看」权限，普通用户默认）时金额卡/金额图/金额列全部隐藏
 const SEE_PRICE = {{ 'true' if can('price') else 'false' }};
 // ===== 图表风格 5 种预设（与后端 DASH_STYLES 一致） =====
 const DASH_STYLES = {
@@ -210,12 +390,12 @@ const DASH_STYLES = {
           pie:['#ea580c','#f97316','#fb923c','#fdba74','#c2410c','#f59e0b','#fbbf24','#ef4444','#f87171','#b91c1c']},
 };
 const DASH_ORDER = ['tech','green','gold','clean','orange'];
-let DCFG = {style:'tech', top_n:10, chart_type:'bar', range:'all'};
+let DCFG = {style:'tech', top_n:10, chart_type:'bar', range:'30'};
 let curTab = 'stock';
 let meta = {whs:[], names:[], codes:[]};
 
-function fmt(v){ return Number(v||0).toLocaleString('zh-CN'); }
-function fmt2(v){ return Number(v||0).toLocaleString('zh-CN',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function fmt(v){ return Number(v||0).toLocaleString(window.LOCALE || 'zh-CN'); }
+function fmt2(v){ return Number(v||0).toLocaleString(window.LOCALE || 'zh-CN',{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function esc(s){ const d=document.createElement('div'); d.textContent=s==null?'':String(s); return d.innerHTML; }
 function pct(prev, cur){
   if(prev===0) return cur===0 ? ' —' : ' '+TR('↑新增');
@@ -244,7 +424,6 @@ document.getElementById('btn-cfg-close').onclick = closeChartCfg;
 document.getElementById('btn-cfg-save').onclick = ()=>{
   const fd = new FormData();
   fd.append('style', DCFG.style);
-  fd.append('chart_type', document.querySelector('input[name=cfg_chart]:checked').value);
   fd.append('top_n', document.getElementById('cfg-top').value);
   fd.append('range', document.getElementById('cfg-range').value);
   fetch('/api/analysis/cfg', {method:'POST', body:fd}).then(r=>r.json()).then(d=>{
@@ -258,8 +437,6 @@ document.getElementById('btn-cfg-save').onclick = ()=>{
 function syncCfgPanel(){
   document.getElementById('cfg-top').value = String(DCFG.top_n);
   document.getElementById('cfg-range').value = DCFG.range;
-  const r = document.querySelector('input[name=cfg_chart][value="'+DCFG.chart_type+'"]');
-  if(r) r.checked = true;
 }
 
 // ===== 筛选 / 视图切换 =====
@@ -283,6 +460,9 @@ document.querySelectorAll('#view-tabs .seg-btn').forEach(b=>{
     const ov = document.getElementById('ov-view');
     const wrap = document.getElementById('flt-range-wrap');
     const dimWrap = document.getElementById('flt-dim-wrap');
+    const catWrap = document.getElementById('flt-cat-wrap');
+    const granWrap = document.getElementById('flt-gran-wrap');
+    const dateWrap = document.getElementById('flt-date-wrap');
     const whF = document.getElementById('flt-wh').parentElement;
     const nmF = document.getElementById('flt-name').parentElement;
     const cdF = document.getElementById('flt-code').parentElement;
@@ -292,12 +472,35 @@ document.querySelectorAll('#view-tabs .seg-btn').forEach(b=>{
     }
     ov.style.display='none'; an.style.display='block';
     const isUsage = (curTab==='uline'||curTab==='udevice');
-    wrap.style.display = (curTab==='in'||curTab==='out'||isUsage) ? 'block' : 'none';
+    wrap.style.display = (curTab==='in'||curTab==='out') ? 'block' : 'none';
     dimWrap.style.display = (curTab==='stock'||curTab==='in'||curTab==='out') ? 'block' : 'none';
+    catWrap.style.display = (curTab==='udevice') ? 'block' : 'none';
+    granWrap.style.display = isUsage ? 'block' : 'none';
+    const showDates = (wrap.style.display==='block' && document.getElementById('flt-range').value==='custom');
+    dateWrap.style.display = showDates ? 'block' : 'none';
     whF.style.display = isUsage ? 'none' : 'block';
     nmF.style.display = isUsage ? 'none' : 'block';
     cdF.style.display = isUsage ? 'none' : 'block';
-    document.getElementById('an-amt-wrap').style.display = 'none';
+    document.getElementById('an-amt-pie-wrap').style.display = 'none';
+    renderAnalysis();
+  };
+});
+document.getElementById('flt-range').onchange = ()=>{
+  document.getElementById('flt-date-wrap').style.display =
+    (document.getElementById('flt-range').value==='custom') ? 'block' : 'none';
+};
+// 统计窗口 seg（线体/设备分析）：今日/本周/本月
+// 按钮不用「按日/按周/按月」：那三个词是「分组粒度」（导出趋势表、大屏近 N 天在用），
+// 而这里切换的是统计窗口（今天 0 点起 / 本周一起 / 本月 1 日起），词一混用，
+// 英文就成了 Daily 配标题的 Today，同一件事两个词。见 app.py::_screen_period_window。
+function curGran(){
+  const el = document.querySelector('#flt-gran-seg .seg-btn.active');
+  return el ? el.dataset.gran : 'day';
+}
+document.querySelectorAll('#flt-gran-seg .seg-btn').forEach(b=>{
+  b.onclick = ()=>{
+    document.querySelectorAll('#flt-gran-seg .seg-btn').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');
     renderAnalysis();
   };
 });
@@ -310,15 +513,51 @@ document.getElementById('btn-an-export').onclick = ()=>{
   if(!isUsage){
     if(wh) qs.set('wh',wh); if(nm) qs.set('name',nm); if(cd) qs.set('code',cd);
     qs.set('dim', document.getElementById('flt-dim').value || 'wh');
+    const rng = document.getElementById('flt-range').value || DCFG.range;
+    qs.set('range', rng);
+    if(rng==='custom'){
+      qs.set('start', document.getElementById('flt-start').value);
+      qs.set('end', document.getElementById('flt-end').value);
+    }
+  } else {
+    if(curTab==='udevice') qs.set('dim', document.getElementById('flt-cat').value || 'device');
+    qs.set('gran', curGran());
   }
   qs.set('top', DCFG.top_n);
-  if(curTab==='in'||curTab==='out'||isUsage){
-    qs.set('range', document.getElementById('flt-range').value || DCFG.range);
-  }
   window.location = '/api/analysis/export?' + qs.toString();
+};
+document.getElementById('btn-ov-export').onclick = ()=>{
+  window.location = '/api/analysis/export?tab=overview';
 };
 
 // ===== 分析渲染 =====
+/* 图表标题：整句 + 占位符。
+   以前写作 TR('各')+lbl+TR('领用数量')，中文靠拼接还能读，英文就变成
+   「by LineIssue Qty」这种词序错乱的碎句。整句入库后语序由译文自己决定。 */
+/* 图表标题只负责拼「主标题（细分）」的括号：取词一律在调用处用 TRP 完成，
+   这样静态扫描器能看见每一条中文，不会把这里当成「裸写中文」的漏词。 */
+function pieTitle(txt, gran){
+  // 括号用 MK_O/MK_C：中文全角紧贴，英文半角且前面留一个空格
+  return gran ? txt + MK_O + gran + MK_C : txt;
+}
+/* 分析页组合图标题：服务端渲染好再交给前端，不走运行时取词——
+   少一次「词条没登记进本页分片」的漏词风险。
+   数量与金额合成一张后，标题也要交代这张图里既有数量也有金额。 */
+const AN_QT = {
+  stock: {{ tr('各产品库存数量与金额') | tojson }},
+  in: {{ tr('各产品入库数量与金额') | tojson }},
+  out: {{ tr('各产品出库数量与金额') | tojson }},
+  usage: {{ tr('各{name}领用数量与金额') | tojson }}
+};
+/* 统计窗口名：今日/本周/本月是自然周期，近30日/近90日是滚动窗口。
+   单字「日/周/月」不能用 —— 英文里「日」会被翻成星期几。 */
+const GRAN_NAME = {
+  day: {{ tr('日度') | tojson }},
+  week: {{ tr('周度') | tojson }},
+  month: {{ tr('月度') | tojson }},
+  '30': {{ tr('近30日') | tojson }},
+  '90': {{ tr('近90日') | tojson }}
+};
 function renderAnalysis(){
   const qs = new URLSearchParams({tab:curTab});
   const wh=document.getElementById('flt-wh').value, nm=document.getElementById('flt-name').value,
@@ -327,13 +566,18 @@ function renderAnalysis(){
   if(!isUsage){
     if(wh) qs.set('wh',wh); if(nm) qs.set('name',nm); if(cd) qs.set('code',cd);
     qs.set('dim', document.getElementById('flt-dim').value || 'wh');
+    const rng = document.getElementById('flt-range').value;
+    qs.set('range', rng || DCFG.range);
+    if((rng||DCFG.range)==='custom'){
+      qs.set('start', document.getElementById('flt-start').value);
+      qs.set('end', document.getElementById('flt-end').value);
+    }
+  } else {
+    if(curTab==='udevice') qs.set('dim', document.getElementById('flt-cat').value || 'device');
+    qs.set('gran', curGran());
   }
   qs.set('top', DCFG.top_n);
   qs.set('chart', DCFG.chart_type);
-  if(curTab==='in'||curTab==='out'||isUsage){
-    const rng = document.getElementById('flt-range').value;
-    qs.set('range', rng || DCFG.range);
-  }
   fetch('/api/analysis?'+qs.toString()).then(r=>r.json()).then(d=>{
     if(!d.ok) return;
     const st = DASH_STYLES[d.cfg.style] || DASH_STYLES.tech;
@@ -341,78 +585,108 @@ function renderAnalysis(){
     const cards = document.getElementById('an-cards');
     if(curTab==='stock'){
       cards.innerHTML =
-        cardHtml(TR('当前库存数'), fmt(d.stats.cur_stock)+TR('件')) +
-        cardHtml(TR('安全库存数(下限合计)'), fmt(d.stats.safe_stock)+TR('件')) +
-        cardHtml(TR('库存料号数'), fmt(d.stats.part_count)+TR('种')) +
+        cardHtml(TR('当前库存数'), fmt(d.stats.cur_stock)+SP+TR('件')) +
+        cardHtml(TR('安全库存数(下限合计)'), fmt(d.stats.safe_stock)+SP+TR('件')) +
+        cardHtml(TR('库存料号数'), fmt(d.stats.part_count)+SP+TR('种')) +
         (d.cfg.show_amount && d.stats.stock_value!=null ? cardHtml(TR('库存金额(元)'), fmt2(d.stats.stock_value)) : '');
     } else if(isUsage){
       const lbl = curTab==='uline' ? TR('线体') : TR('设备');
       cards.innerHTML =
-        cardHtml(TR('领用数量'), fmt(d.stats.qty)+TR('件')) +
+        cardHtml(TR('领用数量'), fmt(d.stats.qty)+SP+TR('件')) +
         (d.cfg.show_amount ? cardHtml(TR('领用金额(元)'), fmt2(d.stats.amount)) : '') +
-        cardHtml(TR('领用单据数'), fmt(d.stats.apps)+TR('笔'));
+        cardHtml(TR('领用单据数'), fmt(d.stats.apps)+SP+TR('笔'));
     } else {
       const t = curTab==='in' ? TR('入库') : TR('出库');
       cards.innerHTML =
-        cardHtml(t+TR('数量'), fmt(d.stats.qty)) +
-        (d.cfg.show_amount ? cardHtml(t+TR('金额(元)'), fmt2(d.stats.amount)) : '') +
-        cardHtml(t+TR('单据数'), fmt(d.stats.apps)+TR('笔'));
+        cardHtml(t+SP+TR('数量'), fmt(d.stats.qty)) +
+        (d.cfg.show_amount ? cardHtml(t+SP+TR('金额(元)'), fmt2(d.stats.amount)) : '') +
+        cardHtml(t+SP+TR('单据数'), fmt(d.stats.apps)+SP+TR('笔'));
     }
-    // 图
+    // 图：数量柱 + 金额折线合成一张（与总览的出入库趋势、领用趋势同一画法）
     const dimName = d.cfg.dim==='rack' ? TR('货架') : TR('仓库');
-    const amtWrap = document.getElementById('an-amt-wrap');
-    if(isUsage){
-      const lbl = curTab==='uline' ? TR('线体') : TR('设备');
-      amtWrap.style.display = d.cfg.show_amount ? 'block' : 'none';
-      document.getElementById('an-bar-title').textContent = d.title;
-      drawBars('chart-an-bar', d.bar.labels, d.bar.series.map(s=>({name:s.name,data:s.data,color:st.bars[0]})), {});
-      if(d.cfg.show_amount && d.amt){
-        document.getElementById('an-amt-title').textContent = TR('各')+lbl+TR('领用金额(元)');
-        drawBars('chart-an-amt', d.amt.labels, d.amt.series.map(s=>({name:s.name,data:s.data,color:st.bars[1]||st.bars[0]})), {});
-        document.getElementById('an-pie-title').textContent = '';
-      } else {
-        // 无金额权限：第二张图用「领用数量占比」饼图填充，不留空位
-        const pieData = d.bar.labels.map((lb,i)=>({name:lb, value:d.bar.series[0].data[i]||0}));
-        drawPie('chart-an-pie', pieData, {colors:st.pie});
-        document.getElementById('an-pie-title').textContent = TR('各')+lbl+TR('领用数量占比');
-      }
+    const isModel = (curTab==='udevice' && d.cfg.dim==='model');
+    const lbl = isUsage ? (curTab==='uline' ? TR('线体') : (isModel ? TR('设备型号') : TR('设备'))) : dimName;
+    const gran = isUsage ? (d.cfg.gran || 'none') : 'none';
+    // 窗口名用「今日/本周/本月」（自然周期，与大屏 KPI 同口径），口径见 app.py::_screen_period_window。
+    // 不用单字「日/周/月」：英文里会被翻成 Sun/Week/Month，「日」尤其容易变成星期几。
+    const granName = GRAN_NAME[gran] || {{ tr('月度') | tojson }};
+    const win = (gran!=='none') ? granName : '';
+    const combo = d.combo;
+    const barTitle = document.getElementById('an-bar-title');
+    if(combo && combo.labels && combo.labels.length){
+      // 入库绿、出库橙，与总览两张趋势图同色；其它页签取主题第一色
+      const barColor = curTab==='in' ? '#22c55e' : (curTab==='out' ? '#f97316' : (st.bars[0] || '#2563eb'));
+      const bars = [{name: combo.qty.name, data: combo.qty.data, color: barColor}];
+      // 金额折线用近黑：右轴刻度同色，一眼对得上「这条线读右边」
+      const lines = (d.cfg.show_amount && combo.amt)
+        ? [{name: combo.amt.name, data: combo.amt.data, color:'#111827'}] : [];
+      const tt = isUsage ? AN_QT.usage.split('{name}').join(lbl) : AN_QT[curTab];
+      barTitle.textContent = win ? tt + MK_O + win + MK_C : tt;
+      drawCombo('chart-an-bar', combo.labels, bars, lines, {});
     } else {
-      amtWrap.style.display = 'none';
-      document.getElementById('an-bar-title').textContent = d.title + (d.cfg.chart_type==='line' ? TR('{{ tr('（') }}折线{{ tr('）') }}') : '');
-      document.getElementById('an-pie-title').textContent = (curTab==='stock' ? TR('各')+dimName+TR('库存占比') : (curTab==='in' ? TR('各')+dimName+TR('入库数量占比') : TR('各')+dimName+TR('出库数量占比')));
-      if(d.cfg.chart_type==='line'){
-        drawLines('chart-an-bar', d.bar.labels, d.bar.series.map(s=>({name:s.name,data:s.data,color:st.bars[0]})), {});
-      } else {
-        drawBars('chart-an-bar', d.bar.labels, d.bar.series.map(s=>({name:s.name,data:s.data,color:st.bars[0]})), {});
-      }
-
-      drawPie('chart-an-pie', d.pie, {colors:st.pie});
+      barTitle.textContent = d.title;
+      drawCombo('chart-an-bar', [], [], []);
     }
-    renderTable(d.rows, d.cfg);
+    // 占比饼图：数量占比一直在；金额占比只给有金额权限的人（其余人连卡片都不出现）
+    const pieWrap = document.getElementById('an-pie-wrap');
+    const amtPieWrap = document.getElementById('an-amt-pie-wrap');
+    const qtyPie = isUsage
+      ? d.bar.labels.map((lb,i)=>({name:lb, value:(d.bar.series[0].data[i]||0)}))
+      : (d.pie || []);
+    // 金额占比：领用页签按线体/设备分，其余页签按仓库/货架分（接口已给 pie_amt）
+    const amtPieSrc = isUsage
+      ? ((d.amt && d.amt.labels) ? d.amt.labels.map((lb,i)=>({name:lb, value:(d.amt.series[0].data[i]||0)})) : [])
+      : (d.pie_amt || []);
+    const showAmtPie = d.cfg.show_amount && amtPieSrc.length > 0;
+    // **先定宽窄再画**：只剩一张饼时要占满整行。以前是先画后切 class，
+    // 卡片从半宽变整行（或反过来）时位图宽度和 CSS 宽度不等比，
+    // 圆饼就被横向压成椭圆 —— 「饼图扁了」的根因就在这里。
+    if(pieWrap) pieWrap.classList.toggle('chart-card-wide', !showAmtPie);
+    drawPie('chart-an-pie', qtyPie, {colors:st.pie});
+    document.getElementById('an-pie-title').textContent = pieTitle(
+      curTab==='stock' ? TRP('各{name}库存占比', {name: lbl})
+        : (curTab==='in' ? TRP('各{name}入库数量占比', {name: lbl})
+        : (curTab==='out' ? TRP('各{name}出库数量占比', {name: lbl})
+        : TRP('各{name}领用数量占比', {name: lbl}))));
+    if(amtPieWrap){
+      amtPieWrap.style.display = showAmtPie ? '' : 'none';
+      if(showAmtPie){
+        drawPie('chart-an-amt-pie', amtPieSrc, {colors:st.pie});
+        document.getElementById('an-amt-pie-title').textContent = pieTitle(
+          curTab==='stock' ? TRP('各{name}库存金额占比(元)', {name: lbl})
+            : (curTab==='in' ? TRP('各{name}入库金额占比(元)', {name: lbl})
+            : (curTab==='out' ? TRP('各{name}出库金额占比(元)', {name: lbl})
+            : TRP('各{name}领用金额占比(元)', {name: lbl}))));
+      }
+    }
+    renderTable(d.rows, d.cfg, d.trend);
   }).catch(e=>console.error(e));
 }
 function cardHtml(title, num){
   return '<div class="card"><div class="card-title">'+title+'</div><div class="card-num">'+num+'</div></div>';
 }
-function renderTable(rows, cfg){
+function renderTable(rows, cfg, trend){
   const t = document.getElementById('an-table');
   if(curTab==='stock'){
-    document.getElementById('an-table-title').textContent = '{{ tr('备件库存明细') }}{{ tr('（') }}{{ tr('按筛选条件') }}{{ tr('）') }}';
-    t.innerHTML = '<thead><tr><th>{{ tr('role_warehouse') }}</th><th>{{ tr('库位明细') }}</th><th>{{ tr('备件编码') }}</th><th>{{ tr('备件名称') }}</th><th>{{ tr('规格型号') }}</th><th>{{ tr('单位') }}</th><th>{{ tr('入库数量') }}</th><th>{{ tr('领用数量') }}</th><th>{{ tr('安全库存') }}</th><th>{{ tr('当前库存') }}</th><th>{{ tr('与安全库存差值') }}</th></tr></thead><tbody>'+
+    document.getElementById('an-table-title').textContent = '{{ tr('物料库存明细') }}' + MK_O + '{{ tr('按筛选条件') }}' + MK_C;
+    t.innerHTML = '<thead><tr><th>{{ tr('role_warehouse') }}</th><th>{{ tr('库位明细') }}</th><th>{{ tr('物料编码') }}</th><th>{{ tr('物料名称') }}</th><th>{{ tr('规格型号') }}</th><th>{{ tr('单位') }}</th><th>{{ tr('入库数量') }}</th><th>{{ tr('领用数量') }}</th><th>{{ tr('安全库存') }}</th><th>{{ tr('当前库存') }}</th><th>{{ tr('与安全库存差值') }}</th></tr></thead><tbody>'+
       (rows.length ? rows.map(r=>'<tr><td>'+esc(r.wh)+'</td><td class="mono small">'+esc(r.locations)+'</td><td class="mono">'+esc(r.part_code)+'</td><td>'+esc(r.name)+'</td><td>'+esc(r.spec)+'</td><td>'+esc(r.unit)+'</td><td class="num">'+fmt(r.in_qty)+'</td><td class="num">'+fmt(r.out_qty)+'</td><td class="num">'+fmt(r.safe)+'</td><td class="num">'+fmt(r.stock)+'</td><td class="num">'+(r.diff<0?'<span class="badge badge-danger">'+fmt(r.diff)+'</span>':fmt(r.diff))+'</td></tr>').join('')
       : '<tr><td colspan="11" class="muted center">{{ tr('无数据') }}</td></tr>')+'</tbody>';
   } else if(curTab==='uline'||curTab==='udevice'){
-    const lbl = curTab==='uline' ? TR('线体') : TR('设备');
-    document.getElementById('an-table-title').textContent = TR('各')+lbl+' '+TR('领用统计')+' ('+TR('按筛选条件')+')';
+    const isModel = (curTab==='udevice' && cfg.dim==='model');
+    const lbl = curTab==='uline' ? TR('线体') : (isModel ? TR('设备型号') : TR('设备'));
+    const gran = cfg.gran || 'none';
+    const granName = GRAN_NAME[gran] || {{ tr('月度') | tojson }};
     const amtCol = cfg.show_amount ? '<th>{{ tr('th_amount') }}</th>' : '';
+    document.getElementById('an-table-title').textContent = pieTitle(TRP('各{name}领用统计', {name: lbl}), gran!=='none' ? granName : '');
     t.innerHTML = '<thead><tr><th>'+lbl+'</th><th>{{ tr('领用数量') }}</th>'+amtCol+'</tr></thead><tbody>'+
       (rows.length ? rows.map(r=>'<tr><td>'+esc(r.name)+'</td><td class="num">'+fmt(r.qty)+'</td>'+(cfg.show_amount?'<td class="num">'+fmt2(r.amount)+'</td>':'')+'</tr>').join('')
       : '<tr><td colspan="'+(cfg.show_amount?3:2)+'" class="muted center">{{ tr('无数据') }}</td></tr>')+'</tbody>';
   } else {
     const t2 = curTab==='in' ? TR('入库') : TR('出库');
-    document.getElementById('an-table-title').textContent = t2+'{{ tr('明细（按筛选条件，最多 500 笔）') }}';
+    document.getElementById('an-table-title').textContent = t2 + SP + '{{ tr('明细（按筛选条件，最多 500 笔）') }}';
     const amtCol = cfg.show_amount ? '<th>{{ tr('th_amount') }}</th>' : '';
-    t.innerHTML = '<thead><tr><th>{{ tr('th_time') }}</th><th>{{ tr('th_no') }}</th><th>{{ tr('备件编码') }}</th><th>{{ tr('备件名称') }}</th><th>{{ tr('role_warehouse') }}</th><th>{{ tr('th_quantity') }}</th>'+amtCol+'<th>{{ tr('th_applicant') }}</th><th>{{ tr('执行人') }}</th></tr></thead><tbody>'+
+    t.innerHTML = '<thead><tr><th>{{ tr('th_time') }}</th><th>{{ tr('th_no') }}</th><th>{{ tr('物料编码') }}</th><th>{{ tr('物料名称') }}</th><th>{{ tr('role_warehouse') }}</th><th>{{ tr('th_quantity') }}</th>'+amtCol+'<th>{{ tr('th_applicant') }}</th><th>{{ tr('执行人') }}</th></tr></thead><tbody>'+
       (rows.length ? rows.map(r=>'<tr><td class="mono">'+esc(r.created_at)+'</td><td class="mono">'+esc(r.tx_no)+'</td><td class="mono">'+esc(r.part_code)+'</td><td>'+esc(r.name)+'</td><td>'+esc(r.location)+'</td><td class="num">'+fmt(r.quantity)+'</td>'+(cfg.show_amount?'<td class="num">'+fmt2(r.amount)+'</td>':'')+'<td>'+esc(r.applicant||'-')+'</td><td>'+esc(r.operator||'-')+'</td></tr>').join('')
       : '<tr><td colspan="'+(cfg.show_amount?9:8)+'" class="muted center">{{ tr('无数据') }}</td></tr>')+'</tbody>';
   }
@@ -420,7 +694,260 @@ function renderTable(rows, cfg){
 
 // ===== 总览视图（原有逻辑） =====
 let curPeriod = 'day';
+/* KPI 卡标题跟随周期换词。整句入库、不拆「今日」+「入库数量」拼接——英文语序会乱。
+   三档文案由服务端渲染进 JS，前端只按下标取，不再走一次取词（少一次漏词风险）。 */
+const KP_TITLES = {
+  'c-in-qty-t':  {{ [tr('日度入库数量'), tr('周度入库数量'), tr('月度入库数量')] | tojson }},
+  'c-out-qty-t': {{ [tr('日度出库数量'), tr('周度出库数量'), tr('月度出库数量')] | tojson }},
+  'c-in-amt-t':  {{ [tr('日度入库金额'), tr('周度入库金额'), tr('月度入库金额')] | tojson }},
+  'c-out-amt-t': {{ [tr('日度出库金额'), tr('周度出库金额'), tr('月度出库金额')] | tojson }}
+};
+const KP_CUR = {{ cur() | tojson }};
+function applyPeriodTitles(){
+  const i = curPeriod === 'day' ? 0 : (curPeriod === 'week' ? 1 : 2);
+  Object.keys(KP_TITLES).forEach(function(id){
+    const el = document.getElementById(id);
+    if(!el) return;
+    const s = KP_TITLES[id][i];
+    el.textContent = id.indexOf('amt') >= 0 ? s + MK_O + KP_CUR + MK_C : s;
+  });
+}
+/* 领用趋势：线别/设备/设备类型各一张组合图，和出入库趋势同一个画法：
+     柱=数量（左轴）、折线=金额（右轴，无金额权限时只有柱）。
+   头部下拉决定看「总览」还是单看某一项：
+     · 总览 —— 各分类堆叠柱（Top5 + 其他）+ 合计金额折线
+     · 单看 —— 该项自己的数量柱 + 金额折线
+   单看的数据直接取自接口一起返回的全量分类，切下拉不再打一次接口，切起来是即时的。 */
+const USAGE_PICK = {line:'', device:'', model:''};
+let USAGE_DATA = null;
+const USAGE_CANVAS = {
+  line: 'chart-uline',
+  device: 'chart-udev',
+  model: 'chart-utype'
+};
+function usageStyle(){
+  return DASH_STYLES[DCFG.style] || DASH_STYLES.tech;
+}
+function drawUsageDim(key){
+  const u = USAGE_DATA;
+  const id = USAGE_CANVAS[key];
+  if(!u || !u.dims || !id) return;
+  const dim = u.dims[key];
+  if(!dim) return;
+  const st = usageStyle();
+  const OTHER = TR('其他');
+  const AMT_NAME = TR('领用金额');
+  // 折线用近黑而不是彩色：分类柱走 pie 色板（含紫/红/蓝），折线再用其中任何一色都会
+  // 和某个分类撞成「这条线就是那个分类」，近黑是「合计」这种汇总量的惯用色
+  const AMT_COLOR = '#111827';
+  const pick = USAGE_PICK[key] || '';
+  if(!pick){
+    // 总览：堆叠柱（数量），用 pie 那套彩色板而不是 bars —— bars 是同一色系的深浅，
+    // 堆叠图里相邻两段几乎分不出来；金额画成一条合计折线叠在右轴上
+    const colorOf = (s, i)=> (s.name === OTHER) ? '#94a3b8' : st.pie[i % st.pie.length];
+    const bars = (dim.qty || []).map((s, i)=>({name:s.name, data:s.data, color:colorOf(s, i)}));
+    let lines = [];
+    if(SEE_PRICE && dim.amt && dim.amt.length){
+      const tot = u.labels.map((_, i)=> dim.amt.reduce((a, s)=> a + (Number(s.data[i]) || 0), 0));
+      lines = [{name: AMT_NAME, data: tot, color: AMT_COLOR}];
+    }
+    drawCombo(id, u.labels, bars, lines, {fineLine:true, onBar:function(i, lb, total){
+      if(!(total > 0)) return;          // 空柱子点了也弹不出东西，别弹
+      openPareto(key, i);
+    }});
+    return;
+  }
+  // 单看一项：数量柱 + 该项自己的金额折线，颜色固定，切周期时颜色不变
+  const q = (dim.all_qty || []).filter(s=>s.name === pick)[0];
+  const bars = [{name: pick, data: q ? q.data : [], color: st.pie[0]}];
+  let lines = [];
+  if(SEE_PRICE){
+    const a = (dim.all_amt || []).filter(s=>s.name === pick)[0];
+    if(a) lines = [{name: AMT_NAME, data: a.data, color: AMT_COLOR}];
+  }
+  drawCombo(id, u.labels, bars, lines, {fineLine:true, onBar:function(i, lb, total){
+    if(!(total > 0)) return;
+    openPareto(key, i);
+  }});
+}
+/* 下拉选项：总览 + 全部分类。数量卡与金额卡各有一个 select，改一个另一个跟着变 */
+function fillUsagePick(key, opts){
+  const cur = USAGE_PICK[key] || '';
+  const ok = opts.indexOf(cur) >= 0;
+  if(!ok) USAGE_PICK[key] = '';
+  document.querySelectorAll('.chart-pick[data-dim="' + key + '"]').forEach(function(sel){
+    sel.innerHTML = '';
+    const o0 = document.createElement('option');
+    o0.value = ''; o0.textContent = TR('总览');
+    sel.appendChild(o0);
+    opts.forEach(function(n){
+      const o = document.createElement('option');
+      o.value = n; o.textContent = n;
+      sel.appendChild(o);
+    });
+    sel.value = USAGE_PICK[key] || '';
+    sel.disabled = opts.length <= 0;
+  });
+}
+function onUsagePick(key, val){
+  USAGE_PICK[key] = val || '';
+  document.querySelectorAll('.chart-pick[data-dim="' + key + '"]').forEach(function(sel){
+    sel.value = USAGE_PICK[key] || '';
+  });
+  drawUsageDim(key);
+}
+/* ===== 柏拉图弹窗（点领用趋势的柱子打开） =====
+   点某根柱 = 「这个时间桶里，到底是谁领走的」。弹窗给两张柏拉图：数量、金额各一张；
+   右上角还能换个细分维度再拆一次（总览态按当前维度拆，已选定某条线体时按物料拆）。
+   时间窗由后端按被点的那根柱重算，与画柱子共用 _series_buckets —— 所以弹窗里
+   各分类加起来，和被点柱子上标的数值一定对得上。 */
+const PARETO = {period:'', idx:-1, dim:'', pick:'', by:'part', data:null};
+const PARETO_COLON = window.COLON || '：';
+/* 细分维度的选项文案：四种都要（下拉里按需出现），不拼接「按」+名字 ——
+   英文/俄语的语序不同，拼出来会变成 "By Materials" 这种半截话 */
+const PARETO_BY_LABEL = {part: TR('按物料'), line: TR('按线体'), device: TR('按设备'), model: TR('按设备型号')};
+const PARETO_TOP = 15;
+
+function paretoByOptions(dim, pick){
+  const opts = [];
+  // 没限定具体某一项时，先给「按当前图表维度」：总览态点柱，最想知道的就是谁占大头
+  if(!pick && PARETO_BY_LABEL[dim]) opts.push([dim, PARETO_BY_LABEL[dim]]);
+  opts.push(['part', PARETO_BY_LABEL.part]);
+  // 已经限定某条线体/某台设备时，还能在同一范围内换个维度往下拆一层
+  if(pick && dim === 'line') opts.push(['device', PARETO_BY_LABEL.device]);
+  if(pick && dim === 'device') opts.push(['model', PARETO_BY_LABEL.model]);
+  return opts;
+}
+function openPareto(dimKey, idx){
+  PARETO.period = curPeriod || 'day';
+  PARETO.idx = idx;
+  PARETO.dim = dimKey;
+  PARETO.pick = USAGE_PICK[dimKey] || '';
+  const opts = paretoByOptions(dimKey, PARETO.pick);
+  const sel = document.getElementById('pareto-by');
+  sel.innerHTML = opts.map(function(o){
+    return '<option value="' + o[0] + '">' + esc(o[1]) + '</option>';
+  }).join('');
+  PARETO.by = opts[0][0];
+  sel.value = PARETO.by;
+  document.getElementById('pareto-mask').style.display = 'flex';
+  paretoFetch();
+}
+function closePareto(){
+  document.getElementById('pareto-mask').style.display = 'none';
+  PARETO.data = null;
+}
+function paretoQs(){
+  const qs = new URLSearchParams({period: PARETO.period, idx: PARETO.idx,
+                                  dim: PARETO.dim, by: PARETO.by});
+  if(PARETO.pick) qs.set('pick', PARETO.pick);
+  return qs;
+}
+function paretoReload(){
+  PARETO.by = document.getElementById('pareto-by').value || 'part';
+  paretoFetch();
+}
+function paretoRows(items, key){
+  const arr = (items || []).map(x=>({name: x.name, value: Number(x[key]) || 0}))
+                          .filter(x=>x.value > 0)
+                          .sort((a, b)=>b.value - a.value);
+  if(arr.length <= PARETO_TOP) return arr;
+  // 前 N 项 + 其他：几十个物料全画出来后面的柱子只剩一根头发丝。
+  // 归并后累计占比仍然走到 100%，曲线形状与真实分布一致。
+  const head = arr.slice(0, PARETO_TOP);
+  const rest = arr.slice(PARETO_TOP).reduce((a, x)=>a + x.value, 0);
+  if(rest > 0) head.push({name: TR('其他'), value: rest});
+  return head;
+}
+function paretoFetch(){
+  const st = usageStyle();
+  fetch('/api/analysis/pareto?' + paretoQs().toString()).then(r=>r.json()).then(d=>{
+    if(!d.ok) return;
+    PARETO.data = d;
+    const scope = d.scope || TR('总览');
+    document.getElementById('pareto-title').textContent = TR('领用柏拉图') + MK_O + d.bucket + MK_C;
+    document.getElementById('pareto-sub').textContent =
+      TR('范围') + PARETO_COLON + scope + '  ·  ' + TR('细分维度') + PARETO_COLON + d.by_label;
+    const qtyRows = paretoRows(d.items, 'qty');
+    const amtRows = paretoRows(d.items, 'amount');
+    const showAmt = d.show_amount && amtRows.length > 0;
+    const amtWrap = document.getElementById('pareto-amt-wrap');
+    if(amtWrap) amtWrap.style.display = showAmt ? '' : 'none';
+    document.getElementById('pareto-grid').classList.toggle('one', !showAmt);
+    drawPareto('pareto-qty', qtyRows, {colors: st.pie, barName: TR('领用数量')});
+    if(showAmt) drawPareto('pareto-amt', amtRows, {colors: st.pie, barName: TR('领用金额')});
+  }).catch(e=>console.error(e));
+}
+document.getElementById('pareto-export').onclick = function(){
+  if(!PARETO.data) return;
+  window.location = '/api/analysis/pareto/export?' + paretoQs().toString();
+};
+
+function renderUsageTrends(u){
+  if(!u || !u.dims) return;
+  USAGE_DATA = u;
+  ['line', 'device', 'model'].forEach(function(key){
+    const dim = u.dims[key];
+    if(!dim) return;
+    fillUsagePick(key, dim.opts || []);
+    drawUsageDim(key);
+  });
+}
+/* 维修趋势：借·换·检·修台账「维修」子类型，数量柱 + 金额折线，与出入库趋势同画法。
+   点柱子弹维修柏拉图：按维修品类型、按物料料号各一份（数量 + 金额）。 */
+let REPAIR_TREND = null;
+const REPAIR = {period:'', idx:-1, data:null};
+function drawRepairTrend(){
+  const d = REPAIR_TREND;
+  if(!d) return;
+  const st = usageStyle();
+  const bars = [{name: TR('维修数量'), data: d.qty, color: (st.bars && st.bars[0]) || '#f59e0b'}];
+  let lines = [];
+  if(SEE_PRICE && d.amt){
+    lines = [{name: TR('维修金额'), data: d.amt, color: '#111827'}];
+  }
+  drawCombo('chart-repair', d.labels, bars, lines, {fineLine:true, onBar:function(i, lb, total){
+    if(!(total > 0)) return;
+    openRepairPareto(i);
+  }});
+}
+function openRepairPareto(idx){
+  REPAIR.period = curPeriod || 'day';
+  REPAIR.idx = idx;
+  document.getElementById('repair-pareto-mask').style.display = 'flex';
+  repairParetoFetch();
+}
+function closeRepairPareto(){
+  document.getElementById('repair-pareto-mask').style.display = 'none';
+  REPAIR.data = null;
+}
+function repairParetoFetch(){
+  const st = usageStyle();
+  fetch('/api/analysis/repair/plat?period=' + REPAIR.period + '&idx=' + REPAIR.idx).then(r=>r.json()).then(d=>{
+    if(!d.ok) return;
+    REPAIR.data = d;
+    document.getElementById('repair-pareto-title').textContent = TR('维修柏拉图') + MK_O + d.bucket + MK_C;
+    document.getElementById('repair-pareto-sub').textContent =
+      TR('范围') + PARETO_COLON + TR('维修') + '  ·  ' + TR('维修趋势');
+    const showAmt = !!d.show_amount;
+    const aw1 = document.getElementById('repair-pareto-type-amt-wrap');
+    const aw2 = document.getElementById('repair-pareto-code-amt-wrap');
+    if(aw1) aw1.style.display = showAmt ? '' : 'none';
+    if(aw2) aw2.style.display = showAmt ? '' : 'none';
+    drawPareto('repair-pareto-type-qty', (d.by_type||[]).map(x=>({name:x.name, value: Number(x.qty)||0})), {colors: st.pie, barName: TR('维修数量')});
+    drawPareto('repair-pareto-code-qty', (d.by_code||[]).map(x=>({name:x.name, value: Number(x.qty)||0})), {colors: st.pie, barName: TR('维修数量')});
+    if(showAmt){
+      drawPareto('repair-pareto-type-amt', (d.by_type||[]).map(x=>({name:x.name, value: Number(x.amount)||0})), {colors: st.pie, barName: TR('维修金额')});
+      drawPareto('repair-pareto-code-amt', (d.by_code||[]).map(x=>({name:x.name, value: Number(x.amount)||0})), {colors: st.pie, barName: TR('维修金额')});
+    }
+  }).catch(e=>console.error(e));
+}
+document.getElementById('repair-pareto-export').onclick = function(){
+  if(!REPAIR.data) return;
+  window.location = '/api/analysis/repair/export?period=' + REPAIR.period + '&idx=' + REPAIR.idx;
+};
 function loadDash(){
+  applyPeriodTitles();
   fetch('/api/dashboard?period=' + curPeriod).then(r=>r.json()).then(d=>{
     const c = d.cards;
     document.getElementById('c-in-qty').textContent = fmt(c.in_qty);
@@ -434,33 +961,35 @@ function loadDash(){
       document.getElementById('c-in-amt-sub').textContent  = TR('上期') + ': ' + fmt(p.in_amt) + '  ' + TR('环比') + ' ' + pct(p.in_amt, c.in_amt);
       document.getElementById('c-out-amt-sub').textContent = TR('上期') + ': ' + fmt(p.out_amt) + '  ' + TR('环比') + ' ' + pct(p.out_amt, c.out_amt);
     }
-    drawBars('chart-qty', d.series.labels, [
-      {name:TR('入库'), data:d.series.in_qty, color:'#22c55e'},
-      {name:TR('出库'), data:d.series.out_qty, color:'#f97316'}
-    ]);
+    // 入库、出库各成一张：柱=数量（左轴），线=金额（右轴，无金额权限时只有柱）
+    drawCombo('chart-in', d.series.labels,
+      [{name:TR('入库'), data:d.series.in_qty, color:'#22c55e'}],
+      SEE_PRICE ? [{name:TR('入库金额'), data:d.series.in_amt, color:'#0ea5e9'}] : []);
+    drawCombo('chart-out', d.series.labels,
+      [{name:TR('出库'), data:d.series.out_qty, color:'#f97316'}],
+      SEE_PRICE ? [{name:TR('出库金额'), data:d.series.out_amt, color:'#8b5cf6'}] : []);
     if(SEE_PRICE){
-      drawLines('chart-amt', d.series.labels, [
-        {name:TR('入库金额'), data:d.series.in_amt, color:'#22c55e'},
-        {name:TR('出库金额'), data:d.series.out_amt, color:'#f97316'}
-      ]);
       drawPie('chart-cat', d.category);
     }
+    renderUsageTrends(d.usage);
+    REPAIR_TREND = d.repair;
+    drawRepairTrend();
     const low = d.alerts.low, high = d.alerts.high;
-    document.querySelector('.alert-low').innerHTML = TR('🔻 低于下限{{ tr('（') }}') + low.length + TR('{{ tr('）') }}');
-    document.querySelector('.alert-high').innerHTML = TR('🔺 超过上限{{ tr('（') }}') + high.length + TR('{{ tr('）') }}');
+    document.querySelector('.alert-low').innerHTML = '🔻 {{ tr('低于下限') }}（' + low.length + '）';
+    document.querySelector('.alert-high').innerHTML = '🔺 {{ tr('超过上限') }}（' + high.length + '）';
     document.getElementById('alert-low-list').innerHTML = low.length ? low.map(a=>
       '<a class="alert-item" href="/parts?state=low">' + esc(a.code) + ' · ' + esc(a.name) +
       ' <b>{{ tr('库存') }} ' + fmt(a.stock) + '</b> <span class="badge badge-danger">{{ tr('下限') }} ' + fmt(a.limit) + '</span></a>'
-    ).join('') : '<span class="muted">无{{ tr('，') }}{{ tr('库存健康') }}</span>';
+    ).join('') : '<span class="muted">{{ tr('无，库存健康') }}</span>';
     document.getElementById('alert-high-list').innerHTML = high.length ? high.map(a=>
       '<a class="alert-item" href="/parts?state=high">' + esc(a.code) + ' · ' + esc(a.name) +
       ' <b>{{ tr('库存') }} ' + fmt(a.stock) + '</b> <span class="badge badge-warn">{{ tr('上限') }} ' + fmt(a.limit) + '</span></a>'
-    ).join('') : '<span class="muted">无{{ tr('，') }}{{ tr('库存健康') }}</span>';
+    ).join('') : '<span class="muted">{{ tr('无，库存健康') }}</span>';
     const st = d.stale;
     document.getElementById('c-stale-count').textContent = fmt(st.count);
     document.getElementById('c-stale-days').textContent = TR('阈值 ') + st.days + TR(' 天未领用');
     if(SEE_PRICE) document.getElementById('c-stale-amt').textContent = fmt2(st.amount);
-    document.getElementById('stale-hint').textContent = TR('按料号统计{{ tr('，') }}超过 ') + st.days + TR(' 天未领用判定为呆滞{{ tr('（') }}可在系统设置调整{{ tr('）') }}');
+    document.getElementById('stale-hint').textContent = TR('按料号统计，超过 ') + st.days + TR(' 天未领用判定为呆滞（可在系统设置调整）');
     document.getElementById('stale-list').innerHTML = st.top.length ? st.top.map(x=>
       '<tr><td class="mono">' + esc(x.part_code) + '</td><td>' + esc(x.name) + '</td>' +
       '<td class="mono">' + esc(x.last_out || TR('从未出库')) + '</td>' +
